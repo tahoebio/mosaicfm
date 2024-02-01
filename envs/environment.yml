@@ -1,0 +1,35 @@
+name: vevo-scgpt-dev
+channels:
+  - pytorch
+  - conda-forge
+  - nvidia
+  - bioconda
+  - mosaicml
+  - defaults
+dependencies:
+  - pytorch>=2.2.0
+  - torchvision>=0.14.1
+  - torchaudio>=0.13.1
+  - torchtext
+  - pytorch-cuda>=12.1
+  - ninja
+  - rpy2
+  - packaging
+  - gxx=11.4
+  - git-lfs
+  - transformers[torch]
+  - tokenizers
+  - evaluate
+  - wandb
+  - awscli
+  - anndata
+  - seaborn
+  - scanpy
+  - scikit-learn
+  - python=3.10
+  - ipykernel
+  - mosaicml[all]
+  - pip
+  - pip:
+    - scib
+    - cellxgene_census

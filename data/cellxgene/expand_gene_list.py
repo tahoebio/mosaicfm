@@ -1,7 +1,7 @@
 import cellxgene_census
 import json
+from data_config import VERSION
 
-VERSION = "2023-05-08"
 
 with cellxgene_census.open_soma(census_version=VERSION) as census:
     meta_data = (
@@ -16,7 +16,7 @@ with cellxgene_census.open_soma(census_version=VERSION) as census:
     new_gene_list = meta_data.concat().to_pandas()["feature_name"].to_list()
     # print(gene_name)
 
-with open("../../scgpt/tokenizer/default_cellxgene_vocab.json", "r") as f:
+with open("../../scgpt/tokenizer/default_gene_vocab.json", "r") as f:
     old_gene_dict = json.load(f)
 
 print("old gene list length:", len(old_gene_dict))
