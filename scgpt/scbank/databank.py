@@ -356,7 +356,7 @@ class DataBank:
             non_zero_data = data.data
 
             tokenized_data = {"id": [], "genes": [], "expressions": []}
-            tokenized_data["id"] = list(range(n_rows))
+            tokenized_data["id"] = list(range(n_rows)) #TODO this is not correct, should be the cell id
             for i in range(n_rows):  # ~2s/100k cells
                 row_indices = indices[indptr[i] : indptr[i + 1]]
                 row_new_indices = new_indices[row_indices]
@@ -376,7 +376,7 @@ class DataBank:
             tokenized_data = _nparray2mapped_values(
                 data, new_indices, "numba"
             )  # ~7s/100k cells
-
+            #TODO append CLS token and mask expression
         return tokenized_data
 
     def _validate_vocab(self, vocab: Optional[GeneVocab] = None) -> None:
