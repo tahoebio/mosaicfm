@@ -11,6 +11,7 @@ import torch.nn.functional as F
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from torch.distributions import Bernoulli
 from tqdm import trange
+from composer.models import ComposerModel
 
 try:
     from flash_attn.flash_attention import FlashMHA
@@ -24,7 +25,7 @@ from .dsbn import DomainSpecificBatchNorm1d
 from .grad_reverse import grad_reverse
 
 
-class TransformerModel(nn.Module):
+class TransformerModel(ComposerModel):
     def __init__(
         self,
         ntoken: int,
@@ -74,8 +75,8 @@ class TransformerModel(nn.Module):
         if cell_emb_style not in ["cls", "avg-pool", "w-pool"]:
             raise ValueError(f"Unknown cell_emb_style: {cell_emb_style}")
 
-        # TODO: add dropout in the GeneEncoder
-        self.encoder = GeneEncoder(ntoken, d_model, padding_idx=vocab[pad_token])
+        self.pad_id = vocab[pad_token]
+        self.encoder = GeneEncoder(ntoken, d_model, padding_idx=self.pad_id)
         self.flag_encoder = nn.Embedding(2, d_model)
 
         # Value Encoder, NOTE: the scaling style is also handled in _encode method
@@ -106,6 +107,7 @@ class TransformerModel(nn.Module):
         #     self.bn = nn.BatchNorm1d(d_model, eps=6.1e-5)
         # bug
 
+        self.use_generative_training = use_generative_training
         if use_generative_training:
             encoder_layers = FlashscGPTLayer(
                 d_model,
@@ -613,6 +615,35 @@ class TransformerModel(nn.Module):
         )
 
         return output
+
+    def loss(
+        self,
+        outputs: Mapping[str, Tensor],
+        batch: Dict[str, Tensor],
+        MVC: bool = True,
+    ) -> Tensor:
+        from scgpt.loss import masked_mse_loss
+
+        assert self.use_generative_training
+        # retrieve target tensor
+        pcpt_gene = batch["pcpt_gene"]
+        gen_gene = batch["gen_gene"]
+        gen_expr_target = batch["gen_expr_target"]
+        gen_key_padding_mask = gen_gene.eq(self.pad_id)
+
+        # compute loss
+        gen_expr_preds = outputs["gen_preds"]
+
+        positions_to_match = ~gen_key_padding_mask
+        loss = masked_mse_loss(gen_expr_preds, gen_expr_target, positions_to_match)
+        if MVC:
+            loss_mvc = masked_mse_loss(
+                outputs["mvc_output"][:, pcpt_gene.shape[1] :],
+                gen_expr_target,
+                positions_to_match,
+            )
+            loss = loss + loss_mvc
+        return loss
 
     def encode_batch(
         self,

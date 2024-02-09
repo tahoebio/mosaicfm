@@ -555,8 +555,8 @@ elif args.data_source == "test":  # Using test data
     raw_dataset = Dataset.from_dict(
         {
             "id": [1] * 300,
-            "genes": [[1, 2, 3]] * 300,
-            "expressions": [[1.0, 2.0, 3.0]] * 300,
+            "genes": [[1, 2, 3] * 100] * 300,
+            "expressions": [[1.0, 2.0, 3.0] * 100] * 300,
         }
     )
     vocab = GeneVocab.from_dict({"zero": 0, "a": 1, "b": 2, "c": 3})
@@ -891,22 +891,22 @@ def train(model: nn.Module, train_loader: DataLoader, epoch: int) -> None:
                     writer.add_scalar("train/mvc", loss_mvc, global_iter)
             writer.add_scalar("train/loss", loss, global_iter)
 
-            if USE_GENERATIVE_TRAINING and global_iter > 1000:
-                previous_cell_embs = output_dict["cell_emb"].detach()
-                preds = model(
-                    pcpt_gene,
-                    pcpt_expr,
-                    pcpt_key_padding_mask,
-                    gen_gene,
-                    gen_key_padding_mask,
-                    CLS=False,
-                    MVC=False,
-                    input_cell_emb=previous_cell_embs,
-                    generative_training=True,
-                )["gen_preds"]
-                loss_gen = criterion(preds, gen_expr_target, positions_to_match)
-                loss = loss + loss_gen
-                writer.add_scalar("train/gen", loss_gen, global_iter)
+            # if USE_GENERATIVE_TRAINING and global_iter > 1000:
+            #     previous_cell_embs = output_dict["cell_emb"].detach()
+            #     preds = model(
+            #         pcpt_gene,
+            #         pcpt_expr,
+            #         pcpt_key_padding_mask,
+            #         gen_gene,
+            #         gen_key_padding_mask,
+            #         CLS=False,
+            #         MVC=False,
+            #         input_cell_emb=previous_cell_embs,
+            #         generative_training=True,
+            #     )["gen_preds"]
+            #     loss_gen = criterion(preds, gen_expr_target, positions_to_match)
+            #     loss = loss + loss_gen
+            #     writer.add_scalar("train/gen", loss_gen, global_iter)
 
                 # TODO: try this choice of using a separate backprop
                 # # this part is for the choice of using a separate backprop
@@ -1125,18 +1125,6 @@ for epoch in range(1, args.epochs + 1):
 
 writer.flush()
 writer.close()
-
-# %%
-# compare with the naive baseline of all ones
-data_dict = next(iter(valid_loader))
-input_values = data_dict["masked_expr"]
-tagert_values = data_dict["expr"]
-predict_ones = torch.ones(input_values.shape, dtype=torch.float32)
-mse = masked_mse_loss(predict_ones, tagert_values, input_values.eq(args.mask_value))
-mre = masked_relative_error(
-    predict_ones, tagert_values, input_values.eq(args.mask_value)
-)
-logger.info(f"MSE: {mse.item()}, MRE: {mre.item()}")
 
 # %% [markdown]
 # # Analysis
