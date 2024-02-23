@@ -41,9 +41,11 @@ def _map_append_cls(dataset: Dataset) -> Dataset:
     return dataset
 
 
-MODEL_CONFIG = "/home/pangkuan/dev/scGPT-release/tests/test_configs/model_config.json"
-TRAINING_ARGS = "/home/pangkuan/dev/scGPT-release/tests/test_configs/training_args.json"
-data_source = Path("/home/pangkuan/dev/data_disk/scb_sample/partition_0.scb")
+MODEL_CONFIG = "test_configs/model_config.json"
+TRAINING_ARGS = "test_configs/training_args.json"
+data_source = Path(
+    "/scratch/ssd004/datasets/cellxgene/scb_strict/pancreas/partition_0.scb"
+)
 
 db = DataBank.from_path(data_source)
 raw_dataset = db.main_data.data
@@ -130,4 +132,3 @@ trainer = scGPT_pretrainingTrainer(
 print("start training...")
 
 trainer.train()
-
