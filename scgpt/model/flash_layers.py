@@ -32,12 +32,14 @@ class FlashscGPTMHA(nn.Module):
         causal=False,
         device=None,
         dtype=None,
+        use_triton=False,
     ) -> None:
         assert batch_first
         factory_kwargs = {"device": device, "dtype": dtype}
         super().__init__()
         self.embed_dim = embed_dim
         self.causal = causal
+        self.use_triton = use_triton
 
         self.num_heads = num_heads
         assert (
@@ -142,13 +144,30 @@ class FlashscGPTMHA(nn.Module):
             key_padding_mask = ~torch.cat(
                 [pcpt_key_padding_mask, gen_key_padding_mask], dim=1
             )
-        cross_context, _ = self.cross_attn(
-            cross_q,
-            cross_kv[:, :, 0, :],
-            cross_kv[:, :, 1, :],
-            key_padding_mask=key_padding_mask,
-            attn_mask=attention_mask,
-        )
+
+        if self.use_triton:
+            from llmfoundry.models.layers.attention import triton_flash_attn_fn
+
+            attn_bias = torch.zeros_like(attention_mask).masked_fill(
+                attention_mask, torch.finfo(cross_q.dtype).min
+            )  # Matrix with -inf at the place of masked values and 0 elsewhere
+            # FIXME: verify what should be 1 in the triton key_padding_mask
+            cross_context, _ = triton_flash_attn_fn(
+                query=cross_q,
+                key=cross_kv[:, :, 0, :],
+                value=cross_kv[:, :, 1, :],
+                key_padding_mask=key_padding_mask,
+                attn_mask=attn_bias,
+            )
+        else:
+            cross_context, _ = self.cross_attn(
+                cross_q,
+                cross_kv[:, :, 0, :],
+                cross_kv[:, :, 1, :],
+                key_padding_mask=key_padding_mask,
+                attn_mask=attention_mask,
+            )
+
         gen_context = cross_context  # (batch, gen_len, hidden_dim)
         gen_attn_weights = None
 
@@ -184,6 +203,157 @@ class FlashscGPTMHA(nn.Module):
         #     causal=self.causal,
         # )
         # gen_context = self.out_proj(rearrange(gen_context, "b s h d -> b s (h d)"))
+
+        return (pcpt_context, gen_context), (pcpt_attn_weights, gen_attn_weights)
+
+
+class FullFlashscGPTMHA(nn.Module):
+    """
+    Custom MHA layer for scGPT. This takes full forward call within one pass of MHA.
+    """
+
+    def __init__(
+        self,
+        embed_dim,
+        num_heads,
+        bias=True,
+        batch_first=True,
+        attention_dropout=0.0,
+        causal=False,
+        device=None,
+        dtype=None,
+    ) -> None:
+        assert batch_first
+        factory_kwargs = {"device": device, "dtype": dtype}
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.causal = causal
+
+        self.num_heads = num_heads
+        assert (
+            self.embed_dim % num_heads == 0
+        ), "self.kdim must be divisible by num_heads"
+        self.head_dim = self.embed_dim // num_heads
+        assert (
+            self.head_dim % 8 == 0 and self.head_dim <= 128
+        ), "Only support head_dim <= 128 and divisible by 8"
+
+        self.Wqkv = nn.Linear(embed_dim, 3 * embed_dim, bias=bias, **factory_kwargs)
+        self.out_proj = nn.Linear(embed_dim, embed_dim, bias=bias, **factory_kwargs)
+
+    def forward(
+        self,
+        pcpt_total_embs: Tensor,
+        gen_total_embs: Tensor,
+        pcpt_key_padding_mask: Optional[Tensor] = None,
+        gen_key_padding_mask: Optional[Tensor] = None,
+        need_weights=False,
+    ):
+        """
+        pcpt_total_embs: (batch, pcpt_len, hidden_dim) (where hidden_dim = num heads * head dim)
+        gen_total_embs: (batch, gen_len, hidden_dim)
+        pcpt_key_padding_mask: bool tensor of shape (batch, pcpt_len), 1 means valid and 0 means not valid.
+        gen_key_padding_mask: bool tensor of shape (batch, gen_len), 1 means valid and 0 means not valid.
+        """
+
+        from llmfoundry.models.layers.attention import triton_flash_attn_fn
+
+        if gen_total_embs is None:
+            pcpt_qkv = self.Wqkv(pcpt_total_embs)
+
+            pcpt_qkv = rearrange(
+                pcpt_qkv, "b s (three h d) -> b s three h d", three=3, h=self.num_heads
+            )
+
+            # full self attention on pcpt genes
+            pcpt_context, pcpt_attn_weights = self.self_attn(
+                pcpt_qkv,
+                key_padding_mask=pcpt_key_padding_mask,
+                need_weights=need_weights,
+                causal=self.causal,
+            )
+            pcpt_context = self.out_proj(
+                rearrange(pcpt_context, "b s h d -> b s (h d)")
+            )
+
+            return (pcpt_context, None), (pcpt_attn_weights, None)
+
+        total_embs = torch.cat(
+            [pcpt_total_embs, gen_total_embs], dim=1
+        )  # (batch, pcpt_len + gen_len, hidden_dim)
+        total_qkv = self.Wqkv(total_embs)  # (batch, pcpt_len + gen_len, 3 * hidden_dim)
+        if pcpt_key_padding_mask is None and gen_key_padding_mask is None:
+            key_padding_mask = None
+        else:
+            if pcpt_key_padding_mask is None:
+                pcpt_key_padding_mask = torch.ones(
+                    (pcpt_total_embs.shape[0], pcpt_total_embs.shape[1]),
+                    device=pcpt_total_embs.device,
+                    dtype=torch.bool,
+                )
+            elif gen_key_padding_mask is None:
+                gen_key_padding_mask = torch.ones(
+                    (gen_total_embs.shape[0], gen_total_embs.shape[1]),
+                    device=gen_total_embs.device,
+                    dtype=torch.bool,
+                )
+            # key_padding_mask = torch.cat(
+            #     [pcpt_key_padding_mask, gen_key_padding_mask], dim=1
+            # )
+            key_padding_mask = ~torch.cat(
+                [pcpt_key_padding_mask, gen_key_padding_mask], dim=1
+            )  # FIXME: assuming the pytorch strategy here, 1 means not allowed. Need to make sure this is correct
+
+            """
+            TODO: warnings.warn(
+            'Propagating key_padding_mask to the attention module ' +\
+            'and applying it within the attention module can cause ' +\
+            'unnecessary computation/memory usage. Consider integrating ' +\
+            'into attn_bias once and passing that to each attention ' +\
+            'module instead.'
+            )
+            """
+
+        # make the attention mask, for pytorch implementation, true means attention is not allowed
+        @lru_cache(maxsize=1)
+        def make_mask(p_len, g_len, device):
+            total_len = p_len + g_len
+            attention_mask = torch.zeros(
+                (g_len, total_len), device=device, dtype=torch.bool
+            )  # (gen_len, pcpt_len+gen_len)
+            # make the last gen_len by gen_gen to be true, only the diagonal is allowed with false
+            attention_mask[:, -g_len:] = ~torch.eye(
+                g_len, device=device, dtype=torch.bool
+            )
+            upper_mask = torch.zeros(
+                (p_len, total_len), device=device, dtype=torch.bool
+            )  # (pcpt_len, pcpt_len+gen_len)
+            upper_mask[:, -g_len:] = True
+
+            attention_mask = torch.cat([upper_mask, attention_mask], dim=0)
+            return attention_mask
+
+        attention_mask = make_mask(
+            pcpt_total_embs.shape[1], gen_total_embs.shape[1], total_qkv.device
+        )
+
+        attn_bias = torch.zeros_like(attention_mask).masked_fill(
+            attention_mask, torch.finfo(total_qkv.dtype).min
+        )  # Matrix with -inf at the place of masked values and 0 elsewhere
+        # FIXME: verify what should be 1 in the triton key_padding_mask
+        total_context, _ = triton_flash_attn_fn(
+            query=total_qkv[:, :, 0, :],
+            key=total_qkv[:, :, 1, :],
+            value=total_qkv[:, :, 2, :],
+            key_padding_mask=key_padding_mask,
+            attn_mask=attn_bias,
+        )  # (batch, pcpt_len + gen_len, hidden_dim)
+        total_context = self.out_proj(total_context)
+        pcpt_context = total_context[:, : pcpt_total_embs.shape[1], :]
+        gen_context = total_context[:, pcpt_total_embs.shape[1] :, :]
+
+        pcpt_attn_weights = None
+        gen_attn_weights = None
 
         return (pcpt_context, gen_context), (pcpt_attn_weights, gen_attn_weights)
 
@@ -302,6 +472,7 @@ class FlashscGPTLayer(nn.Module):
         gen_key_padding_mask_ = self._reverse_key_padding_mask(gen_key_padding_mask)
 
         if self.norm_scheme == "pre":
+            # FIXME: fix the pre norm here
             pcpt_total_embs = self.norm1(pcpt_total_embs)
             if gen_total_embs is not None:
                 gen_total_embs = self.norm1(gen_total_embs)
