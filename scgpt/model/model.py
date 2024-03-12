@@ -875,11 +875,13 @@ class FlashTransformerEncoderLayer(nn.Module):
             src_key_padding_mask_ = ~src_key_padding_mask
 
         if self.norm_scheme == "pre":
-            src = self.norm1(src)
-            src2 = self.self_attn(src, key_padding_mask=src_key_padding_mask_)[0]
+            src2 = self.self_attn(
+                self.norm1(src), key_padding_mask=src_key_padding_mask_
+            )[0]
             src = src + self.dropout1(src2)
-            src = self.norm2(src)
-            src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
+            src2 = self.linear2(
+                self.dropout(self.activation(self.linear1(self.norm2(src))))
+            )
             src = src + self.dropout2(src2)
         else:
             src2 = self.self_attn(src, key_padding_mask=src_key_padding_mask_)[0]
