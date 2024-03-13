@@ -282,6 +282,7 @@ class FullFlashscGPTMHA(nn.Module):
             [pcpt_total_embs, gen_total_embs], dim=1
         )  # (batch, pcpt_len + gen_len, hidden_dim)
         total_qkv = self.Wqkv(total_embs)  # (batch, pcpt_len + gen_len, 3 * hidden_dim)
+        total_qkv = rearrange(total_qkv, "b s (three E) -> b s three E", three=3)
         if pcpt_key_padding_mask is None and gen_key_padding_mask is None:
             key_padding_mask = None
         else:
@@ -297,9 +298,6 @@ class FullFlashscGPTMHA(nn.Module):
                     device=gen_total_embs.device,
                     dtype=torch.bool,
                 )
-            # key_padding_mask = torch.cat(
-            #     [pcpt_key_padding_mask, gen_key_padding_mask], dim=1
-            # )
             key_padding_mask = ~torch.cat(
                 [pcpt_key_padding_mask, gen_key_padding_mask], dim=1
             )  # FIXME: assuming the pytorch strategy here, 1 means not allowed. Need to make sure this is correct
@@ -337,16 +335,22 @@ class FullFlashscGPTMHA(nn.Module):
             pcpt_total_embs.shape[1], gen_total_embs.shape[1], total_qkv.device
         )
 
-        attn_bias = torch.zeros_like(attention_mask).masked_fill(
+        attn_bias = torch.zeros_like(attention_mask, dtype=total_qkv.dtype).masked_fill(
             attention_mask, torch.finfo(total_qkv.dtype).min
         )  # Matrix with -inf at the place of masked values and 0 elsewhere
         # FIXME: verify what should be 1 in the triton key_padding_mask
-        total_context, _ = triton_flash_attn_fn(
-            query=total_qkv[:, :, 0, :],
-            key=total_qkv[:, :, 1, :],
-            value=total_qkv[:, :, 2, :],
+        attn_bias = attn_bias.unsqueeze(0).unsqueeze(
+            1
+        )  # Broadcastable to (B,H, S_Q, S_K) dimensions
+
+        total_context, _, _ = triton_flash_attn_fn(
+            query=total_qkv[:, :, 0, :],  # (B, S_Q, E)
+            key=total_qkv[:, :, 1, :],  # (B, S_K, E)
+            value=total_qkv[:, :, 2, :],  # (B, S_V, E)
             key_padding_mask=key_padding_mask,
-            attn_mask=attn_bias,
+            attn_bias=attn_bias,
+            n_heads=self.num_heads,
+            kv_n_heads=self.num_heads,
         )  # (batch, pcpt_len + gen_len, hidden_dim)
         total_context = self.out_proj(total_context)
         pcpt_context = total_context[:, : pcpt_total_embs.shape[1], :]
@@ -400,7 +404,7 @@ class FlashscGPTLayer(nn.Module):
     ) -> None:
         super().__init__()
         factory_kwargs = {"device": device, "dtype": dtype}
-        self.self_attn = FlashscGPTMHA(
+        self.self_attn = FullFlashscGPTMHA(
             embed_dim=d_model,
             num_heads=nhead,
             batch_first=batch_first,
