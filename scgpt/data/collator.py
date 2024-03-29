@@ -39,22 +39,24 @@ class DataCollator(DefaultDataCollator):
         num_bins (:obj:`int`): the number of bins to use for binning the expression
         right_binning (:obj:`bool`): whether to use right sided-binning. Torch default is False
     """
-    def __init__(self,
-    do_padding: bool = True,
-    pad_token_id: Optional[int] = None,
-    pad_value: int = 0,
-    do_mlm: bool = True,
-    do_binning: bool = True,
-    mlm_probability: float = 0.15,
-    mask_value: int = -1,
-    max_length: Optional[int] = None,
-    sampling: bool = True,
-    reserve_keys: List[str] = [],
-    keep_first_n_tokens: int = 1,
-    data_style: str = "pcpt",
-    num_bins: int = 51,
-    right_binning: bool = False,
-    return_tensors: str = "pt",
+
+    def __init__(
+        self,
+        do_padding: bool = True,
+        pad_token_id: Optional[int] = None,
+        pad_value: int = 0,
+        do_mlm: bool = True,
+        do_binning: bool = True,
+        mlm_probability: float = 0.15,
+        mask_value: int = -1,
+        max_length: Optional[int] = None,
+        sampling: bool = True,
+        reserve_keys: List[str] = [],
+        keep_first_n_tokens: int = 1,
+        data_style: str = "pcpt",
+        num_bins: int = 51,
+        right_binning: bool = False,
+        return_tensors: str = "pt",
     ):
         super().__init__(return_tensors=return_tensors)
         self.do_padding = do_padding
@@ -556,17 +558,24 @@ def binning(
     return_np = False if isinstance(row, torch.Tensor) else True
     if not isinstance(row, torch.Tensor):
         row = torch.as_tensor(row)
-    GRADES = torch.linspace(0, 1, n_bins - 1, dtype=torch.float32, requires_grad=False)
+    quantiles = torch.linspace(0, 1, n_bins, dtype=torch.float32, requires_grad=False)
     if row.min() <= 0:
         non_zero_ids = row.nonzero()
         non_zero_row = row[non_zero_ids]
-        bins = torch.quantile(non_zero_row, GRADES)
+        bins = torch.quantile(non_zero_row, quantiles)
         non_zero_digits = torch.bucketize(non_zero_row, bins, right=right)
         binned_row = torch.zeros_like(row, dtype=non_zero_digits.dtype)
         binned_row[non_zero_ids] = non_zero_digits
     else:
-        bins = torch.quantile(row, GRADES)
+        bins = torch.quantile(row, quantiles)
         binned_row = torch.bucketize(row, bins, right=right)
     if return_np:
         binned_row = binned_row.astype(dtype)
+    if not (right):
+        # Left sided binning satisfies the condition
+        # bins[i - 1] < row < bins[i]
+        # For right=False, the smallest binned values is 0
+        # To avoid inconsistency: always make output in be in the range 1...n_bins
+        binned_row = binned_row + 1
+    # For right=True, the output will be in the range 1...n_bins
     return binned_row

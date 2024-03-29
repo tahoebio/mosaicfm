@@ -5,8 +5,9 @@ from typing import Dict, Mapping, Optional, Tuple, Any, Union
 from composer.models import ComposerModel
 from scgpt.loss import masked_mse_loss, MaskedMseMetric
 from .flash_layers import SCGPTBlock, FlashscGPTGenerator
-from llmfoundry.models.layers.ffn import resolve_ffn_hidden_size, resolve_ffn_act_fn
+from llmfoundry.models.layers.ffn import resolve_ffn_act_fn
 from omegaconf import DictConfig
+from composer import metrics
 
 
 class SCGPTModel(nn.Module):
@@ -41,7 +42,7 @@ class SCGPTModel(nn.Module):
 
         # TODO: add dropout in the GeneEncoder
         self.gene_encoder = GeneEncoder(
-            self.vocab_size, self.d_model, padding_idx=self.pad_token_id,use_norm=False
+            self.vocab_size, self.d_model, padding_idx=self.pad_token_id, use_norm=False
         )
         self.flag_encoder = nn.Embedding(2, self.d_model)
 
@@ -65,8 +66,10 @@ class SCGPTModel(nn.Module):
         elif self.input_emb_style == "category":
             assert self.n_input_bins > 0
             self.expression_encoder = CategoryValueEncoder(
-                self.n_input_bins, self.d_model, padding_idx=self.pad_value,
-                use_norm=False
+                self.n_input_bins,
+                self.d_model,
+                padding_idx=self.pad_value,
+                use_norm=False,
             )
         else:
             raise ValueError(f"Unknown input_emb_style: {self.input_emb_style}")
@@ -84,7 +87,8 @@ class SCGPTModel(nn.Module):
                 use_glu=model_config.get("use_glu", False),
             )
             self.transformer_encoder = FlashscGPTGenerator(
-                encoder_layers, self.n_layers,
+                encoder_layers,
+                self.n_layers,
                 use_norm=self.norm_scheme == "pre",
                 norm_config=self.norm_config,
             )
@@ -92,19 +96,25 @@ class SCGPTModel(nn.Module):
             raise NotImplementedError("Only generative training is supported")
 
         expression_decoder_config = model_config.expression_decoder
+        if model_config.get("use_cross_entropy", False):
+            n_outputs = self.n_input_bins
+        else:
+            n_outputs = 1
         self.expression_decoder = ExprDecoder(
             d_model=self.d_model,
-            n_outputs=expression_decoder_config.get("n_outputs", 1),
+            n_outputs=n_outputs,
             n_layers=expression_decoder_config.get("n_layers", 2),
             activation=expression_decoder_config.get("activation", "leaky_relu"),
         )
-
-        if model_config.mvc is not None:
+        self.use_mvc = model_config.get("use_mvc", True)
+        if self.use_mvc:
+            assert model_config.mvc is not None
             mvc_config = model_config.mvc
             self.mvc_decoder = MVCDecoder(
                 d_model=self.d_model,
                 arch_style=mvc_config.arch_style,
                 query_activation=mvc_config.query_activation,
+                n_outputs=n_outputs,
             )
         self.init_weights()
 
@@ -525,7 +535,9 @@ class GeneEncoder(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         x = self.embedding(x)  # (batch, seq_len, embsize)
         if self.use_norm:
-            x = self.enc_norm(x)  # Norm for embedding is not used when using pre-norm transformer.
+            x = self.enc_norm(
+                x
+            )  # Norm for embedding is not used when using pre-norm transformer.
         return x
 
 
@@ -629,6 +641,7 @@ class MVCDecoder(nn.Module):
         d_model: int,
         arch_style: str = "inner product",
         query_activation: str = "sigmoid",
+        n_outputs: int = 1,
     ) -> None:
         """
         Args:
@@ -642,11 +655,12 @@ class MVCDecoder(nn.Module):
         """
         super().__init__()
         d_in = d_model
-
+        self.n_outputs = n_outputs
         if arch_style == "inner product":
             self.gene2query = nn.Linear(d_model, d_model)
             self.query_activation = resolve_ffn_act_fn({"name": query_activation})
             self.W = nn.Linear(d_model, d_in, bias=False)
+            self.out_proj = nn.Linear(1, n_outputs)
         else:
             raise ValueError(f"Unknown arch_style: {arch_style}")
 
@@ -665,9 +679,10 @@ class MVCDecoder(nn.Module):
                 self.gene2query(gene_embs)
             )  # (batch, seq_len, embsize)
             cell_emb = cell_emb.unsqueeze(2)  # (batch, embsize, 1)
-            pred_value = torch.bmm(self.W(query_vecs), cell_emb).squeeze(
-                2
-            )  # (batch, seq_len)
+            pred_value = torch.bmm(self.W(query_vecs), cell_emb) # (batch, seq_len, 1)
+            pred_value = self.out_proj(pred_value) # (batch, seq_len, n_outputs)
+            if pred_value.shape[-1] == 1:
+                pred_value = pred_value.squeeze(-1)
             return dict(pred=pred_value)
         else:
             raise ValueError(f"Unknown arch_style: {self.arch_style}")
@@ -676,17 +691,35 @@ class MVCDecoder(nn.Module):
 class ComposerSCGPTModel(ComposerModel):
     def __init__(self, model_config, collator_config, device=None):
         super().__init__()
-        self.criterion = masked_mse_loss
         self.pad_token_id = collator_config.pad_token_id
         self.use_cell_conditioned_generation = model_config.get(
             "use_cell_conditioned_generation", False
         )
+        model_config.use_mvc = True
+        model_config.use_cross_entropy = True
         self.model = SCGPTModel(
             model_config=model_config,
             collator_config=collator_config,
             device=device,
         )
         self.n_active_params = sum(p.numel() for p in self.model.parameters())
+        self.pad_value = collator_config.pad_value
+        self.loss_fn_name = model_config.get("loss_fn", "cross_entropy")
+        if self.loss_fn_name == "cross_entropy":
+            try:
+                from flash_attn.losses.cross_entropy import (
+                    CrossEntropyLoss as FusedCrossEntropyLoss,
+                )
+
+                self.loss_fn = FusedCrossEntropyLoss(ignore_index=self.pad_value)
+            except:
+                raise ValueError(
+                    "Fused Cross Entropy is not installed. Either (1) have a CUDA-compatible GPU "
+                    + "and `pip install .[gpu]` if installing from source or `pip install xentropy-cuda-lib@git+https://github.com/HazyResearch/flash-attention.git@v1.0.3#subdirectory=csrc/xentropy` "
+                    + "if installing from pypi, or (2) set your config model.loss_fn=torch_crossentropy."
+                )
+        else:
+            raise ValueError(f"loss_fn {self.loss_fn_name} not recognized")
         self.train_mse = MaskedMseMetric(name="MSE")
         self.train_mvc = MaskedMseMetric(name="MVC")
         self.val_mse = MaskedMseMetric(name="MSE")
@@ -735,20 +768,32 @@ class ComposerSCGPTModel(ComposerModel):
         gen_key_padding_mask = gen_gene.eq(self.pad_token_id)
         positions_to_match = ~gen_key_padding_mask
         gen_expr_preds = outputs["gen_preds"]
-        loss_mse = self.criterion(gen_expr_preds, gen_expr_target, positions_to_match)
-        loss_mvc = self.criterion(
-            outputs["mvc_output"][:, pcpt_gene.shape[1] :],
-            gen_expr_target,
-            positions_to_match,
-        )
+        loss_gep = self.criterion(gen_expr_preds, gen_expr_target, positions_to_match)
+        num_losses = 1
+        total_loss = loss_gep
+        if self.model.use_mvc:
+            loss_mvc = self.criterion(
+                outputs["mvc_output"][:, pcpt_gene.shape[1] :],
+                gen_expr_target,
+                positions_to_match,
+            )
+            total_loss += loss_mvc
+            num_losses += 1
         if self.use_cell_conditioned_generation:
-            loss_gen = self.criterion(
+            loss_cls_conditioned_gep = self.criterion(
                 outputs["GEPC"], gen_expr_target, positions_to_match
             )
-            loss = (loss_mse + loss_mvc + loss_gen) / 3
-        else:
-            loss = (loss_mse + loss_mvc) / 2
-        return loss
+            total_loss += loss_cls_conditioned_gep
+            num_losses += 1
+        total_loss = total_loss / num_losses
+        return total_loss
+
+    def criterion(self, preds, target, mask):
+        target -= 1  # Values range from 1 to num_bins, change back to 0-based
+        target = target.masked_fill(~mask, self.pad_value).long()
+        target = target.to(preds.device).reshape(-1)  # (batch_size * seq_len)
+        preds = preds.reshape(-1, preds.shape[-1])
+        return self.loss_fn(preds, target)
 
     def update_metric(self, batch, outputs, metric):
         pcpt_gene = batch["pcpt_gene"]
@@ -764,6 +809,7 @@ class ComposerSCGPTModel(ComposerModel):
             preds = outputs["GEPC"]
         else:
             raise ValueError(f"metric {metric.name} not recognized")
+        preds = torch.argmax(preds, dim=-1) + 1
         metric.update(preds=preds, target=target, mask=mask)
 
     def get_metrics(self, is_train=False):

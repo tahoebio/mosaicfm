@@ -24,6 +24,7 @@ from omegaconf import DictConfig
 from omegaconf import OmegaConf as om
 from typing import Any, Dict, List, Optional, Union
 from rich.traceback import install
+import streaming
 
 install()
 
@@ -115,6 +116,7 @@ def main(cfg: DictConfig) -> composer.Trainer:
     run_name: str = pop_config(
         cfg, "run_name", must_exist=False, default_value=default_run_name
     )
+    log.info(f"Using run_name: {run_name}")
     save_folder: Optional[str] = pop_config(
         cfg,
         "save_folder",
@@ -307,7 +309,7 @@ def main(cfg: DictConfig) -> composer.Trainer:
         if algorithm_configs
         else None
     )
-
+    streaming.base.util.clean_stale_shared_memory()
     # Build DataLoaders
     log.info("Building DataLoaders...")
     train_loader = build_dataloader(
