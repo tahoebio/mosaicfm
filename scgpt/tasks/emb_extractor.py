@@ -19,6 +19,7 @@ def get_batch_embeddings(
     num_workers: int = 8,
     max_length: Optional[int] = None,
     return_gene_embeddings: bool = False,
+    device: Optional[torch.device] = None,
 ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
     """
     Get the cell embeddings for a batch of cells.
@@ -84,7 +85,8 @@ def get_batch_embeddings(
         prefetch_factor=48,
     )
 
-    device = next(model.parameters()).device
+    if device is None:
+        device = next(model.parameters()).device
     cell_embeddings = np.zeros((len(dataset), model_cfg["d_model"]), dtype=np.float32)
     if return_gene_embeddings:
         # Instantiate empty gene embeddings
@@ -143,7 +145,7 @@ def get_batch_embeddings(
         )
         gene2idx = vocab.get_stoi()
         all_gene_ids = np.array([id for id in gene2idx.values()])
-        gene_embeddings = gene_embeddings[all_gene_ids,:]
+        gene_embeddings = gene_embeddings[all_gene_ids, :]
         return cell_embeddings, gene_embeddings
     else:
         return cell_embeddings

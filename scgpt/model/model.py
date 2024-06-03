@@ -14,7 +14,7 @@ from scgpt.model.blocks import (
     ExprDecoder,
     MVCDecoder,
     init_config_defaults,
-    gene_encoder_defaults
+    gene_encoder_defaults,
 )
 from llmfoundry.models.utils.param_init_fns import (
     MODEL_INIT_REGISTRY,
@@ -68,8 +68,10 @@ class SCGPTModel(nn.Module):
 
         # TODO: add dropout in the GeneEncoder
 
-        self.gene_encoder = GeneEncoder(
-            self.vocab_size, self.d_model, padding_idx=self.pad_token_id,
+        self.gene_encoder = GeneEncoder(  # a.k.a self.encoder
+            self.vocab_size,
+            self.d_model,
+            padding_idx=self.pad_token_id,
             use_norm=self.gene_encoder_config["use_norm"],
         )
         self.flag_encoder = nn.Embedding(2, self.d_model)
@@ -89,7 +91,7 @@ class SCGPTModel(nn.Module):
                 dropout=expression_encoder_config.get("dropout", 0.1),
                 max_value=expression_encoder_config.get("max_value", 512),
                 activation=expression_encoder_config.get("activation", "relu"),
-                use_norm=expression_encoder_config.get("use_norm", False)
+                use_norm=expression_encoder_config.get("use_norm", False),
             )
         elif self.input_emb_style == "category":
             assert self.n_input_bins > 0
@@ -143,6 +145,16 @@ class SCGPTModel(nn.Module):
             )
             self.apply(self.param_init_fn)
 
+        self.do_perturbation = False
+
+    def perturbation_post_init(self):
+        """
+        Post-initialization of the model for perturbation prediction training.
+        """
+        self.pert_encoder = nn.Embedding(3, self.d_model, padding_idx=0)
+        self.pert_decoder = AffineExprDecoder(self.d_model)
+        self.do_perturbation = True
+
     def param_init_fn(self, module: nn.Module):
         init_fn_name = self.init_config["name"]
         MODEL_INIT_REGISTRY[init_fn_name](
@@ -157,11 +169,15 @@ class SCGPTModel(nn.Module):
         src: Tensor,
         values: Tensor,
         src_key_padding_mask: Tensor,
+        input_pert_flags: Optional[Tensor] = None,
     ) -> Tensor:
         src = self.gene_encoder(src)  # (batch, seq_len, embsize)
         self.cur_gene_token_embs = src
         values = self.expression_encoder(values)  # (batch, seq_len, embsize)
         total_embs = src + values
+        if self.do_perturbation:
+            perts = self.pert_encoder(input_pert_flags)  # (batch, seq_len, embsize)
+            total_embs = total_embs + perts
         output = self.transformer_encoder(
             pcpt_total_embs=total_embs,
             gen_total_embs=None,
@@ -263,6 +279,9 @@ class SCGPTModel(nn.Module):
         Wrapper to call either generative_forward or perceptual_forward, depending
         on the value of the "generative_training" kwarg.
         """
+        if self.do_perturbation:
+            return self.perturbation_forward(*args, **kwargs)
+
         if "generative_training" not in kwargs:
             raise ValueError(
                 "Please specify generative_training argument and set to False if doing inference"
@@ -273,6 +292,88 @@ class SCGPTModel(nn.Module):
             return self.generative_forward(*args, **kwargs)
         else:
             return self.perceptual_forward(*args, **kwargs)
+
+    def perturbation_forward(
+        self,
+        src: Tensor,
+        values: Tensor,
+        input_pert_flags: Tensor,
+        src_key_padding_mask: Tensor,
+        CLS: bool = False,
+        CCE: bool = False,
+        MVC: bool = False,
+        ECS: bool = False,
+        do_sample: bool = False,
+    ) -> Mapping[str, Tensor]:
+        processed_values = values
+        transformer_output = self._encode(
+            src,
+            processed_values,
+            src_key_padding_mask,
+            input_pert_flags=input_pert_flags,
+        )
+        output = {}
+        mlm_output = self.pert_decoder(transformer_output, values)
+        output["mlm_output"] = mlm_output["pred"]
+        return output
+
+    def pred_perturb(
+        self,
+        batch_data,
+        include_zero_gene="batch-wise",
+        gene_ids=None,
+        amp=True,
+    ) -> Tensor:
+        """
+        Args:
+            batch_data: a dictionary of input data with keys.
+
+        Returns:
+            output Tensor of shape [N, seq_len]
+        """
+        from ..utils import map_raw_id_to_vocab_id
+
+        self.eval()
+        device = next(self.parameters()).device
+        batch_data.to(device)
+        batch_size = len(batch_data.pert)
+        x: torch.Tensor = batch_data.x
+        ori_gene_values = x[:, 0].view(batch_size, -1)  # (batch_size, n_genes)
+        pert_flags = x[:, 1].long().view(batch_size, -1)
+
+        if include_zero_gene in ["all", "batch-wise"]:
+            assert gene_ids is not None
+            if include_zero_gene == "all":
+                input_gene_ids = torch.arange(ori_gene_values.size(1), device=device)
+            else:  # batch-wise
+                input_gene_ids = (
+                    ori_gene_values.nonzero()[:, 1].flatten().unique().sort()[0]
+                )
+            input_values = ori_gene_values[:, input_gene_ids]
+            input_pert_flags = pert_flags[:, input_gene_ids]
+
+            mapped_input_gene_ids = map_raw_id_to_vocab_id(input_gene_ids, gene_ids)
+            mapped_input_gene_ids = mapped_input_gene_ids.repeat(batch_size, 1)
+
+            src_key_padding_mask = torch.zeros_like(
+                input_values, dtype=torch.bool, device=device
+            )
+            with torch.cuda.amp.autocast(enabled=amp):
+                output_dict = self(
+                    mapped_input_gene_ids,
+                    input_values,
+                    input_pert_flags,
+                    src_key_padding_mask=src_key_padding_mask,
+                    CLS=False,
+                    CCE=False,
+                    MVC=False,
+                    ECS=False,
+                    do_sample=True,
+                )
+            output_values = output_dict["mlm_output"].float()
+            pred_gene_values = torch.zeros_like(ori_gene_values)
+            pred_gene_values[:, input_gene_ids] = output_values
+        return pred_gene_values
 
     def generative_forward(
         self,
@@ -377,6 +478,74 @@ class SCGPTModel(nn.Module):
 
     def activation_checkpointing_fn(self, module):
         return isinstance(module, SCGPTBlock)
+
+
+class AffineExprDecoder(nn.Module):
+    def __init__(
+        self,
+        d_model: int,
+        explicit_zero_prob: bool = False,
+        activation: Optional[str] = None,
+        tanh_coeff: bool = False,
+        adaptive_bias: bool = False,
+    ):
+        """
+        Predict the expression value of each gene in an affine like form of Ax + b.
+        This decoder takes two ExprDecoder intrinsically to genrate the coefficient A and bias b.
+
+        Args:
+            d_model: The embedding dimension.
+            explicit_zero_prob: If True, predict the probability of each gene being
+                zero.
+            activation: The activation function for the coefficient A and bias b.
+            tanh_coeff: If True, use tanh activation for the coefficient A.
+            adaptive_bias: If True, use a learnable bias for the bias b.
+        """
+        super().__init__()
+        self.explicit_zero_prob = explicit_zero_prob
+        self.tanh_coeff = tanh_coeff
+        self.adaptive_bias = adaptive_bias
+        self.coeff_decoder = ExprDecoder(d_model)
+        self.bias_decoder = ExprDecoder(d_model)
+
+        self.activation = activation
+        if activation is not None:
+            assert hasattr(nn, activation), f"Unknown activation: {activation}"
+            self.activation = getattr(nn, activation)()
+
+    def forward(self, x: Tensor, values: Tensor) -> Tensor:
+        """
+        Args:
+            x: Tensor, shape [batch_size, seq_len, embsize]
+            values: Tensor, shape [batch_size, seq_len]
+
+        Returns:
+            output Tensor of shape [batch_size, seq_len]
+        """
+        coeff = self.coeff_decoder(x)
+        bias = self.bias_decoder(x)
+
+        if self.activation is not None:
+            coeff["pred"] = self.activation(coeff["pred"])
+            bias["pred"] = self.activation(bias["pred"])
+
+        # if self.tanh_coeff:
+        #     coeff["pred"] = 1 + torch.tanh(coeff["pred"])
+
+        if self.adaptive_bias:
+            # bias["pred"] = bias["pred"] * values.mean(dim=1, keepdim=True)
+            non_zero_value_mean = values.sum(dim=1, keepdim=True) / (values != 0).sum(
+                dim=1, keepdim=True
+            )
+            bias["pred"] = bias["pred"] * non_zero_value_mean
+
+        if self.explicit_zero_prob:
+            return {
+                "pred": coeff["pred"] * values + bias["pred"],
+                "zero_probs": coeff["zero_probs"],
+            }
+
+        return dict(pred=coeff["pred"] * values + bias["pred"])
 
 
 class ComposerSCGPTModel(ComposerModel):
@@ -485,7 +654,7 @@ class ComposerSCGPTModel(ComposerModel):
         elif metric.name == "GEN":
             assert self.use_cell_conditioned_generation
             preds = outputs["cell_conditioned_gen_preds"]
-        elif (metric.name == "Spearman"):
+        elif metric.name == "Spearman":
             preds = outputs["gen_preds"]
             target = gen_expr_raw
         else:
