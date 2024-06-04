@@ -1,7 +1,6 @@
 # %%
 import copy
 import json
-import logging
 import os
 import sys
 import time
@@ -35,8 +34,6 @@ matplotlib.rcParams["savefig.transparent"] = False
 warnings.filterwarnings("ignore")
 torch.cuda.set_device(0)
 
-logger = logging.getLogger(__name__)
-
 # %% [markdown]
 #  ## Training Settings
 
@@ -47,7 +44,7 @@ hyperparameter_defaults = dict(
     data_name="adamson",  # "norman", "adamson"
     load_model="../save/scGPT_human",
     max_seq_len=1536,
-    lr=1e-4,
+    lr=1e-5,
     batch_size=16,
     grad_accu_to_batch_size=64,
     n_bins=0,
@@ -102,6 +99,7 @@ save_dir = Path(f"./save/dev_perturb_{data_name}-{time.strftime('%b%d-%H-%M')}/"
 save_dir.mkdir(parents=True, exist_ok=True)
 print(f"saving to {save_dir}")
 
+logger = scg.logger
 scg.utils.add_file_handler(logger, save_dir / "run.log")
 # log running date and current git commit
 logger.info(f"Running on {time.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -342,7 +340,7 @@ def eval_perturb(loader: DataLoader, model, device: torch.device) -> Dict:
 # %%
 best_val_loss = float("inf")
 best_val_corr = 0
-best_model = None
+best_model = model
 patience = 0
 
 for epoch in range(1, config.epochs + 1):
@@ -357,9 +355,17 @@ for epoch in range(1, config.epochs + 1):
     )
 
     val_res = eval_perturb(valid_loader, model, device)
-    val_metrics = compute_perturbation_metrics(
-        val_res, pert_data.adata[pert_data.adata.obs["condition"] == "ctrl"]
-    )
+    try:
+        val_metrics = compute_perturbation_metrics(
+            val_res, pert_data.adata[pert_data.adata.obs["condition"] == "ctrl"]
+        )
+    except:
+        val_metrics = {
+            "pearson": -1,
+            "pearson_de": -1,
+            "pearson_delta": -1,
+            "pearson_de_delta": -1,
+        }
     logger.info(f"val_metrics at epoch {epoch}: ")
     logger.info(val_metrics)
     wandb.log({f"valid/{k}": v for k, v in val_metrics.items()})
@@ -514,9 +520,17 @@ for p in perts_to_plot:
 test_loader = pert_data.dataloader["test_loader"]
 test_res = eval_perturb(test_loader, best_model, device)
 # test_metrics, test_pert_res = compute_metrics(test_res)
-test_metrics = compute_perturbation_metrics(
-    test_res, pert_data.adata[pert_data.adata.obs["condition"] == "ctrl"]
-)
+try:
+    test_metrics = compute_perturbation_metrics(
+        test_res, pert_data.adata[pert_data.adata.obs["condition"] == "ctrl"]
+    )
+except:
+    test_metrics = {
+        "pearson": -1,
+        "pearson_de": -1,
+        "pearson_delta": -1,
+        "pearson_de_delta": -1,
+    }
 print(test_metrics)
 
 # save the dicts in json

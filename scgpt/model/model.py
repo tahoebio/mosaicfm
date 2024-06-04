@@ -303,7 +303,7 @@ class SCGPTModel(nn.Module):
         CCE: bool = False,
         MVC: bool = False,
         ECS: bool = False,
-        do_sample: bool = False,
+        # do_sample: bool = False,  # fix the do_sample
     ) -> Mapping[str, Tensor]:
         processed_values = values
         transformer_output = self._encode(
@@ -360,15 +360,14 @@ class SCGPTModel(nn.Module):
             )
             with torch.cuda.amp.autocast(enabled=amp):
                 output_dict = self(
-                    mapped_input_gene_ids,
-                    input_values,
-                    input_pert_flags,
-                    src_key_padding_mask=src_key_padding_mask,
+                    mapped_input_gene_ids.to(device),
+                    input_values.to(device),
+                    input_pert_flags.to(device),
+                    src_key_padding_mask=src_key_padding_mask.to(device),
                     CLS=False,
                     CCE=False,
                     MVC=False,
                     ECS=False,
-                    do_sample=True,
                 )
             output_values = output_dict["mlm_output"].float()
             pred_gene_values = torch.zeros_like(ori_gene_values)
