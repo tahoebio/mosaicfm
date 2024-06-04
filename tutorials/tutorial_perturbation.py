@@ -48,7 +48,8 @@ hyperparameter_defaults = dict(
     load_model="../save/scGPT_human",
     max_seq_len=1536,
     lr=1e-4,
-    batch_size=64,
+    batch_size=16,
+    grad_accu_to_batch_size=64,
     n_bins=0,
     dropout=0,
     epochs=15,
@@ -80,6 +81,7 @@ include_zero_gene = "all"  # include zero expr genes in training input, "all", "
 
 # settings for optimizer
 eval_batch_size = config.batch_size
+accumulation_steps = config.grad_accu_to_batch_size // config.batch_size
 schedule_interval = 1
 
 # dataset and evaluation choices
@@ -171,11 +173,10 @@ model = ComposerSCGPTModel(model_config=model_config, collator_config=collator_c
 
 model.load_state_dict(torch.load(model_file)["state"]["model"], strict=True)
 model = model.model
-model.to(device)
-wandb.watch(model)
 
 model.perturbation_post_init()
-
+model.to(device)
+wandb.watch(model)
 
 # %%
 
@@ -186,12 +187,16 @@ scheduler = torch.optim.lr_scheduler.StepLR(optimizer, schedule_interval, gamma=
 scaler = torch.cuda.amp.GradScaler(enabled=config.amp)
 
 
-def train(model: nn.Module, train_loader: torch.utils.data.DataLoader) -> None:
+def train(
+    model: nn.Module,
+    train_loader: torch.utils.data.DataLoader,
+    accumulation_steps,
+) -> None:
     """
     Train the model for one epoch.
     """
     model.train()
-    total_loss, total_mse = 0.0, 0.0
+    total_loss, total_mse = 0.0, 0.0  # for logging
     log_interval = config.log_interval
     start_time = time.time()
 
@@ -203,11 +208,6 @@ def train(model: nn.Module, train_loader: torch.utils.data.DataLoader) -> None:
         ori_gene_values = x[:, 0].view(batch_size, n_genes)
         pert_flags = x[:, 1].long().view(batch_size, n_genes)
         target_gene_values = batch_data.y  # (batch_size, n_genes)
-
-        # TODO: try add the size factor to the model decoder as well
-        # TODO: append cls
-        # TODO: predict Ax + b style as the output predictions
-        # TODO: Is there a way to input only non-zero genes
 
         if include_zero_gene in ["all", "batch-wise"]:
             if include_zero_gene == "all":
@@ -235,10 +235,10 @@ def train(model: nn.Module, train_loader: torch.utils.data.DataLoader) -> None:
 
         with torch.cuda.amp.autocast(enabled=config.amp):
             output_dict = model(
-                mapped_input_gene_ids,
-                input_values,
-                input_pert_flags,
-                src_key_padding_mask=src_key_padding_mask,
+                mapped_input_gene_ids.to(device),
+                input_values.to(device),
+                input_pert_flags.to(device),
+                src_key_padding_mask=src_key_padding_mask.to(device),
             )
             output_values = output_dict["mlm_output"]
 
@@ -247,28 +247,31 @@ def train(model: nn.Module, train_loader: torch.utils.data.DataLoader) -> None:
             )  # Use all
             loss = loss_mse = criterion(output_values, target_values, masked_positions)
 
-        model.zero_grad()
+        loss = loss / accumulation_steps
         scaler.scale(loss).backward()
-        scaler.unscale_(optimizer)
-        with warnings.catch_warnings(record=True) as w:
-            warnings.filterwarnings("always")
-            torch.nn.utils.clip_grad_norm_(
-                model.parameters(),
-                1.0,
-                error_if_nonfinite=False if scaler.is_enabled() else True,
-            )
-            if len(w) > 0:
-                logger.warning(
-                    f"Found infinite gradient. This may be caused by the gradient "
-                    f"scaler. The current scale is {scaler.get_scale()}. This warning "
-                    "can be ignored if no longer occurs after autoscaling of the scaler."
+
+        if (batch + 1) % accumulation_steps == 0:
+            scaler.unscale_(optimizer)
+            with warnings.catch_warnings(record=True) as w:
+                warnings.filterwarnings("always")
+                torch.nn.utils.clip_grad_norm_(
+                    model.parameters(),
+                    1.0,
+                    error_if_nonfinite=False if scaler.is_enabled() else True,
                 )
-        scaler.step(optimizer)
-        scaler.update()
+                if len(w) > 0:
+                    logger.warning(
+                        f"Found infinite gradient. This may be caused by the gradient "
+                        f"scaler. The current scale is {scaler.get_scale()}. This warning "
+                        "can be ignored if no longer occurs after autoscaling of the scaler."
+                    )
+            scaler.step(optimizer)
+            scaler.update()
+            model.zero_grad()
 
         wandb.log({"train/loss": loss.item()})
 
-        total_loss += loss.item()
+        total_loss += loss.item() * accumulation_steps
         total_mse += loss_mse.item()
         if batch % log_interval == 0 and batch > 0:
             lr = scheduler.get_last_lr()[0]
@@ -325,13 +328,13 @@ def eval_perturb(loader: DataLoader, model, device: torch.device) -> Dict:
     results["pert_cat"] = np.array(pert_cat)
     pred = torch.stack(pred)
     truth = torch.stack(truth)
-    results["pred"] = pred.detach().cpu().numpy().astype(np.float)
-    results["truth"] = truth.detach().cpu().numpy().astype(np.float)
+    results["pred"] = pred.detach().cpu().numpy().astype(float)
+    results["truth"] = truth.detach().cpu().numpy().astype(float)
 
     pred_de = torch.stack(pred_de)
     truth_de = torch.stack(truth_de)
-    results["pred_de"] = pred_de.detach().cpu().numpy().astype(np.float)
-    results["truth_de"] = truth_de.detach().cpu().numpy().astype(np.float)
+    results["pred_de"] = pred_de.detach().cpu().numpy().astype(float)
+    results["truth_de"] = truth_de.detach().cpu().numpy().astype(float)
 
     return results
 
@@ -350,6 +353,7 @@ for epoch in range(1, config.epochs + 1):
     train(
         model,
         train_loader,
+        accumulation_steps,
     )
 
     val_res = eval_perturb(valid_loader, model, device)
@@ -359,17 +363,6 @@ for epoch in range(1, config.epochs + 1):
     logger.info(f"val_metrics at epoch {epoch}: ")
     logger.info(val_metrics)
     wandb.log({f"valid/{k}": v for k, v in val_metrics.items()})
-
-    # test_loader = pert_data.dataloader["test_loader"]
-    # test_res = eval_perturb(test_loader, model, device)
-    # test_metrics = compute_perturbation_metrics(
-    #     test_res, pert_data.adata[pert_data.adata.obs["condition"] == "ctrl"]
-    # )
-    # logger.info(f"test_metrics at epoch {epoch}: ")
-    # logger.info(test_metrics)
-    # wandb.log({f"test/{k}": v for k, v in test_metrics.items()})
-
-    # torch.save(model.state_dict(), save_dir / f"model_{epoch}.pt")
 
     elapsed = time.time() - epoch_start_time
     logger.info(f"| end of epoch {epoch:3d} | time: {elapsed:5.2f}s | ")
@@ -393,7 +386,7 @@ for epoch in range(1, config.epochs + 1):
     #     save_dir / f"model_{epoch}.pt",
     # )
 
-    scheduler.step()  # TODO: have this back
+    scheduler.step()
 
 
 # %%
