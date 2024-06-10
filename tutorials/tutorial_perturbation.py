@@ -231,7 +231,7 @@ def train(
                 input_values, dtype=torch.bool, device=device
             )
 
-        with torch.cuda.amp.autocast(enabled=config.amp):
+        with torch.cuda.amp.autocast(enabled=config.amp, dtype=torch.bfloat16):
             output_dict = model(
                 mapped_input_gene_ids.to(device),
                 input_values.to(device),

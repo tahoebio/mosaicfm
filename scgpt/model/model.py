@@ -358,7 +358,7 @@ class SCGPTModel(nn.Module):
             src_key_padding_mask = torch.zeros_like(
                 input_values, dtype=torch.bool, device=device
             )
-            with torch.cuda.amp.autocast(enabled=amp):
+            with torch.cuda.amp.autocast(enabled=amp, dtype=torch.bfloat16):
                 output_dict = self(
                     mapped_input_gene_ids.to(device),
                     input_values.to(device),
