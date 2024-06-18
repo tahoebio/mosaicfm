@@ -44,7 +44,7 @@ hyperparameter_defaults = dict(
     data_name="adamson",  # "norman", "adamson"
     load_model="../save/scGPT_human",
     max_seq_len=1536,
-    lr=1e-5,
+    lr=1e-4,
     batch_size=16,
     grad_accu_to_batch_size=64,
     n_bins=0,
@@ -55,6 +55,7 @@ hyperparameter_defaults = dict(
     decoder_adaptive_bias=False,
     log_interval=100,
     use_fast_transformer=True,
+    freeze=True,
     amp=True,
 )
 
@@ -126,9 +127,10 @@ pert_data.get_dataloader(batch_size=config.batch_size, test_batch_size=eval_batc
 
 # %%
 model_paths = {
-    "1.3B": "/scratch/hdd001/home/haotian/vevo-model",
+    "1.3B": "/scratch/hdd001/home/haotian/vevo-models/1.3B",
+    "70M": "/scratch/hdd001/home/haotian/vevo-models/70M",
 }
-model_name = "1.3B"
+model_name = "70M"
 vocab_path = os.path.join(model_paths[model_name], "vocab.json")
 vocab = GeneVocab.from_file(vocab_path)
 
@@ -172,6 +174,16 @@ model = ComposerSCGPTModel(model_config=model_config, collator_config=collator_c
 model.load_state_dict(torch.load(model_file)["state"]["model"], strict=True)
 model = model.model
 
+# print num params before freeze
+num_params = sum(p.numel() for p in model.parameters())
+logger.info(f"Number of parameters: {num_params}")  # 1,349,791,745
+# freeze parameters in transformer_encoder
+if config.freeze:
+    for param in model.transformer_encoder.parameters():
+        param.requires_grad = False
+num_grad_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+logger.info(f"Number of trainable parameters: {num_grad_params}")  # 141,189,121
+
 model.perturbation_post_init()
 model.to(device)
 wandb.watch(model)
@@ -180,8 +192,17 @@ wandb.watch(model)
 
 criterion = masked_mse_loss
 criterion_cls = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=config.lr)
-scheduler = torch.optim.lr_scheduler.StepLR(optimizer, schedule_interval, gamma=0.9)
+optimizer = torch.optim.Adam(
+    filter(lambda p: p.requires_grad, model.parameters()), lr=config.lr
+)
+warmup_factor = 1.0 / 1000
+warmup_iters = 1000
+
+scheduler = torch.optim.lr_scheduler.LambdaLR(
+    optimizer, lambda step: warmup_factor * min(1.0, step / warmup_iters)
+)
+
+# scheduler = torch.optim.lr_scheduler.StepLR(optimizer, schedule_interval, gamma=0.9)
 scaler = torch.cuda.amp.GradScaler(enabled=config.amp)
 
 
@@ -265,6 +286,7 @@ def train(
                     )
             scaler.step(optimizer)
             scaler.update()
+            scheduler.step()
             model.zero_grad()
 
         wandb.log({"train/loss": loss.item()})
@@ -279,7 +301,7 @@ def train(
             # ppl = math.exp(cur_loss)
             logger.info(
                 f"| epoch {epoch:3d} | {batch:3d}/{num_batches:3d} batches | "
-                f"lr {lr:05.4f} | ms/batch {ms_per_batch:5.2f} | "
+                f"lr {lr} | ms/batch {ms_per_batch:5.2f} | "
                 f"loss {cur_loss:5.2f} | mse {cur_mse:5.2f} |"
             )
             total_loss = 0
@@ -391,8 +413,6 @@ for epoch in range(1, config.epochs + 1):
     #     model.state_dict(),
     #     save_dir / f"model_{epoch}.pt",
     # )
-
-    scheduler.step()
 
 
 # %%
