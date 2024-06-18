@@ -3,7 +3,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=12
 #SBATCH --job-name=scGPT-large-perturb
-#SBATCH --mem=120GB
+#SBATCH --mem=60GB
 #SBATCH --gres=gpu:1
 #SBATCH --partition=a100
 #SBATCH --qos=a100_bowang
