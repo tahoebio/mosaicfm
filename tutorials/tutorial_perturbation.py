@@ -45,7 +45,7 @@ hyperparameter_defaults = dict(
     load_model="../save/scGPT_human",
     max_seq_len=1536,
     lr=1e-4,
-    batch_size=16,
+    batch_size=64,
     grad_accu_to_batch_size=64,
     n_bins=0,
     dropout=0,
@@ -55,7 +55,7 @@ hyperparameter_defaults = dict(
     decoder_adaptive_bias=False,
     log_interval=100,
     use_fast_transformer=True,
-    freeze=True,
+    freeze=False,
     amp=True,
 )
 
@@ -186,7 +186,7 @@ logger.info(f"Number of trainable parameters: {num_grad_params}")  # 141,189,121
 
 model.perturbation_post_init()
 model.to(device)
-wandb.watch(model)
+# wandb.watch(model)
 
 # %%
 
@@ -195,8 +195,8 @@ criterion_cls = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(
     filter(lambda p: p.requires_grad, model.parameters()), lr=config.lr
 )
-warmup_factor = 1.0 / 1000
-warmup_iters = 1000
+warmup_iters = 10
+warmup_factor = 1.0 / warmup_iters
 
 scheduler = torch.optim.lr_scheduler.LambdaLR(
     optimizer, lambda step: warmup_factor * min(1.0, step / warmup_iters)
