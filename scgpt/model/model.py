@@ -355,7 +355,7 @@ class SCGPTModel(nn.Module):
             mapped_input_gene_ids = map_raw_id_to_vocab_id(input_gene_ids, gene_ids)
             mapped_input_gene_ids = mapped_input_gene_ids.repeat(batch_size, 1)
 
-            src_key_padding_mask = torch.zeros_like(
+            src_key_padding_mask = torch.ones_like(
                 input_values, dtype=torch.bool, device=device
             )
             with torch.cuda.amp.autocast(enabled=amp, dtype=torch.bfloat16):

@@ -45,7 +45,7 @@ hyperparameter_defaults = dict(
     load_model="../save/scGPT_human",
     max_seq_len=1536,
     lr=1e-4,
-    batch_size=64,
+    batch_size=16,
     grad_accu_to_batch_size=64,
     n_bins=0,
     dropout=0,
@@ -55,7 +55,7 @@ hyperparameter_defaults = dict(
     decoder_adaptive_bias=False,
     log_interval=100,
     use_fast_transformer=True,
-    freeze=False,
+    freeze=True,
     amp=True,
 )
 
@@ -130,7 +130,7 @@ model_paths = {
     "1.3B": "/scratch/hdd001/home/haotian/vevo-models/1.3B",
     "70M": "/scratch/hdd001/home/haotian/vevo-models/70M",
 }
-model_name = "70M"
+model_name = "1.3B"
 vocab_path = os.path.join(model_paths[model_name], "vocab.json")
 vocab = GeneVocab.from_file(vocab_path)
 
@@ -248,7 +248,7 @@ def train(
             mapped_input_gene_ids = mapped_input_gene_ids.repeat(batch_size, 1)
 
             # src_key_padding_mask = mapped_input_gene_ids.eq(vocab[pad_token])
-            src_key_padding_mask = torch.zeros_like(
+            src_key_padding_mask = torch.ones_like(
                 input_values, dtype=torch.bool, device=device
             )
 
