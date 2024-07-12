@@ -1,16 +1,20 @@
-from scgpt.data import DataCollator
-from streaming import StreamingDataset, StreamingDataLoader
+# Copyright (C) Vevo Therapeutics 2024. All rights reserved.
+from collections.abc import MutableSequence
+
+import numpy as np
+import torch
 from composer.core.data_spec import DataSpec
 from omegaconf import DictConfig
-from collections.abc import MutableSequence
-import torch
-import numpy as np
+from streaming import StreamingDataLoader, StreamingDataset
+
+from scgpt.data import DataCollator
 
 
-
-def build_dataloader(loader_cfg: DictConfig,
-                     collator_cfg: DictConfig,
-                     device_batch_size: int) -> DataSpec:
+def build_dataloader(
+    loader_cfg: DictConfig,
+    collator_cfg: DictConfig,
+    device_batch_size: int,
+) -> DataSpec:
     """Builds a dataloader from a config.
 
     Args:
@@ -36,7 +40,7 @@ def build_dataloader(loader_cfg: DictConfig,
         mlm_probability = collator_cfg.mlm_probability
     collate_fn = DataCollator(
         do_padding=collator_cfg.get("do_padding", True),
-        pad_token_id= collator_cfg.pad_token_id,
+        pad_token_id=collator_cfg.pad_token_id,
         pad_value=collator_cfg.pad_value,
         do_mlm=collator_cfg.get("do_mlm", True),
         do_binning=collator_cfg.get("do_binning", True),
@@ -47,18 +51,17 @@ def build_dataloader(loader_cfg: DictConfig,
         data_style=collator_cfg.data_style,
         num_bins=collator_cfg.get("num_bins", 51),
         right_binning=collator_cfg.get("right_binning", False),
-
     )
 
     data_loader = StreamingDataLoader(
         dataset,
         batch_size=device_batch_size,
         collate_fn=collate_fn,
-        drop_last = loader_cfg.get("drop_last", False),
-        num_workers = loader_cfg.get("num_workers", 8),
-        pin_memory = loader_cfg.get("pin_memory", True),
-        prefetch_factor = loader_cfg.get("prefetch_factor", 48),
-        persistent_workers = loader_cfg.get("persistent_workers", True)
+        drop_last=loader_cfg.get("drop_last", False),
+        num_workers=loader_cfg.get("num_workers", 8),
+        pin_memory=loader_cfg.get("pin_memory", True),
+        prefetch_factor=loader_cfg.get("prefetch_factor", 48),
+        persistent_workers=loader_cfg.get("persistent_workers", True),
     )
     return DataSpec(dataloader=data_loader)
 

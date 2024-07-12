@@ -1,12 +1,13 @@
+# Copyright (C) Vevo Therapeutics 2024. All rights reserved.
+from typing import Dict, List, Mapping, Optional, Tuple, Union
+
 import numpy as np
 import torch
-from typing import Dict, List, Mapping, Optional, Tuple, Union
 from transformers import DefaultDataCollator
 
 
 class DataCollator(DefaultDataCollator):
-    """
-    Data collator for the mask value learning task. It pads the sequences to
+    """Data collator for the mask value learning task. It pads the sequences to
     the maximum length in the batch and masks the gene expression values.
 
     Args:
@@ -39,22 +40,24 @@ class DataCollator(DefaultDataCollator):
         num_bins (:obj:`int`): the number of bins to use for binning the expression
         right_binning (:obj:`bool`): whether to use right sided-binning. Torch default is False
     """
-    def __init__(self,
-    do_padding: bool = True,
-    pad_token_id: Optional[int] = None,
-    pad_value: int = 0,
-    do_mlm: bool = True,
-    do_binning: bool = True,
-    mlm_probability: float = 0.15,
-    mask_value: int = -1,
-    max_length: Optional[int] = None,
-    sampling: bool = True,
-    reserve_keys: List[str] = [],
-    keep_first_n_tokens: int = 1,
-    data_style: str = "pcpt",
-    num_bins: int = 51,
-    right_binning: bool = False,
-    return_tensors: str = "pt",
+
+    def __init__(
+        self,
+        do_padding: bool = True,
+        pad_token_id: Optional[int] = None,
+        pad_value: int = 0,
+        do_mlm: bool = True,
+        do_binning: bool = True,
+        mlm_probability: float = 0.15,
+        mask_value: int = -1,
+        max_length: Optional[int] = None,
+        sampling: bool = True,
+        reserve_keys: List[str] = [],
+        keep_first_n_tokens: int = 1,
+        data_style: str = "pcpt",
+        num_bins: int = 51,
+        right_binning: bool = False,
+        return_tensors: str = "pt",
     ):
         super().__init__(return_tensors=return_tensors)
         self.do_padding = do_padding
@@ -94,14 +97,15 @@ class DataCollator(DefaultDataCollator):
         if self.keep_first_n_tokens < 0 or self.keep_first_n_tokens > self.max_length:
             raise ValueError(
                 "`keep_first_n_tokens` must be between 0 and `max_length` "
-                f"({self.max_length})."
+                f"({self.max_length}).",
             )
 
         if self.data_style not in ["pcpt", "gen", "both"]:
             raise ValueError("`data_style` must be one of 'pcpt', 'gen', 'both'.")
 
     def __call__(
-        self, examples: List[Dict[str, torch.Tensor]]
+        self,
+        examples: List[Dict[str, torch.Tensor]],
     ) -> Dict[str, torch.Tensor]:
         """
         Args:
@@ -142,10 +146,11 @@ class DataCollator(DefaultDataCollator):
         return data_dict
 
     def _call_pcpt(
-        self, examples: List[Dict[str, torch.Tensor]]
+        self,
+        examples: List[Dict[str, torch.Tensor]],
     ) -> Dict[str, torch.Tensor]:
-        """
-        Each example is like:
+        """Each example is like:
+
             {'id': tensor(184117),
             'genes': tensor([36572, 17868, ..., 17072]),
             'expressions': tensor([ 0.,  2., ..., 18.])}
@@ -177,7 +182,9 @@ class DataCollator(DefaultDataCollator):
                     right=self.right_binning,
                 )
             genes, expressions = self._sample_or_truncate_plus_pad(
-                genes, expressions, max_length=_max_length
+                genes,
+                expressions,
+                max_length=_max_length,
             )  # torch tensors of length _max_length
             padded_genes.append(genes)
             padded_expressions.append(expressions)
@@ -193,7 +200,8 @@ class DataCollator(DefaultDataCollator):
         # mask
         if self.do_mlm:
             masked_expressions = self._mask(
-                padded_expressions, self.keep_first_n_tokens
+                padded_expressions,
+                self.keep_first_n_tokens,
             )
         else:
             masked_expressions = padded_expressions
@@ -202,11 +210,12 @@ class DataCollator(DefaultDataCollator):
         return data_dict
 
     def _call_gen(
-        self, examples: List[Dict[str, torch.Tensor]]
+        self,
+        examples: List[Dict[str, torch.Tensor]],
     ) -> Dict[str, torch.Tensor]:
-        """
-        This method will simply return the gene ids, with needed padding. There is
-        no masking for pure generative training, and no input of expr values.
+        """This method will simply return the gene ids, with needed padding.
+        There is no masking for pure generative training, and no input of expr
+        values.
 
         Each example is like:
             {'id': tensor(184117),
@@ -246,7 +255,9 @@ class DataCollator(DefaultDataCollator):
                     right=self.right_binning,
                 )
             genes, expressions = self._sample_or_truncate_plus_pad(
-                genes, expressions, max_length=_max_length
+                genes,
+                expressions,
+                max_length=_max_length,
             )
             padded_pcpt_genes.append(genes)
             padded_pcpt_expressions.append(expressions)
@@ -265,10 +276,10 @@ class DataCollator(DefaultDataCollator):
         examples: List[Dict[str, torch.Tensor]],
         gen_prob: Optional[float] = None,
     ) -> Dict[str, torch.Tensor]:
-        """
-        This method will split the input into the peception part and the generation
-        part. The perception part will be processed into gene ids and expr values,
-        and the generation part will be processed into gene ids only.
+        """This method will split the input into the peception part and the
+        generation part. The perception part will be processed into gene ids and
+        expr values, and the generation part will be processed into gene ids
+        only.
 
         By default, the mlm_probability will be used to select the genese assigned to
         the generation part.
@@ -352,25 +363,38 @@ class DataCollator(DefaultDataCollator):
                 ratio=gen_prob,
             )
             pcpt_genes = torch.cat(
-                (genes[: self.keep_first_n_tokens], pcpt_genes), dim=0
+                (genes[: self.keep_first_n_tokens], pcpt_genes),
+                dim=0,
             )
             pcpt_expressions = torch.cat(
-                (expressions[: self.keep_first_n_tokens], pcpt_expressions), dim=0
+                (expressions[: self.keep_first_n_tokens], pcpt_expressions),
+                dim=0,
             )
 
             pcpt_original_exp = torch.cat(
-                (original_expressions[: self.keep_first_n_tokens], pcpt_original_exp), dim=0
+                (original_expressions[: self.keep_first_n_tokens], pcpt_original_exp),
+                dim=0,
             )
 
-            pcpt_genes, pcpt_expressions, pcpt_original_exp = self._sample_or_truncate_plus_pad(
-                pcpt_genes, pcpt_expressions,pcpt_original_exp, max_length=pcpt_length
+            pcpt_genes, pcpt_expressions, pcpt_original_exp = (
+                self._sample_or_truncate_plus_pad(
+                    pcpt_genes,
+                    pcpt_expressions,
+                    pcpt_original_exp,
+                    max_length=pcpt_length,
+                )
             )  # torch tensors of length pcpt_length
             padded_pcpt_genes.append(pcpt_genes)
             padded_pcpt_expressions.append(pcpt_expressions)
             padded_pcpt_original_exp.append(pcpt_original_exp)
 
-            gen_genes, gen_expressions,gen_original_exp = self._sample_or_truncate_plus_pad(
-                gen_genes, gen_expressions,gen_original_exp, max_length=gen_length
+            gen_genes, gen_expressions, gen_original_exp = (
+                self._sample_or_truncate_plus_pad(
+                    gen_genes,
+                    gen_expressions,
+                    gen_original_exp,
+                    max_length=gen_length,
+                )
             )  # torch tensors of length gen_length
             padded_gen_genes.append(gen_genes)
             padded_gen_expressions.append(gen_expressions)
@@ -399,8 +423,9 @@ class DataCollator(DefaultDataCollator):
         *arrays: torch.Tensor,
         ratio: float,
     ) -> Tuple[torch.Tensor, ...]:
-        """
-        Randomly split the arrays into two parts. The first part will have the
+        """Randomly split the arrays into two parts. The first part will have
+        the.
+
         length of `ratio * length`, and the second part will have the length of
         `(1 - ratio) * length`. When multiple arrays are provided, they are supposed
         to have the same length.
@@ -434,9 +459,7 @@ class DataCollator(DefaultDataCollator):
         return first_parts + second_parts
 
     def get_mlm_probability(self) -> float:
-        """
-        Get the mlm probability for the current step.
-        """
+        """Get the mlm probability for the current step."""
         if isinstance(self.mlm_probability, float):
             return self.mlm_probability
         elif isinstance(self.mlm_probability, list):
@@ -445,15 +468,15 @@ class DataCollator(DefaultDataCollator):
         else:
             raise ValueError(
                 "mlm_probability must be a float or a list of floats, "
-                f"but got {type(self.mlm_probability)} instead."
+                f"but got {type(self.mlm_probability)} instead.",
             )
 
     def _mask(
-        self, expressions: torch.Tensor, keep_first_n_tokens: int = 0
+        self,
+        expressions: torch.Tensor,
+        keep_first_n_tokens: int = 0,
     ) -> torch.Tensor:
-        """
-        Mask the expression values with MLM.
-        """
+        """Mask the expression values with MLM."""
         if keep_first_n_tokens > 0:
             result_ = self._mask(
                 expressions[:, keep_first_n_tokens:],
@@ -520,13 +543,15 @@ class DataCollator(DefaultDataCollator):
         else:
             # keep the first n tokens unchanged
             _n = self.keep_first_n_tokens
-            indices = torch.randperm(len(arrays[0]) - _n, device=device)[: max_length - _n]
+            indices = torch.randperm(len(arrays[0]) - _n, device=device)[
+                : max_length - _n
+            ]
             indices = torch.cat([torch.arange(_n), indices + _n], dim=0)
         return tuple(array[indices] for array in arrays)
 
     def _pad(
         self,
-        *arrays: torch.Tensor, # First tensor is genes, rest are  expressions
+        *arrays: torch.Tensor,  # First tensor is genes, rest are  expressions
         max_length: int,
     ):
         device = arrays[0].device
@@ -540,7 +565,7 @@ class DataCollator(DefaultDataCollator):
                         dtype=array.dtype,
                         device=device,
                     ),
-                ]
+                ],
             )
             for i, array in enumerate(arrays)
         )
@@ -548,9 +573,12 @@ class DataCollator(DefaultDataCollator):
 
 @torch.no_grad()
 def binning(
-    row: Union[np.ndarray, torch.Tensor], n_bins: int, right=False
+    row: Union[np.ndarray, torch.Tensor],
+    n_bins: int,
+    right=False,
 ) -> Union[np.ndarray, torch.Tensor]:
     """Binning the row into n_bins.
+
     Args:
         row (Union[np.ndarray, torch.Tensor]):
             The row to be binned.
@@ -584,7 +612,7 @@ def binning(
         binned_row = torch.bucketize(row, bins, right=right)
     if return_np:
         binned_row = binned_row.astype(dtype)
-    if not(right):
+    if not (right):
         # Left sided binning satisfies the condition
         # bins[i - 1] < row < bins[i]
         # For right=False, the smallest binned values is 0

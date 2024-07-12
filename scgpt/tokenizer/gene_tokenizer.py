@@ -1,20 +1,19 @@
+# Copyright (C) Vevo Therapeutics 2024. All rights reserved.
 import json
 import pickle
-from pathlib import Path
 from collections import Counter, OrderedDict
+from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple, Union
-from typing_extensions import Self
 
 import numpy as np
 import torch
 import torchtext.vocab as torch_vocab
 from torchtext.vocab import Vocab
+from typing_extensions import Self
 
 
 class GeneVocab(Vocab):
-    """
-    Vocabulary for genes.
-    """
+    """Vocabulary for genes."""
 
     def __init__(
         self,
@@ -40,7 +39,7 @@ class GeneVocab(Vocab):
             _vocab = gene_list_or_vocab
             if specials is not None:
                 raise ValueError(
-                    "receive non-empty specials when init from a Vocab object."
+                    "receive non-empty specials when init from a Vocab object.",
                 )
         elif isinstance(gene_list_or_vocab, list):
             _vocab = self._build_vocab_from_iterator(
@@ -50,7 +49,7 @@ class GeneVocab(Vocab):
             )
         else:
             raise ValueError(
-                "gene_list_or_vocab must be a list of gene names or a Vocab object."
+                "gene_list_or_vocab must be a list of gene names or a Vocab object.",
             )
         super().__init__(_vocab.vocab)
         if default_token is not None and default_token in self:
@@ -58,9 +57,10 @@ class GeneVocab(Vocab):
 
     @classmethod
     def from_file(cls, file_path: Union[Path, str]) -> Self:
-        """
-        Load the vocabulary from a file. The file should be either a pickle or a
-        json file of token to index mapping.
+        """Load the vocabulary from a file.
+
+        The file should be either a pickle or a json file of token to index
+        mapping.
         """
         if isinstance(file_path, str):
             file_path = Path(file_path)
@@ -75,7 +75,7 @@ class GeneVocab(Vocab):
         else:
             raise ValueError(
                 f"{file_path} is not a valid file type. "
-                "Only .pkl and .json are supported."
+                "Only .pkl and .json are supported.",
             )
 
     @classmethod
@@ -84,8 +84,7 @@ class GeneVocab(Vocab):
         token2idx: Dict[str, int],
         default_token: Optional[str] = "<pad>",
     ) -> Self:
-        """
-        Load the vocabulary from a dictionary.
+        """Load the vocabulary from a dictionary.
 
         Args:
             token2idx (Dict[str, int]): Dictionary mapping tokens to indices.
@@ -109,8 +108,7 @@ class GeneVocab(Vocab):
         specials: Optional[List[str]] = None,
         special_first: bool = True,
     ) -> Vocab:
-        """
-        Build a Vocab from an iterator. This function is modified from
+        """Build a Vocab from an iterator. This function is modified from
         torchtext.vocab.build_vocab_from_iterator. The original function always
         splits tokens into characters, which is not what we want.
 
@@ -150,17 +148,14 @@ class GeneVocab(Vocab):
 
     @property
     def pad_token(self) -> Optional[str]:
-        """
-        Get the pad token.
-        """
+        """Get the pad token."""
         if getattr(self, "_pad_token", None) is None:
             self._pad_token = None
         return self._pad_token
 
     @pad_token.setter
     def pad_token(self, pad_token: str) -> None:
-        """
-        Set the pad token. Will not add the pad token to the vocabulary.
+        """Set the pad token. Will not add the pad token to the vocabulary.
 
         Args:
             pad_token (str): Pad token, should be in the vocabulary.
@@ -170,17 +165,14 @@ class GeneVocab(Vocab):
         self._pad_token = pad_token
 
     def save_json(self, file_path: Union[Path, str]) -> None:
-        """
-        Save the vocabulary to a json file.
-        """
+        """Save the vocabulary to a json file."""
         if isinstance(file_path, str):
             file_path = Path(file_path)
         with file_path.open("w") as f:
             json.dump(self.get_stoi(), f, indent=2)
 
     def set_default_token(self, default_token: str) -> None:
-        """
-        Set the default token.
+        """Set the default token.
 
         Args:
             default_token (str): Default token.
@@ -198,8 +190,7 @@ def tokenize_batch(
     include_zero_gene: bool = False,
     cls_id: int = "<cls>",
 ) -> List[Tuple[Union[torch.Tensor, np.ndarray]]]:
-    """
-    Tokenize a batch of data. Returns a list of tuple (gene_id, count).
+    """Tokenize a batch of data. Returns a list of tuple (gene_id, count).
 
     Args:
         data (array-like): A batch of data, with shape (batch_size, n_features).
@@ -214,7 +205,7 @@ def tokenize_batch(
     if data.shape[1] != len(gene_ids):
         raise ValueError(
             f"Number of features in data ({data.shape[1]}) does not match "
-            f"number of gene_ids ({len(gene_ids)})."
+            f"number of gene_ids ({len(gene_ids)}).",
         )
     tokenized_data = []
     for i in range(len(data)):
@@ -244,8 +235,7 @@ def pad_batch(
     pad_value: int = 0,
     cls_appended: bool = True,
 ) -> Dict[str, torch.Tensor]:
-    """
-    Pad a batch of data. Returns a list of Dict[gene_id, count].
+    """Pad a batch of data. Returns a list of Dict[gene_id, count].
 
     Args:
         batch (list): A list of tuple (gene_id, count).
@@ -276,15 +266,17 @@ def pad_batch(
                 [
                     gene_ids,
                     torch.full(
-                        (max_len - len(gene_ids),), pad_id, dtype=gene_ids.dtype
+                        (max_len - len(gene_ids),),
+                        pad_id,
+                        dtype=gene_ids.dtype,
                     ),
-                ]
+                ],
             )
             values = torch.cat(
                 [
                     values,
                     torch.full((max_len - len(values),), pad_value, dtype=values.dtype),
-                ]
+                ],
             )
         gene_ids_list.append(gene_ids)
         values_list.append(values)
@@ -307,8 +299,9 @@ def tokenize_and_pad_batch(
     cls_token: str = "<cls>",
     return_pt: bool = True,
 ) -> Dict[str, torch.Tensor]:
-    """
-    Tokenize and pad a batch of data. Returns a list of tuple (gene_id, count).
+    """Tokenize and pad a batch of data.
+
+    Returns a list of tuple (gene_id, count).
     """
     cls_id = vocab[cls_token]
     tokenized_data = tokenize_batch(
@@ -320,7 +313,12 @@ def tokenize_and_pad_batch(
         cls_id=cls_id,
     )
     batch_padded = pad_batch(
-        tokenized_data, max_len, vocab, pad_token, pad_value, cls_appended=append_cls
+        tokenized_data,
+        max_len,
+        vocab,
+        pad_token,
+        pad_value,
+        cls_appended=append_cls,
     )
     return batch_padded
 
@@ -331,8 +329,7 @@ def random_mask_value(
     mask_value: int = -1,
     pad_value: int = 0,
 ) -> torch.Tensor:
-    """
-    Randomly mask a batch of data.
+    """Randomly mask a batch of data.
 
     Args:
         values (array-like):

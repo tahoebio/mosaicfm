@@ -1,3 +1,4 @@
+# Copyright (C) Vevo Therapeutics 2024. All rights reserved.
 import json
 import os
 from pathlib import Path
@@ -30,8 +31,7 @@ def get_batch_cell_embeddings(
     gene_ids=None,
     use_batch_labels=False,
 ) -> np.ndarray:
-    """
-    Get the cell embeddings for a batch of cells.
+    """Get the cell embeddings for a batch of cells.
 
     Args:
         adata (AnnData): The AnnData object.
@@ -47,7 +47,6 @@ def get_batch_cell_embeddings(
     Returns:
         np.ndarray: The cell embeddings.
     """
-
     count_matrix = adata.X
     count_matrix = (
         count_matrix if isinstance(count_matrix, np.ndarray) else count_matrix.A
@@ -91,7 +90,9 @@ def get_batch_cell_embeddings(
 
     if cell_embedding_mode == "cls":
         dataset = Dataset(
-            count_matrix, gene_ids, batch_ids if use_batch_labels else None
+            count_matrix,
+            gene_ids,
+            batch_ids if use_batch_labels else None,
         )
         collator = DataCollator(
             do_padding=True,
@@ -115,22 +116,25 @@ def get_batch_cell_embeddings(
 
         device = next(model.parameters()).device
         cell_embeddings = np.zeros(
-            (len(dataset), model_configs["embsize"]), dtype=np.float32
+            (len(dataset), model_configs["embsize"]),
+            dtype=np.float32,
         )
         with torch.no_grad(), torch.cuda.amp.autocast(enabled=True):
             count = 0
             for data_dict in tqdm(data_loader, desc="Embedding cells"):
                 input_gene_ids = data_dict["gene"].to(device)
                 src_key_padding_mask = input_gene_ids.eq(
-                    vocab[model_configs["pad_token"]]
+                    vocab[model_configs["pad_token"]],
                 )
                 embeddings = model._encode(
                     input_gene_ids,
                     data_dict["expr"].to(device),
                     src_key_padding_mask=src_key_padding_mask,
-                    batch_labels=data_dict["batch_labels"].to(device)
-                    if use_batch_labels
-                    else None,
+                    batch_labels=(
+                        data_dict["batch_labels"].to(device)
+                        if use_batch_labels
+                        else None
+                    ),
                 )
 
                 embeddings = embeddings[:, 0, :]  # get the <cls> position embedding
@@ -138,7 +142,9 @@ def get_batch_cell_embeddings(
                 cell_embeddings[count : count + len(embeddings)] = embeddings
                 count += len(embeddings)
         cell_embeddings = cell_embeddings / np.linalg.norm(
-            cell_embeddings, axis=1, keepdims=True
+            cell_embeddings,
+            axis=1,
+            keepdims=True,
         )
     else:
         raise ValueError(f"Unknown cell embedding mode: {cell_embedding_mode}")
@@ -156,8 +162,7 @@ def embed_data(
     use_fast_transformer: bool = True,
     return_new_adata: bool = False,
 ) -> AnnData:
-    """
-    Preprocess anndata and embed the data using the model.
+    """Preprocess anndata and embed the data using the model.
 
     Args:
         adata_or_file (Union[AnnData, PathLike]): The AnnData object or the path to the
@@ -215,7 +220,7 @@ def embed_data(
     gene_ids_in_vocab = np.array(adata.var["id_in_vocab"])
     logger.info(
         f"match {np.sum(gene_ids_in_vocab >= 0)}/{len(gene_ids_in_vocab)} genes "
-        f"in vocabulary of size {len(vocab)}."
+        f"in vocabulary of size {len(vocab)}.",
     )
     adata = adata[:, adata.var["id_in_vocab"] >= 0]
 

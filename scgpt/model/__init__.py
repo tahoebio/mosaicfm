@@ -1,15 +1,26 @@
-from .model import (
-    SCGPTModel,
-    ComposerSCGPTModel,
+# Copyright (C) Vevo Therapeutics 2024. All rights reserved.
+from .blocks import (
+    CategoryValueEncoder,
+    ContinuousValueEncoder,
+    ExprDecoder,
+    GeneEncoder,
+    MVCDecoder,
+    SCGPTBlock,
+    SCGPTEncoder,
 )
-from .blocks import (SCGPTBlock,
-                    SCGPTEncoder,
-                    GeneEncoder,
-                    ContinuousValueEncoder,
-                    CategoryValueEncoder,
-                    ExprDecoder,
-                    MVCDecoder
-                    )
+from .model import (
+    ComposerSCGPTModel,
+    SCGPTModel,
+)
 
-__all__ = ["SCGPTModel", "ComposerSCGPTModel", "SCGPTBlock", "SCGPTEncoder", "GeneEncoder",
-           "ContinuousValueEncoder", "CategoryValueEncoder", "ExprDecoder", "MVCDecoder"]
+__all__ = [
+    "SCGPTModel",
+    "ComposerSCGPTModel",
+    "SCGPTBlock",
+    "SCGPTEncoder",
+    "GeneEncoder",
+    "ContinuousValueEncoder",
+    "CategoryValueEncoder",
+    "ExprDecoder",
+    "MVCDecoder",
+]

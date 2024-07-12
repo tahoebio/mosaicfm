@@ -1,12 +1,13 @@
-import boto3
+# Copyright (C) Vevo Therapeutics 2024. All rights reserved.
 import logging
 from pathlib import Path
 from urllib.parse import urlparse
 
+import boto3
+
+
 def add_file_handler(logger: logging.Logger, log_file_path: Path):
-    """
-    Add a file handler to the logger.
-    """
+    """Add a file handler to the logger."""
     h = logging.FileHandler(log_file_path)
 
     # format showing time, name, function, and message
@@ -18,11 +19,42 @@ def add_file_handler(logger: logging.Logger, log_file_path: Path):
     h.setLevel(logger.level)
     logger.addHandler(h)
 
-def download_file_from_s3_url(s3_url, local_file_path):
-    """
-    Downloads a file from an S3 URL to the specified local path.
 
-    :param s3_url: S3 URL of the file in the format "s3://bucket_name/path/to/file".
+def download_file_from_s3_url(s3_url, local_file_path):
+    """Downloads a file from an S3 URL to the specified local path.
+
+    :param s3_url: S3 URL of the file in the format
+    "s3://bucket_name/path/to/file".
+     :param s3_url: S3 URL of the file in the format     "
+    s3://bucket_name/path/to/file".
+     :param s3_url: S3 URL of the file in the format     "
+    s3://bucket_name/path/to/file".
+     :param s3_url: S3 URL of the file in the format     "
+    s3://bucket_name/path/to/file".
+     :param s3_url: S3 URL of the file in the format     "
+    s3://bucket_name/path/to/file".
+     :param s3_url: S3 URL of the file in the format "
+    s3://bucket_name/path/to/file".
+     :param s3_url: S3 URL of the file in the format     "
+    s3://bucket_name/path/to/file".
+     :param s3_url: S3 URL of the file in the format     "
+    s3://bucket_name/path/to/file".
+    :param s3_url: S3 URL of the file in the format
+        "s3://bucket_name/path/to/file".
+    :param s3_url: S3 URL of the file in the format "
+        s3://bucket_name/path/to/file".
+    :param s3_url: S3 URL of the file in the format "
+        s3://bucket_name/path/to/file".
+    :param s3_url: S3 URL of the file in the format "
+        s3://bucket_name/path/to/file".
+    :param s3_url: S3 URL of the file in the format
+        "s3://bucket_name/path/to/file".
+    :param s3_url: S3 URL of the file in the format "
+        s3://bucket_name/path/to/file".
+    :param s3_url: S3 URL of the file in the format
+        "s3://bucket_name/path/to/file".
+    :param s3_url: S3 URL of the file in the format
+        "s3://bucket_name/path/to/file".
     :param local_file_path: Local path where the file will be saved.
     :return: The local path to the downloaded file.
     """

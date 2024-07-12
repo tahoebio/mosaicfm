@@ -1,11 +1,14 @@
+# Copyright (C) Vevo Therapeutics 2024. All rights reserved.
+from typing import Optional, Tuple, Union
+
 import numpy as np
 import torch
-from scgpt.data import DataCollator, CountDataset
+from omegaconf import DictConfig
 from tqdm.auto import tqdm
+
+from scgpt.data import CountDataset, DataCollator
 from scgpt.model import SCGPTModel
 from scgpt.tokenizer import GeneVocab
-from typing import Optional, Union, Tuple
-from omegaconf import DictConfig
 
 
 def get_batch_embeddings(
@@ -20,8 +23,7 @@ def get_batch_embeddings(
     max_length: Optional[int] = None,
     return_gene_embeddings: bool = False,
 ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
-    """
-    Get the cell embeddings for a batch of cells.
+    """Get the cell embeddings for a batch of cells.
 
     Args:
         adata (AnnData): The AnnData object.
@@ -100,14 +102,15 @@ def get_batch_embeddings(
     }
 
     with torch.no_grad(), torch.cuda.amp.autocast(
-        enabled=True, dtype=dtype_from_string[model_cfg["precision"]]
+        enabled=True,
+        dtype=dtype_from_string[model_cfg["precision"]],
     ):
         count = 0
         pbar = tqdm(total=len(dataset), desc="Embedding cells")
         for data_dict in data_loader:
             input_gene_ids = data_dict["gene"].to(device)
             src_key_padding_mask = ~input_gene_ids.eq(
-                collator_cfg["pad_token_id"]
+                collator_cfg["pad_token_id"],
             )  # Note the negation here compared to the public scGPT implementation!
             embeddings = model._encode(
                 src=input_gene_ids,
@@ -131,7 +134,9 @@ def get_batch_embeddings(
             count += len(embeddings)
             pbar.update(len(embeddings))
     cell_embeddings = cell_embeddings / np.linalg.norm(
-        cell_embeddings, axis=1, keepdims=True
+        cell_embeddings,
+        axis=1,
+        keepdims=True,
     )
     if return_gene_embeddings:
         gene_embedding_counts = np.expand_dims(gene_embedding_counts, axis=1)
@@ -142,8 +147,8 @@ def get_batch_embeddings(
             where=gene_embedding_counts != 0,
         )
         gene2idx = vocab.get_stoi()
-        all_gene_ids = np.array([id for id in gene2idx.values()])
-        gene_embeddings = gene_embeddings[all_gene_ids,:]
+        all_gene_ids = np.array(list(gene2idx.values()))
+        gene_embeddings = gene_embeddings[all_gene_ids, :]
         return cell_embeddings, gene_embeddings
     else:
         return cell_embeddings

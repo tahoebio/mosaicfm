@@ -1,28 +1,29 @@
+# Copyright (C) Vevo Therapeutics 2024. All rights reserved.
+import logging
+from typing import Mapping, Optional, Tuple
+
 import torch
 import torch.nn.functional as F
-from torch import nn, Tensor
-from typing import Mapping, Optional, Tuple
 from composer.models import ComposerModel
 from composer.utils import dist
-from scgpt.loss import masked_mse_loss, MaskedMseMetric, MaskedSpearmanMetric
-from scgpt.model.blocks import (
-    SCGPTBlock,
-    SCGPTEncoder,
-    GeneEncoder,
-    ContinuousValueEncoder,
-    CategoryValueEncoder,
-    ExprDecoder,
-    MVCDecoder,
-    init_config_defaults,
-    gene_encoder_defaults
-)
 from llmfoundry.models.utils.param_init_fns import (
     MODEL_INIT_REGISTRY,
 )
-
 from omegaconf import DictConfig
+from torch import Tensor, nn
 
-import logging
+from scgpt.loss import MaskedMseMetric, MaskedSpearmanMetric, masked_mse_loss
+from scgpt.model.blocks import (
+    CategoryValueEncoder,
+    ContinuousValueEncoder,
+    ExprDecoder,
+    GeneEncoder,
+    MVCDecoder,
+    SCGPTBlock,
+    SCGPTEncoder,
+    gene_encoder_defaults,
+    init_config_defaults,
+)
 
 log = logging.getLogger(__name__)
 
@@ -69,19 +70,22 @@ class SCGPTModel(nn.Module):
         # TODO: add dropout in the GeneEncoder
 
         self.gene_encoder = GeneEncoder(
-            self.vocab_size, self.d_model, padding_idx=self.pad_token_id,
+            self.vocab_size,
+            self.d_model,
+            padding_idx=self.pad_token_id,
             use_norm=self.gene_encoder_config["use_norm"],
         )
         self.flag_encoder = nn.Embedding(2, self.d_model)
 
         expression_encoder_config = model_config.expression_encoder
         self.input_emb_style = expression_encoder_config.get(
-            "input_emb_style", "continuous"
+            "input_emb_style",
+            "continuous",
         )
         if self.input_emb_style not in ["category", "continuous"]:
             raise ValueError(
                 f"input_emb_style should be one of category or continuous"
-                f"got {self.input_emb_style}"
+                f"got {self.input_emb_style}",
             )
         if self.input_emb_style == "continuous":
             self.expression_encoder = ContinuousValueEncoder(
@@ -89,7 +93,7 @@ class SCGPTModel(nn.Module):
                 dropout=expression_encoder_config.get("dropout", 0.1),
                 max_value=expression_encoder_config.get("max_value", 512),
                 activation=expression_encoder_config.get("activation", "relu"),
-                use_norm=expression_encoder_config.get("use_norm", False)
+                use_norm=expression_encoder_config.get("use_norm", False),
             )
         elif self.input_emb_style == "category":
             assert self.n_input_bins > 0
@@ -139,7 +143,7 @@ class SCGPTModel(nn.Module):
 
         if self.init_device != "meta":
             log.info(
-                f'MosaicML recommends using config.init_device="meta" with Composer + FSDP for faster initialization.'
+                f'MosaicML recommends using config.init_device="meta" with Composer + FSDP for faster initialization.',
             )
             self.apply(self.param_init_fn)
 
@@ -185,10 +189,11 @@ class SCGPTModel(nn.Module):
         if gen_genes is not None:
             gen_token_embs = self.gene_encoder(gen_genes)  # (batch, gen_len, embsize)
             self.cur_gene_token_embs = torch.cat(
-                [pcpt_token_embs, gen_token_embs], dim=1
+                [pcpt_token_embs, gen_token_embs],
+                dim=1,
             )
             gen_flags = self.flag_encoder(
-                torch.tensor(1, device=pcpt_values.device)
+                torch.tensor(1, device=pcpt_values.device),
             ).expand(gen_genes.shape[0], gen_genes.shape[1], -1)
 
             gen_total_embs = gen_token_embs + gen_flags
@@ -209,7 +214,9 @@ class SCGPTModel(nn.Module):
         return pcpt_output, gen_output
 
     def _get_cell_emb_from_layer(
-        self, layer_output: Tensor, weights: Tensor = None
+        self,
+        layer_output: Tensor,
+        weights: Tensor = None,
     ) -> Tensor:
         """
         Args:
@@ -227,7 +234,7 @@ class SCGPTModel(nn.Module):
         elif self.cell_emb_style == "w-pool":
             if weights is None:
                 raise ValueError("weights is required when cell_emb_style is w-pool")
-            if weights.dim() != 2:
+            if weights.dim() != 2:  # noqa: PLR2004
                 raise ValueError("weights should be 2D")
             cell_emb = torch.sum(layer_output * weights.unsqueeze(2), dim=1)
             cell_emb = F.normalize(cell_emb, p=2, dim=1)  # (batch, embsize)
@@ -259,13 +266,11 @@ class SCGPTModel(nn.Module):
         *args,
         **kwargs,
     ) -> Mapping[str, Tensor]:
-        """
-        Wrapper to call either generative_forward or perceptual_forward, depending
-        on the value of the "generative_training" kwarg.
-        """
+        """Wrapper to call either generative_forward or perceptual_forward,
+        depending on the value of the "generative_training" kwarg."""
         if "generative_training" not in kwargs:
             raise ValueError(
-                "Please specify generative_training argument and set to False if doing inference"
+                "Please specify generative_training argument and set to False if doing inference",
             )
         # get the generative training flag and pop it out
         do_generative_training = kwargs.pop("generative_training")
@@ -385,7 +390,8 @@ class ComposerSCGPTModel(ComposerModel):
         self.criterion = masked_mse_loss
         self.pad_token_id = collator_config.pad_token_id
         self.use_cell_conditioned_generation = model_config.get(
-            "use_cell_conditioned_generation", False
+            "use_cell_conditioned_generation",
+            False,
         )
         self.model = SCGPTModel(
             model_config=model_config,
@@ -485,7 +491,7 @@ class ComposerSCGPTModel(ComposerModel):
         elif metric.name == "GEN":
             assert self.use_cell_conditioned_generation
             preds = outputs["cell_conditioned_gen_preds"]
-        elif (metric.name == "Spearman"):
+        elif metric.name == "Spearman":
             preds = outputs["gen_preds"]
             target = gen_expr_raw
         else:

@@ -1,12 +1,15 @@
-import os
-import numpy as np
-import scanpy as sc
-from scgpt.data import CountDataset
-from scgpt.tokenizer import GeneVocab
-import datasets
-from typing import Optional, List, Dict
+# Copyright (C) Vevo Therapeutics 2024. All rights reserved.
 import argparse
 import logging
+import os
+from typing import Dict, List, Optional
+
+import datasets
+import numpy as np
+import scanpy as sc
+
+from scgpt.data import CountDataset
+from scgpt.tokenizer import GeneVocab
 
 
 def find_h5ad_files(directory: str, ignore_subdirs: Optional[List] = None) -> List[str]:
@@ -36,7 +39,10 @@ def dataset_generator(adata_files: List[str], vocab: GeneVocab, gene_col: str) -
             adata.X.toarray() if not isinstance(adata.X, np.ndarray) else adata.X
         )
         torch_dataset = CountDataset(
-            count_matrix, gene_ids_in_vocab, cls_token_id=vocab["<cls>"], pad_value=-2
+            count_matrix,
+            gene_ids_in_vocab,
+            cls_token_id=vocab["<cls>"],
+            pad_value=-2,
         )
         for item in torch_dataset:
             yield item
@@ -81,13 +87,19 @@ def process_data(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Process h5ad files and create datasets."
+        description="Process h5ad files and create datasets.",
     )
     parser.add_argument(
-        "--adata_dir", type=str, required=True, help="Directory containing h5ad files."
+        "--adata_dir",
+        type=str,
+        required=True,
+        help="Directory containing h5ad files.",
     )
     parser.add_argument(
-        "--ignore_dir", nargs="*", default=None, help="Directories to ignore."
+        "--ignore_dir",
+        nargs="*",
+        default=None,
+        help="Directories to ignore.",
     )
     parser.add_argument(
         "--vocab_path",
