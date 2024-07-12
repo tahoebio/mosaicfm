@@ -214,9 +214,7 @@ def embed_data(
     for s in special_tokens:
         if s not in vocab:
             vocab.append_token(s)
-    adata.var["id_in_vocab"] = [
-        vocab[gene] if gene in vocab else -1 for gene in adata.var[gene_col]
-    ]
+    adata.var["id_in_vocab"] = [vocab.get(gene, -1) for gene in adata.var[gene_col]]
     gene_ids_in_vocab = np.array(adata.var["id_in_vocab"])
     logger.info(
         f"match {np.sum(gene_ids_in_vocab >= 0)}/{len(gene_ids_in_vocab)} genes "

@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 logging.basicConfig(
     # Example of format string
     # 2022-06-29 11:22:26,152: [822018][MainThread]: INFO: Message here
-    format=f"%(asctime)s: [%(process)d][%(threadName)s]: %(levelname)s: %(name)s: %(message)s",
+    format="%(asctime)s: [%(process)d][%(threadName)s]: %(levelname)s: %(name)s: %(message)s",
 )
 logging.getLogger(__name__).setLevel("INFO")
 

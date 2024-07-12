@@ -16,7 +16,7 @@ log = logging.getLogger(__name__)
 logging.basicConfig(
     # Example of format string
     # 2022-06-29 11:22:26,152: [822018][MainThread]: INFO: Message here
-    format=f"%(asctime)s: [%(process)d][%(threadName)s]: %(levelname)s: %(name)s: %(message)s",
+    format="%(asctime)s: [%(process)d][%(threadName)s]: %(levelname)s: %(name)s: %(message)s",
 )
 logging.getLogger(__name__).setLevel("INFO")  # Train script
 
@@ -66,7 +66,7 @@ print("old gene list length:", len(old_gene_dict))
 expanded_dict = old_gene_dict.copy()
 starting_num = max(old_gene_dict.values()) + 1
 for new_gene in new_gene_list:
-    if new_gene not in old_gene_dict.keys():
+    if new_gene not in old_gene_dict:
         expanded_dict[new_gene] = starting_num
         starting_num += 1
 print("new gene dict length:", len(expanded_dict))
@@ -80,8 +80,7 @@ with open(gene_to_id_path, "w") as f:
     json.dump(master_gene_to_id, f, indent=2)
 
 obs_coords = cell_metadata[
-    (cell_metadata["is_primary_data"] == True)
-    & (cell_metadata["suspension_type"] != "na")
+    (cell_metadata["is_primary_data"]) & (cell_metadata["suspension_type"] != "na")
 ]["soma_joinid"].tolist()
 log.info(f"Number of unique cells in {VERSION} data: {len(obs_coords)}")
 

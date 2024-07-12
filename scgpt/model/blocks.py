@@ -69,8 +69,6 @@ class SCGPTBlock(nn.Module):
         >>> out = encoder_layer(src)
     """
 
-    __constants__ = ["batch_first"]
-
     def __init__(
         self,
         d_model: int,

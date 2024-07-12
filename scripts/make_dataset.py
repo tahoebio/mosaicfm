@@ -30,9 +30,7 @@ def find_h5ad_files(directory: str, ignore_subdirs: Optional[List] = None) -> Li
 def dataset_generator(adata_files: List[str], vocab: GeneVocab, gene_col: str) -> Dict:
     for chunk_id, file in enumerate(adata_files):
         adata = sc.read_h5ad(file)
-        adata.var["id_in_vocab"] = [
-            vocab[gene] if gene in vocab else -1 for gene in adata.var[gene_col]
-        ]
+        adata.var["id_in_vocab"] = [vocab.get(gene, -1) for gene in adata.var[gene_col]]
         gene_ids_in_vocab = np.array(adata.var["id_in_vocab"])
         sc.pp.filter_genes(adata, min_counts=3)
         count_matrix = (

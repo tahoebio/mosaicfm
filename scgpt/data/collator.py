@@ -323,8 +323,6 @@ class DataCollator(DefaultDataCollator):
         if gen_prob is None:
             gen_prob = self.get_mlm_probability()
 
-        device = examples[0]["genes"].device
-
         max_ori_len = max(len(example["genes"]) for example in examples)
         _max_length = self.max_length if max_ori_len >= self.max_length else max_ori_len
 
@@ -596,7 +594,7 @@ def binning(
             The binned row.
     """
     dtype = row.dtype
-    return_np = False if isinstance(row, torch.Tensor) else True
+    return_np = not (isinstance(row, torch.Tensor))
     if not isinstance(row, torch.Tensor):
         row = torch.as_tensor(row)
     GRADES = torch.linspace(0, 1, n_bins - 1, dtype=torch.float32, requires_grad=False)

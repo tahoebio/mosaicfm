@@ -1,16 +1,9 @@
 # Copyright (C) Vevo Therapeutics 2024. All rights reserved.
 import os
 
-import composer
-import numpy as np
-import scanpy as sc
-import torch
 import wandb
 from omegaconf import OmegaConf as om
-from torch.utils.data import DataLoader
 
-from scgpt.data import DataCollator
-from scgpt.model import ComposerSCGPTModel
 from scgpt.tokenizer import GeneVocab
 from scgpt.utils import download_file_from_s3_url
 

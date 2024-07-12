@@ -143,7 +143,7 @@ class SCGPTModel(nn.Module):
 
         if self.init_device != "meta":
             log.info(
-                f'MosaicML recommends using config.init_device="meta" with Composer + FSDP for faster initialization.',
+                'MosaicML recommends using config.init_device="meta" with Composer + FSDP for faster initialization.',
             )
             self.apply(self.param_init_fn)
 
@@ -500,10 +500,7 @@ class ComposerSCGPTModel(ComposerModel):
 
     def get_metrics(self, is_train=False):
         # defines which metrics to use in each phase of training
-        if is_train:
-            metric_dict = self.train_metrics
-        else:
-            metric_dict = self.val_metrics
+        metric_dict = self.train_metrics if is_train else self.val_metrics
         return metric_dict
 
     def flops_per_batch(self, batch: Mapping) -> int:
