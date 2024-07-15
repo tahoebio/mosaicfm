@@ -41,7 +41,7 @@ torch.cuda.set_device(0)
 
 hyperparameter_defaults = dict(
     seed=0,
-    data_name="adamson",  # "norman", "adamson"
+    data_name="norman",  # "norman", "adamson"
     load_model="../save/scGPT_human",
     max_seq_len=1536,
     lr=1e-4,
@@ -195,11 +195,9 @@ criterion_cls = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(
     filter(lambda p: p.requires_grad, model.parameters()), lr=config.lr
 )
-warmup_iters = 10
-warmup_factor = 1.0 / warmup_iters
-
+warmup_iters = 1000
 scheduler = torch.optim.lr_scheduler.LambdaLR(
-    optimizer, lambda step: warmup_factor * min(1.0, step / warmup_iters)
+    optimizer, lambda step: min(1.0, step / warmup_iters)
 )
 
 # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, schedule_interval, gamma=0.9)
