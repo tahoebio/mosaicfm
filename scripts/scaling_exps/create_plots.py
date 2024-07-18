@@ -153,7 +153,7 @@ from scipy.optimize import curve_fit
 import numpy as np
 
 def spearman_fix_cost(csv_path, save_path):
-
+    #TODO: refactor to a general csv or make it scpecific and add to readme
     data = pd.read_csv(csv_path)
 
     # Define a function to fit the Spearman vs. FLOPs data
