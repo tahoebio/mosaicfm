@@ -21,8 +21,11 @@ def get_files(path: str) -> Iterable[str]:
     return [str(f.resolve()) for f in Path(path).glob("data*.arrow")]
 
 def process_data(out_root: str, dataset_path: str):
+    print(dataset_path)
     num_files = len(get_files(dataset_path))
+    print(num_files)
     arg_tuples = each_task(out_root, dataset_path)
+    print(list(arg_tuples))
 
     with Pool(initializer=init_worker, processes=num_files) as pool:
         for _ in pool.imap(convert_to_mds, arg_tuples):
@@ -33,6 +36,9 @@ def process_data(out_root: str, dataset_path: str):
 
 def each_task(out_root: str, dataset_root_path: str) -> Iterable[Tuple[str, str]]:
     for dataset_path in get_files(dataset_root_path):
+        print(dataset_root_path)
+        print(dataset_path)
+        print(dataset_path.split(dataset_root_path))
         arrow_path = dataset_path.split(dataset_root_path)[1]
         chunk_suffix = arrow_path.split("-")[1]
         sub_out_root = f"{out_root}/chunk_{chunk_suffix}"
