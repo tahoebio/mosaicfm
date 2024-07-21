@@ -1,0 +1,21 @@
+Items to complete.
+
+- [X] script to generate necessary files from raw data
+    - [X] AnnData of CCLE counts
+    - [X] mean discretized dependency scores for DepMap genes
+    - [X] cross validation splits for cell lines and genes
+- [X] script to create PCA baseline embeddings
+    - [X] cell line embeddings (principal components)
+    - [X] gene embeddings (PC loadings)
+    - [X] contextual gene embeddings (gene_idx+pca15)
+- [X] script to create null model predictions
+    - [X] marginal task
+    - [X] cell line specific task
+- [ ] script to create cell line embeddings, mean gene embeddings, contextual gene embeddings from given model
+    - [X] integrate scGPT code
+    - [ ] integrate Geneformer (Hugging Face) code
+    - [ ] integrate Geneformer (NVIDIA, given computed predictions) code
+- [X] scripts and shell files to train random forests
+- [X] notebook to evaluate results
+- [ ] upload data directory to AWS
+- [ ] README.md documentation
