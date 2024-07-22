@@ -43,6 +43,7 @@ hyperparameter_defaults = dict(
     seed=0,
     data_name="norman",  # "norman", "adamson"
     load_model="../save/scGPT_human",
+    model_name="70M",
     max_seq_len=1536,
     lr=1e-4,
     batch_size=16,
@@ -130,7 +131,7 @@ model_paths = {
     "1.3B": "/scratch/hdd001/home/haotian/vevo-models/1.3B",
     "70M": "/scratch/hdd001/home/haotian/vevo-models/70M",
 }
-model_name = "1.3B"
+model_name = config.model_name
 vocab_path = os.path.join(model_paths[model_name], "vocab.json")
 vocab = GeneVocab.from_file(vocab_path)
 
