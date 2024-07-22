@@ -2,7 +2,7 @@
 
 Starting from a minimal DepMap benchmark directory (containing
 only raw data), this script will create the files necessary
-to run the benchmark tasks.
+to run the benchmark tasks for scGPT and Geneformer models.
 
 Requires:
 
@@ -18,6 +18,10 @@ Creates:
     [base_path]/misc/genes-by-mean-disc.csv
     [base_path]/misc/split-cls.csv
     [base_path]/misc/split-genes-lt5gt70.csv
+    [base_path]/geneformer/ccle-nonzero-medians.pkl
+    [base_path]/geneformer/adata.h5ad
+    [base_path]/geneformer/tokenized.dataset
+    [base_path]/geneformer/tokenized-new-medians.dataset
 
 """
 
@@ -25,11 +29,14 @@ Creates:
 import os
 import argparse
 import logging
+import pickle
 import numpy as np
 import pandas as pd
 import anndata as ad
+import scanpy as sc
 from scipy.sparse import csr_matrix
 from sklearn.model_selection import KFold
+from geneformer import TranscriptomeTokenizer
 
 # set up logging
 log = logging.getLogger(__name__)
@@ -148,6 +155,56 @@ def main(base_path):
     outpath = os.path.join(base_path, "misc/split-genes-lt5gt70.csv")
     df.to_csv(outpath, index=False)
     log.info(f"saved five folds for gene split to {outpath}")
+
+    # save dictionary of new gene medians for use with Geneformer
+    counts = sc.read_h5ad(os.path.join(base_path, "counts.h5ad"))
+    sc.pp.normalize_total(counts)
+    counts_X = np.array(counts.X.todense())
+    counts_X[counts_X == 0] = np.nan
+    medians = np.nanmedian(counts_X, axis=0)
+    medians = np.nan_to_num(medians, nan=0.0)
+    medians_dict = dict(zip(counts.var.index.tolist(), medians))
+    outpath = os.path.join(base_path, "geneformer/ccle-nonzero-medians.pkl")
+    with open(outpath, "wb") as f:
+        pickle.dump(medians_dict, f)
+    log.info(f"saved nonzero medians to {outpath}")
+
+    # process AnnData for use with Geneformer's tokenizer
+    counts = sc.read_h5ad(os.path.join(base_path, "counts.h5ad"))
+    sc.pp.calculate_qc_metrics(counts, inplace=True)
+    counts.obs["n_counts"] = counts.obs["total_counts"]
+    counts.obs["ccle_name"] = counts.obs.index
+    counts.var["ensembl_id"] = counts.var.index
+    outpath = os.path.join(base_path, "geneformer/adata.h5ad")
+    counts.write_h5ad(outpath)
+    log.info(f"processed and saved AnnData for Geneformer at {outpath}")
+
+    # tokenize for Geneformer using Genecorpus medians
+    log.info("tokenizing for Geneformer with default medians")
+    tk = TranscriptomeTokenizer(
+        {"ModelID": "ModelID", "ccle_name": "CCLEName"},
+        nproc=4
+    )
+    tk.tokenize_data(
+        os.path.join(base_path, "geneformer/"),
+        os.path.join(base_path, "geneformer/"),
+        "tokenized",
+        file_format="h5ad"
+    )
+
+    # tokenize for Geneformer using new medians
+    log.info("tokenizing for Geneformer with new medians")
+    tk = TranscriptomeTokenizer(
+        {"ModelID": "ModelID", "ccle_name": "CCLEName"},
+        nproc=4,
+        gene_median_file=os.path.join(base_path, "geneformer/ccle-nonzero-medians.pkl")
+    )
+    tk.tokenize_data(
+        os.path.join(base_path, "geneformer/"),
+        os.path.join(base_path, "geneformer/"),
+        "tokenized-new-medians",
+        file_format="h5ad"
+    )
 
 if __name__ == "__main__":
     
