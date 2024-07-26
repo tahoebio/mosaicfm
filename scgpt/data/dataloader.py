@@ -1,5 +1,6 @@
 # Copyright (C) Vevo Therapeutics 2024. All rights reserved.
 from collections.abc import MutableSequence
+from typing import Dict
 
 import numpy as np
 import torch
@@ -67,7 +68,13 @@ def build_dataloader(
 
 
 class CountDataset(torch.utils.data.Dataset):
-    def __init__(self, count_matrix, gene_ids, cls_token_id, pad_value):
+    def __init__(
+        self,
+        count_matrix: np.ndarray,
+        gene_ids: np.ndarray,
+        cls_token_id: int,
+        pad_value: float,
+    ):
         """
         Args:
             count_matrix (np.ndarray): A 2D expression count array of shape (n_cells, n_genes)
@@ -80,10 +87,10 @@ class CountDataset(torch.utils.data.Dataset):
         self.cls_token_id = cls_token_id
         self.pad_value = pad_value
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.count_matrix)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx) -> Dict[str, torch.Tensor]:
         row = self.count_matrix[idx]
         nonzero_idx = np.nonzero(row)[0]
         values = row[nonzero_idx]

@@ -28,5 +28,5 @@ setup(
         exclude=[".github*", "envs*", "tutorials*", "tests*", "scripts*", "mcli*"],
     ),
     install_requires=install_requires,
-    python_requires=">=3.9",
+    python_requires=">=3.10",
 )

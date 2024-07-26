@@ -40,7 +40,7 @@ def masked_relative_error(
 
 
 class MaskedMseMetric(Metric):
-    def __init__(self, name, **kwargs):
+    def __init__(self, name: str, **kwargs):
         super().__init__(**kwargs)
         self.name = name
         self.add_state(
@@ -75,7 +75,7 @@ class MaskedMseMetric(Metric):
 
 
 class MaskedSpearmanMetric(Metric):
-    def __init__(self, name, **kwargs):
+    def __init__(self, name: str, **kwargs):
         super().__init__(**kwargs)
         self.name = name
         self.add_state(

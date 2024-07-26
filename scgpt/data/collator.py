@@ -52,7 +52,7 @@ class DataCollator(DefaultDataCollator):
         mask_value: int = -1,
         max_length: Optional[int] = None,
         sampling: bool = True,
-        reserve_keys: List[str] = [],
+        reserve_keys: Optional[List[str]] = None,
         keep_first_n_tokens: int = 1,
         data_style: str = "pcpt",
         num_bins: int = 51,
@@ -69,7 +69,7 @@ class DataCollator(DefaultDataCollator):
         self.mask_value = mask_value
         self.max_length = max_length
         self.sampling = sampling
-        self.reserve_keys = reserve_keys
+        self.reserve_keys = reserve_keys if reserve_keys is not None else []
         self.keep_first_n_tokens = keep_first_n_tokens
         self.data_style = data_style
         self.num_bins = num_bins
@@ -162,7 +162,7 @@ class DataCollator(DefaultDataCollator):
             :obj:`Dict[str, torch.Tensor]`: a dictionary of tensors.
         """
         if not isinstance(examples[0], Mapping):
-            return NotImplementedError
+            raise NotImplementedError
 
         device = examples[0]["genes"].device
 
@@ -314,7 +314,7 @@ class DataCollator(DefaultDataCollator):
                                         [ 1.,  3., ..., 19.]])}
         """
         if not isinstance(examples[0], Mapping):
-            return NotImplementedError
+            raise NotImplementedError
 
         if not self.do_mlm:
             # if not doing mlm, then the perceptrual part is the whole input
@@ -573,7 +573,7 @@ class DataCollator(DefaultDataCollator):
 def binning(
     row: Union[np.ndarray, torch.Tensor],
     n_bins: int,
-    right=False,
+    right: bool = False,
 ) -> Union[np.ndarray, torch.Tensor]:
     """Binning the row into n_bins.
 
