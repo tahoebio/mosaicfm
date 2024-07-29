@@ -1,9 +1,6 @@
 import os
 import numpy as np
 import scanpy as sc
-
-import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from scgpt.data import CountDataset
 from scgpt.tokenizer import GeneVocab
 import datasets

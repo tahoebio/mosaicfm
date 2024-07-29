@@ -1,14 +1,9 @@
 import wandb
 from omegaconf import OmegaConf as om
 import os
-import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 from scgpt.model import ComposerSCGPTModel
-import composer
 from scgpt.tokenizer import GeneVocab
 from scgpt.utils import download_file_from_s3_url
-import torch
 import scanpy as sc
 from torch.utils.data import DataLoader
 from scgpt.data import DataCollator

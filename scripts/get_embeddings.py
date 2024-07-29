@@ -6,10 +6,6 @@ import numpy as np
 import scanpy as sc
 import torch
 from omegaconf import OmegaConf as om
-
-import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 from scgpt.model import ComposerSCGPTModel
 from scgpt.tasks import get_batch_embeddings
 from scgpt.tokenizer import GeneVocab
