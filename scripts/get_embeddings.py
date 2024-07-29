@@ -6,7 +6,6 @@ import numpy as np
 import scanpy as sc
 import torch
 from omegaconf import OmegaConf as om
-
 from scgpt.model import ComposerSCGPTModel
 from scgpt.tasks import get_batch_embeddings
 from scgpt.tokenizer import GeneVocab

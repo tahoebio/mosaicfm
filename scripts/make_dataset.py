@@ -56,7 +56,9 @@ def process_data(args):
     gene_col = "feature_name"
 
     datasets.disable_caching()
-    chunks = np.array_split(adata_files, 10)
+    # chunks = np.array_split(adata_files, 10)
+    chunks = np.array_split(adata_files, 2)
+
     for i, chunk in enumerate(chunks):
         save_path = os.path.join(args.output_dir, f"chunk_{i}.dataset")
         if os.path.exists(save_path):
