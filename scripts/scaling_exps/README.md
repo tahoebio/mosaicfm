@@ -5,7 +5,7 @@ To create a randomly downsampled version of dataset you need to have its origina
 I used [version "2024-04-29" of cellxgene](s3://vevo-ml-datasets/vevo-scgpt/datasets/cellxgene_primary_2024-04-29_MDS/) and randomly downsampled 10, 1 and 0.5 percent of that.
 
 1. download original cellxgene in your pvc as MDS format: s3://vevo-ml-datasets/vevo-scgpt/datasets/cellxgene_primary_2024-04-29_MDS/
-2. provide source_dir, dest_dir and desired percentage to run download_cellxgene_random_sample.py script
+2. provide source_dir, dest_dir and desired percentage to run download_cellxgene_random_sample.py script.
 ```
 bash scaling_exps/download_cellxgene_random_sample.py /vevo/datasets/cellxgene_primary_2024-04-29_MDS/train /vevo/datasets/one_percent_cellxgene_primary_2024-04-29_MDS/train 1
 ```
@@ -16,17 +16,18 @@ You can find the paths to all existing subsampled datasets in the pdf document.
 
  
 ## Biased Sampling
-I followed Geneformer's low-diversity dataset (Fig2.b) setup which uses [Madissoon study]{https://www.nature.com/articles/s41588-022-01243-4} to create the downsampled dataset. This study selects 3 tissues and around ~239K cells. 
+I followed Geneformer's low-diversity dataset (Fig2.b) setup which uses [Madissoon study]{https://www.nature.com/articles/s41588-022-01243-4} to create the downsampled dataset. This study selects 3 tissues and around ~239K cells. As the start I needed to find the ids of Madissoon's study inside cellxgene dataset. You can find this subset in [this link](https://cellxgene.cziscience.com/e/2c3621b8-1870-4e06-b169-252ab243118d.cxg/) and look for the ids corresponding to each tissue (You can also find the dataset-ids) in the pdf document.
 
--   Steps to recreate the dataset:
-1. run scripts/scaling_exps/download_cellxgene_biased_ds.py to download the specified subset of cellxgene. You need to provide the version. If you want to use another subset of cellxgene edit the dataset-ids in the code.
-The script download the chunks in h5ad format. 
+-   Then I took these steps to recreate the dataset:
+1. run scripts/scaling_exps/download_cellxgene_biased_ds.py to download the specified subset of cellxgene. You need to provide the version (You can find the latest available version of dataset in [here](https://chanzuckerberg.github.io/cellxgene-census/cellxgene_census_docsite_data_release_info.html)).
+ If you want to use another subset of cellxgene edit the dataset-ids in the code.
+The script download the chunks in h5ad format given the  version of cellxgene dataset.
 
 ``` Example:
 python scripts/scaling_exps/download_cellxgene_biased_ds.py --version 2024-07-01 --old_vocab /vevo/datasets/cellxgene_primary_2024-04-29_MDS/cellxgene_primary_2024-04-29_vocab.json --dest_dir /vevo/datasets/biased_ds_cellxgene_primary_2024-07-01/train
 ```
 
-2. Run scripts/make_dataset.py to convert each h5ad chunks to in format
+2. Run scripts/make_dataset.py to convert each h5ad chunks to  huggingface format:
 ``` Example:
 python scripts/make_dataset.py --adata_dir /vevo/datasets/biased_ds_cellxgene --vocab_path /vevo/datasets/biased_ds_cellxgene/train/cellxgene_primary_2024-07-01_vocab.json --output_dir /vevo/datasets/biased_ds_cellxgene_hf
 
@@ -46,6 +47,7 @@ python scripts/generate_mds.py --out_root /vevo/datasets/biased_ds_cellxgene_pri
 
 5. Upload the biased downsampled dataset to s3 with ``` aws sync ```.
 
+- Note that  the pickle library is used to generate the MDS dataset. To  unpickle the dataset during training the same version of pickle needs to be used.  So to prevent errors, make sure that you use the same environment for dataset generation and training (I used scgpt-dev). 
 
 
 # Plotting
