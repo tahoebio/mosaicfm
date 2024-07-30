@@ -72,10 +72,19 @@ mamba env create -f envs/composer_env.yml
 conda activate composer_env
 ```
 > [!NOTE]  
-> If you are running MosaicFM an H100 GPU you may see `'sm_90' is not a recognized processor for this target (ignoring processor)`. This is expected and safe to ignore.
+> If you are on an H100 GPU you may see `'sm_90' is not a recognized processor for this target (ignoring processor)`. This is expected and safe to ignore.
 
 
 ## Datasets
+
+The following datasets are used for training and evaluation:
+
+| Dataset Path                             | Description                                                                                                     |
+|------------------------------------------|-----------------------------------------------------------------------------------------------------------------|
+| `s3://vevo-ml-datasets/vevo-scgpt/datasets/cellxgene_primary_2024-04-29_MDS/`     | MDS dataset comprising ~45M cells from Apr 2024 release by CellxGene and Vevo dataset 35 (resistance-is-futile) |
+| `s3://vevo-ml-datasets/vevo-scgpt/datasets/cellxgene_primary_2023-12-15_MDS_v2/` | MDS dataset comprising ~34M cells from Dec 2023 release by CellxGene.                                           |
+ |`s3://vevo-ml-datasets/umair/scgpt-depmap/`                        | Root folder containing Depmap dataset and model predictions                                                     |
+|`s3://vevo-drives/drive_3/ANALYSIS/analysis_107/`                  | Root folder MSigDB data and model predictions                                                                   |
 
 ## Pre-trained Models
 
@@ -87,4 +96,29 @@ conda activate composer_env
 | **MosaicFM-9M**             | sscgpt-test-9m-full-data           | `s3:/vevo-scgpt/models/scgpt-test-9m-full-data/`              | di7kyyf1 |
 
 ## Results
+Links to evaluations and benchmarks are provided below:
+ - [Depmap](scripts/depmap/README.md)
+ - [MSigDB](https://github.com/vevotx/shreshth_sandbox/tree/main/analysis/04_msigdb_benchmark/README.md)
+
+Please refer to our  technical report  for detailed results and analysis: [Internal Link](https://drive.google.com/drive/u/1/folders/1KeAXZ9zNYh4uHbLL5XUMmreAkHXW4yXo)
+
+## Developer Guidelines
+We use the black code style and the Ruff linter to mantain consistency across contributions.
+Please set-up `pre-commit` and run the repository level hooks before committing any changes.
+Please do not push to master directly. Create a new branch and open a pull request for review.
+To set up pre-commit hooks, run the following command:
+```shell
+pip install pre-commit
+pre-commit install
+pre-commit run --all-files # Before committing
+```
+We also encourage new contributions to use type annotations and docstrings for functions and classes. In the future we
+will add `pyright` and `pydocstyle` checks to the pre-commit hooks. We encourage the use of Google style docstrings.
+
+If you will be launching any training/evaluation runs, please also make sure you have access to `s3`, `wandb` 
+and `mcli`/`runai` by reaching out on #infrastructure.
+
+
+
+
 ## Acknowledgements
