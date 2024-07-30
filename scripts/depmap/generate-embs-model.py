@@ -21,10 +21,10 @@ from geneformer.tokenizer import TOKEN_DICTIONARY_FILE
 from omegaconf import OmegaConf as om
 from tqdm import tqdm, trange
 
-from scgpt.data import CountDataset, DataCollator
-from scgpt.model import ComposerSCGPTModel
-from scgpt.tasks import get_batch_embeddings
-from scgpt.tokenizer import GeneVocab
+from mosaicfm.data import CountDataset, DataCollator
+from mosaicfm.model import ComposerSCGPTModel
+from mosaicfm.tasks import get_batch_embeddings
+from mosaicfm.tokenizer import GeneVocab
 
 # set up logging
 log = logging.getLogger(__name__)

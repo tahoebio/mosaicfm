@@ -118,7 +118,9 @@ will add `pyright` and `pydocstyle` checks to the pre-commit hooks. We encourage
 If you will be launching any training/evaluation runs, please also make sure you have access to `s3`, `wandb` 
 and `mcli`/`runai` by reaching out on #infrastructure.
 
-
-
-
 ## Acknowledgements
+We would like to thank the developers of the following open-source projects:
+ - [scGPT](https://github.com/bowang-lab/scGPT/tree/main)
+ - [llm-foundry](https://github.com/mosaicml/llm-foundry)
+ - [streaming](https://github.com/mosaicml/streaming)
+ - [datasets](https://github.com/huggingface/datasets)

@@ -8,9 +8,9 @@ import scanpy as sc
 import torch
 from omegaconf import OmegaConf as om
 
-from scgpt.model import ComposerSCGPTModel
-from scgpt.tasks import get_batch_embeddings
-from scgpt.tokenizer import GeneVocab
+from mosaicfm.model import ComposerSCGPTModel
+from mosaicfm.tasks import get_batch_embeddings
+from mosaicfm.tokenizer import GeneVocab
 
 log = logging.getLogger(__name__)
 logging.basicConfig(

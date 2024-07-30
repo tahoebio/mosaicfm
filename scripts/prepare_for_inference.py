@@ -4,8 +4,8 @@ import os
 import wandb
 from omegaconf import OmegaConf as om
 
-from scgpt.tokenizer import GeneVocab
-from scgpt.utils import download_file_from_s3_url
+from mosaicfm.tokenizer import GeneVocab
+from mosaicfm.utils import download_file_from_s3_url
 
 model_name = "scgpt-70m-1024-fix-norm-apr24-data"
 wandb_id = "55n5wvdm"

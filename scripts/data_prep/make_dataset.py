@@ -8,8 +8,8 @@ import datasets
 import numpy as np
 import scanpy as sc
 
-from scgpt.data import CountDataset
-from scgpt.tokenizer import GeneVocab
+from mosaicfm.data import CountDataset
+from mosaicfm.tokenizer import GeneVocab
 
 
 def find_h5ad_files(directory: str, ignore_subdirs: Optional[List] = None) -> List[str]:

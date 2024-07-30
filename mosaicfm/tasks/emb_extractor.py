@@ -6,9 +6,9 @@ import torch
 from omegaconf import DictConfig
 from tqdm.auto import tqdm
 
-from scgpt.data import CountDataset, DataCollator
-from scgpt.model import SCGPTModel
-from scgpt.tokenizer import GeneVocab
+from mosaicfm.data import CountDataset, DataCollator
+from mosaicfm.model import SCGPTModel
+from mosaicfm.tokenizer import GeneVocab
 
 
 def get_batch_embeddings(

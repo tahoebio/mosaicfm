@@ -31,10 +31,10 @@ from streaming.base.util import clean_stale_shared_memory
 
 install()
 
-from scgpt.data import build_dataloader
-from scgpt.model import ComposerSCGPTModel
-from scgpt.tokenizer import GeneVocab
-from scgpt.utils import download_file_from_s3_url
+from mosaicfm.data import build_dataloader
+from mosaicfm.model import ComposerSCGPTModel
+from mosaicfm.tokenizer import GeneVocab
+from mosaicfm.utils import download_file_from_s3_url
 
 log = logging.getLogger(__name__)
 
@@ -152,7 +152,7 @@ def main(cfg: DictConfig) -> composer.Trainer:
     precision: str = pop_config(cfg, "precision", must_exist=True)
 
     # Optional parameters will be set to default values if not specified.
-    default_run_name: str = os.environ.get("RUN_NAME", "scgpt")
+    default_run_name: str = os.environ.get("RUN_NAME", "mosaicfm")
     run_name: str = pop_config(
         cfg,
         "run_name",
@@ -325,7 +325,7 @@ def main(cfg: DictConfig) -> composer.Trainer:
             # 2022-06-29 11:22:26,152: rank0[822018][MainThread]: INFO: Message here
             format=f"%(asctime)s: rank{dist.get_global_rank()}[%(process)d][%(threadName)s]: %(levelname)s: %(name)s: %(message)s",
         )
-        logging.getLogger("scgpt").setLevel(
+        logging.getLogger("mosaicfm").setLevel(
             python_log_level.upper(),
         )  # vevo-scGPT module
         logging.getLogger(__name__).setLevel(python_log_level.upper())  # Train script

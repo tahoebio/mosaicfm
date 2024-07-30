@@ -12,8 +12,8 @@ from llmfoundry.models.utils.param_init_fns import (
 from omegaconf import DictConfig
 from torch import Tensor, nn
 
-from scgpt.loss import MaskedMseMetric, MaskedSpearmanMetric, masked_mse_loss
-from scgpt.model.blocks import (
+from mosaicfm.loss import MaskedMseMetric, MaskedSpearmanMetric, masked_mse_loss
+from mosaicfm.model.blocks import (
     CategoryValueEncoder,
     ContinuousValueEncoder,
     ExprDecoder,
@@ -66,8 +66,6 @@ class SCGPTModel(nn.Module):
             self.gene_encoder_config = gene_encoder_defaults
         if self.cell_emb_style not in ["cls", "avg-pool", "w-pool"]:
             raise ValueError(f"Unknown cell_emb_style: {self.cell_emb_style}")
-
-        # TODO: add dropout in the GeneEncoder
 
         self.gene_encoder = GeneEncoder(
             self.vocab_size,

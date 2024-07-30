@@ -6,8 +6,8 @@ import numpy as np
 import torch
 from omegaconf import OmegaConf as om
 
-from scgpt.model import ComposerSCGPTModel
-from scgpt.tokenizer import GeneVocab
+from mosaicfm.model import ComposerSCGPTModel
+from mosaicfm.tokenizer import GeneVocab
 
 log = logging.getLogger(__name__)
 logging.basicConfig(
