@@ -3,6 +3,7 @@ import torch.nn.functional as F
 from torchmetrics import Metric
 from torchmetrics.functional.regression import spearman_corrcoef
 
+import numpy as np
 
 def masked_mse_loss(
     input: torch.Tensor, target: torch.Tensor, mask: torch.Tensor

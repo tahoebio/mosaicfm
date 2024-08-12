@@ -1,6 +1,7 @@
 from .model import (
     SCGPTModel,
     ComposerSCGPTModel,
+    ComposerSCGPTPerturbationModel
 )
 from .blocks import (SCGPTBlock,
                     SCGPTEncoder,
@@ -11,5 +12,5 @@ from .blocks import (SCGPTBlock,
                     MVCDecoder
                     )
 
-__all__ = ["SCGPTModel", "ComposerSCGPTModel", "SCGPTBlock", "SCGPTEncoder", "GeneEncoder",
+__all__ = ["SCGPTModel", "ComposerSCGPTModel", "ComposerSCGPTPerturbationModel", "SCGPTBlock", "SCGPTEncoder", "GeneEncoder",
            "ContinuousValueEncoder", "CategoryValueEncoder", "ExprDecoder", "MVCDecoder"]
