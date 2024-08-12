@@ -1,8 +1,8 @@
 import os
 import numpy as np
 import scanpy as sc
-from scgpt.data import CountDataset
-from scgpt.tokenizer import GeneVocab
+from mosaicfm.data import CountDataset
+from mosaicfm.tokenizer import GeneVocab
 import datasets
 from typing import Optional, List, Dict
 import argparse

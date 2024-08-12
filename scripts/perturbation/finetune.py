@@ -24,8 +24,8 @@ from llmfoundry.utils.builders import (
     build_scheduler,
 )
 
-from scgpt.data import build_perturbation_dataloader
-from scgpt.model import ComposerSCGPTPerturbationModel
+from mosaicfm.data import build_perturbation_dataloader
+from mosaicfm.model import ComposerSCGPTPerturbationModel
 from perturb_callback import PerturbationCallback
 
 log = logging.getLogger(__name__)

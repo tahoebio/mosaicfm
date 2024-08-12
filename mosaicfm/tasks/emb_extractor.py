@@ -1,9 +1,9 @@
 import numpy as np
 import torch
-from scgpt.data import DataCollator, CountDataset
+from mosaicfm.data import DataCollator, CountDataset
 from tqdm.auto import tqdm
-from scgpt.model import SCGPTModel
-from scgpt.tokenizer import GeneVocab
+from mosaicfm.model import SCGPTModel
+from mosaicfm.tokenizer import GeneVocab
 from typing import Optional, Union, Tuple
 from omegaconf import DictConfig
 

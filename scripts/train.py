@@ -29,10 +29,10 @@ from rich.traceback import install
 
 install()
 
-from scgpt.data import build_dataloader
-from scgpt.model import ComposerSCGPTModel
-from scgpt.tokenizer import GeneVocab
-from scgpt.utils import download_file_from_s3_url
+from mosaicfm.data import build_dataloader
+from mosaicfm.model import ComposerSCGPTModel
+from mosaicfm.tokenizer import GeneVocab
+from mosaicfm.utils import download_file_from_s3_url
 
 
 log = logging.getLogger(__name__)

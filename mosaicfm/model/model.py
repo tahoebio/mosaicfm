@@ -8,8 +8,8 @@ import logging
 from composer.models import ComposerModel
 from composer.utils import dist
 
-from scgpt.loss import masked_mse_loss, MaskedMseMetric, MaskedSpearmanMetric
-from scgpt.model.blocks import (
+from mosaicfm.loss import masked_mse_loss, MaskedMseMetric, MaskedSpearmanMetric
+from mosaicfm.model.blocks import (
     SCGPTBlock,
     SCGPTEncoder,
     GeneEncoder,

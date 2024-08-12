@@ -5,7 +5,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scgpt.model.blocks import SCGPTEncoder, SCGPTBlock
+from mosaicfm.model.blocks import SCGPTEncoder, SCGPTBlock
 
 # get the available device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

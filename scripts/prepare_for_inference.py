@@ -1,13 +1,13 @@
 import wandb
 from omegaconf import OmegaConf as om
-from scgpt.model import ComposerSCGPTModel
+from mosaicfm.model import ComposerSCGPTModel
 import composer
-from scgpt.tokenizer import GeneVocab
-from scgpt.utils import download_file_from_s3_url
+from mosaicfm.tokenizer import GeneVocab
+from mosaicfm.utils import download_file_from_s3_url
 import torch
 import scanpy as sc
 from torch.utils.data import DataLoader
-from scgpt.data import DataCollator
+from mosaicfm.data import DataCollator
 import numpy as np
 import os
 

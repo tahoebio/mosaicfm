@@ -2,7 +2,7 @@ import numpy as np
 
 from composer.core.callback import Callback
 
-from scgpt.utils import calc_pearson_metrics
+from mosaicfm.utils import calc_pearson_metrics
 
 
 # Define your custom callback (ensure it's defined somewhere in your codebase)

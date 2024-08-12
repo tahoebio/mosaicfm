@@ -1,5 +1,5 @@
 from pathlib import Path
-from scgpt.tokenizer import GeneVocab, get_default_gene_vocab
+from mosaicfm.tokenizer import GeneVocab, get_default_gene_vocab
 
 
 def test_gene_vocab():

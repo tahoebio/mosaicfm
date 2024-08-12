@@ -8,7 +8,7 @@ import setuptools
 from setuptools import setup
 
 _PACKAGE_NAME = 'vevo-scgpt'
-_PACKAGE_DIR = 'scgpt'
+_PACKAGE_DIR = 'mosaicfm'
 _REPO_REAL_PATH = os.path.dirname(os.path.realpath(__file__))
 _PACKAGE_REAL_PATH = os.path.join(_REPO_REAL_PATH, _PACKAGE_DIR)
 
