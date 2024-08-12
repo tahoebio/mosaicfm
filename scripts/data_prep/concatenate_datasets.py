@@ -1,7 +1,9 @@
+# Copyright (C) Vevo Therapeutics 2024. All rights reserved.
 import argparse
-import datasets
 from pathlib import Path
 from typing import Iterable
+
+import datasets
 
 
 def get_files(path: str) -> Iterable[str]:
@@ -10,16 +12,15 @@ def get_files(path: str) -> Iterable[str]:
 
 
 def get_datasets(files: Iterable[str]) -> Iterable[datasets.Dataset]:
-    datasets_list = []
-    for file in files:
-        datasets_list.append(datasets.load_from_disk(file))
-    return datasets_list
+    return [datasets.load_from_disk(file) for file in files]
 
 
 def process_datasets(path: str, dataset_name: str):
     merged_dataset = datasets.concatenate_datasets(get_datasets(get_files(path)))
     merged_dataset = merged_dataset.train_test_split(
-        test_size=0.01, shuffle=True, seed=44
+        test_size=0.01,
+        shuffle=True,
+        seed=44,
     )
     train_dataset = merged_dataset["train"]
     valid_dataset = merged_dataset["test"]
@@ -40,7 +41,10 @@ if __name__ == "__main__":
         help="The directory containing dataset chunks.",
     )  # /vevo/cellxgene/scgpt_old_dataset/hf_dataset
     parser.add_argument(
-        "--dataset_name", type=str, required=True, help="The base name for the dataset."
+        "--dataset_name",
+        type=str,
+        required=True,
+        help="The base name for the dataset.",
     )  # scgpt_old_dataset
     args = parser.parse_args()
     process_datasets(args.path, args.dataset_name)

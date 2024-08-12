@@ -1,4 +1,7 @@
+# Copyright (C) Vevo Therapeutics 2024. All rights reserved.
+# ruff: noqa: PLR2004
 from pathlib import Path
+
 from mosaicfm.tokenizer import GeneVocab, get_default_gene_vocab
 
 

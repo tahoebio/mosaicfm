@@ -1,12 +1,15 @@
+# Copyright (C) Vevo Therapeutics 2024. All rights reserved.
 from functools import lru_cache
-from typing import Any, Dict, Optional, Union, Tuple
+from typing import Any, Dict, Optional, Tuple, Union
 
 import torch
-import torch.nn as nn
 from llmfoundry.models.layers.attention import ATTN_CLASS_REGISTRY
-from llmfoundry.models.layers.ffn import resolve_ffn_hidden_size, resolve_ffn_act_fn
+from llmfoundry.models.layers.ffn import (
+    resolve_ffn_act_fn,
+    resolve_ffn_hidden_size,
+)
 from llmfoundry.models.layers.norm import NORM_CLASS_REGISTRY
-from torch import Tensor
+from torch import Tensor, nn
 from torch.nn.modules.transformer import _get_clones
 
 attn_config_defaults: Dict = {
@@ -25,20 +28,19 @@ norm_config_defaults: Dict = {
 }
 
 init_config_defaults: Dict = {
-    'name': 'kaiming_normal_',
-    'fan_mode': 'fan_in',
-    'init_nonlinearity': 'relu',
-    'init_div_is_residual': True,
-    'emb_init_std': None,
-    'emb_init_uniform_lim': None,
-    'init_std': None,
-    'init_gain': 0.0,
+    "name": "kaiming_normal_",
+    "fan_mode": "fan_in",
+    "init_nonlinearity": "relu",
+    "init_div_is_residual": True,
+    "emb_init_std": None,
+    "emb_init_uniform_lim": None,
+    "init_std": None,
+    "init_gain": 0.0,
 }
 
 gene_encoder_defaults: Dict = {
     "use_norm": False,
 }
-
 
 
 class SCGPTBlock(nn.Module):
@@ -66,8 +68,6 @@ class SCGPTBlock(nn.Module):
         >>> src = torch.rand(32, 10, 512)
         >>> out = encoder_layer(src)
     """
-
-    __constants__ = ["batch_first"]
 
     def __init__(
         self,
@@ -113,10 +113,14 @@ class SCGPTBlock(nn.Module):
         # Norms
         norm_class = NORM_CLASS_REGISTRY[norm_config["norm_type"].lower()]
         self.norm1 = norm_class(
-            d_model, device=device, eps=norm_config.get("eps", 1e-5)
+            d_model,
+            device=device,
+            eps=norm_config.get("eps", 1e-5),
         )
         self.norm2 = norm_class(
-            d_model, device=device, eps=norm_config.get("eps", 1e-5)
+            d_model,
+            device=device,
+            eps=norm_config.get("eps", 1e-5),
         )
         self.post_sa_dropout = nn.Dropout(dropout)
         self.post_ffn_dropout = nn.Dropout(dropout)
@@ -237,7 +241,8 @@ class SCGPTEncoder(nn.Module):
                         dtype=torch.bool,
                     )  # 1 means attention is allowed
                 key_padding_mask = torch.cat(
-                    [pcpt_key_padding_mask, gen_key_padding_mask], dim=1
+                    [pcpt_key_padding_mask, gen_key_padding_mask],
+                    dim=1,
                 )  # (B, S)
         p_len = pcpt_total_embs.shape[1]
         total_len = total_embs.shape[1]
@@ -249,10 +254,11 @@ class SCGPTEncoder(nn.Module):
             device=attention_mask.device,
             requires_grad=False,
         ).masked_fill(
-            ~attention_mask, torch.finfo(total_embs.dtype).min
+            ~attention_mask,
+            torch.finfo(total_embs.dtype).min,
         )  # Matrix with -inf at the place of masked values and 0 elsewhere
         attn_bias = attn_bias.unsqueeze(0).unsqueeze(
-            1
+            1,
         )  # Broadcastable to (B,H, S_Q, S_K) dimensions
 
         if key_padding_mask is not None:  # NOTE: handle when key_padding_mask is None
@@ -281,7 +287,9 @@ class SCGPTEncoder(nn.Module):
         # ie: 0 indicates no-attention, 1 indicates attention is allowed
         total_len = p_len + g_len
         attention_mask = torch.ones(
-            (total_len, total_len), device=device, dtype=torch.bool
+            (total_len, total_len),
+            device=device,
+            dtype=torch.bool,
         )  # (pcpt_len+gen_len, pcpt_len+gen_len)
 
         if g_len > 0:
@@ -292,7 +300,9 @@ class SCGPTEncoder(nn.Module):
             # make the last gen_len by gen_gen to be an identity matrix, attention allowed along the diagonal
             # Equivalent to cross-attention from pcpt genes to gen genes
             attention_mask[-g_len:, -g_len:] = torch.eye(
-                g_len, device=device, dtype=torch.bool
+                g_len,
+                device=device,
+                dtype=torch.bool,
             )
         return attention_mask
 
@@ -307,7 +317,9 @@ class GeneEncoder(nn.Module):
     ):
         super().__init__()
         self.embedding = nn.Embedding(
-            num_embeddings, embedding_dim, padding_idx=padding_idx
+            num_embeddings,
+            embedding_dim,
+            padding_idx=padding_idx,
         )
         self.use_norm = use_norm
         if self.use_norm:
@@ -317,15 +329,13 @@ class GeneEncoder(nn.Module):
         x = self.embedding(x)  # (batch, seq_len, embsize)
         if self.use_norm:
             x = self.enc_norm(
-                x
+                x,
             )  # Norm for embedding is not used when using pre-norm transformer.
         return x
 
 
 class ContinuousValueEncoder(nn.Module):
-    """
-    Encode real number values to a vector using neural nets projection.
-    """
+    """Encode real number values to a vector using neural nets projection."""
 
     def __init__(
         self,
@@ -371,7 +381,9 @@ class CategoryValueEncoder(nn.Module):
     ):
         super().__init__()
         self.embedding = nn.Embedding(
-            num_embeddings, embedding_dim, padding_idx=padding_idx
+            num_embeddings,
+            embedding_dim,
+            padding_idx=padding_idx,
         )
         self.use_norm = use_norm
         if self.use_norm:
@@ -386,9 +398,9 @@ class CategoryValueEncoder(nn.Module):
 
 
 class ExprDecoder(nn.Module):
-    '''
-    Consists of three linear functions and leaky-relu as an activation function
-    '''
+    """Consists of three linear functions and leaky-relu as an activation
+    function."""
+
     def __init__(
         self,
         d_model: int,
@@ -400,18 +412,19 @@ class ExprDecoder(nn.Module):
         d_in = d_model
         self.activation = resolve_ffn_act_fn({"name": activation})
         self.linear_layers = nn.ModuleList(
-            [nn.Linear(d_in, d_model) for _ in range(n_layers)]
+            [nn.Linear(d_in, d_model) for _ in range(n_layers)],
         )
         self.out_proj = nn.Linear(d_model, n_outputs)
 
     def forward(self, x: Tensor) -> Dict[str, Tensor]:
-        """x is the output of the transformer, (batch, seq_len, d_model)"""
+        """X is the output of the transformer, (batch, seq_len, d_model)"""
         for layer in self.linear_layers:
             x = self.activation(layer(x))
         pred_value = self.out_proj(x)  # (batch, seq_len, n_outputs)
         if pred_value.shape[-1] == 1:
             pred_value = pred_value.squeeze(-1)
-        return dict(pred=pred_value)
+        return {"pred": pred_value}
+
 
 class AffineExprDecoder(torch.nn.Module):
     def __init__(
@@ -422,9 +435,9 @@ class AffineExprDecoder(torch.nn.Module):
         tanh_coeff: bool = False,
         adaptive_bias: bool = False,
     ):
-        """
-        Predict the expression value of each gene in an affine like form of Ax + b.
-        This decoder takes two ExprDecoder intrinsically to genrate the coefficient A and bias b.
+        """Predict the expression value of each gene in an affine like form of
+        Ax + b. This decoder takes two ExprDecoder intrinsically to genrate the
+        coefficient A and bias b.
 
         Args:
             d_model: The embedding dimension.
@@ -465,7 +478,8 @@ class AffineExprDecoder(torch.nn.Module):
         if self.adaptive_bias:
             # bias["pred"] = bias["pred"] * values.mean(dim=1, keepdim=True)
             non_zero_value_mean = values.sum(dim=1, keepdim=True) / (values != 0).sum(
-                dim=1, keepdim=True
+                dim=1,
+                keepdim=True,
             )
             bias["pred"] = bias["pred"] * non_zero_value_mean
 
@@ -476,11 +490,10 @@ class AffineExprDecoder(torch.nn.Module):
             }
 
         return dict(pred=coeff["pred"] * values + bias["pred"])
-    
+
+
 class MVCDecoder(nn.Module):
-    """
-    Decoder for the masked value prediction for cell embeddings.
-    """
+    """Decoder for the masked value prediction for cell embeddings."""
 
     def __init__(
         self,
@@ -512,7 +525,9 @@ class MVCDecoder(nn.Module):
         self.arch_style = arch_style
 
     def forward(
-        self, cell_emb: Tensor, gene_embs: Tensor
+        self,
+        cell_emb: Tensor,
+        gene_embs: Tensor,
     ) -> Union[Tensor, Dict[str, Tensor]]:
         """
         Args:
@@ -521,15 +536,17 @@ class MVCDecoder(nn.Module):
         """
         if self.arch_style == "inner product":
             query_vecs = self.query_activation(
-                self.gene2query(gene_embs)
+                self.gene2query(gene_embs),
             )  # (batch, seq_len, embsize)
             inner_product_dimension = query_vecs.shape[-1]
             cell_emb = cell_emb.unsqueeze(2)  # (batch, embsize, 1)
             pred_value = torch.bmm(self.W(query_vecs), cell_emb).squeeze(
-                2
+                2,
             )  # (batch, seq_len)
             if self.scaled_dot_product:
-                pred_value = pred_value / torch.sqrt(torch.tensor(inner_product_dimension, dtype=pred_value.dtype))
-            return dict(pred=pred_value)
+                pred_value = pred_value / torch.sqrt(
+                    torch.tensor(inner_product_dimension, dtype=pred_value.dtype),
+                )
+            return {"pred": pred_value}
         else:
             raise ValueError(f"Unknown arch_style: {self.arch_style}")

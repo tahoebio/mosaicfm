@@ -1,30 +1,30 @@
+# Copyright (C) Vevo Therapeutics 2024. All rights reserved.
+import logging
+from typing import Mapping, Optional, Tuple
+
 import torch
 import torch.nn.functional as F
-from torch import nn, Tensor
-from typing import Mapping, Optional, Tuple
-from omegaconf import DictConfig
-import logging
-
 from composer.models import ComposerModel
 from composer.utils import dist
-
-from mosaicfm.loss import masked_mse_loss, MaskedMseMetric, MaskedSpearmanMetric
-from mosaicfm.model.blocks import (
-    SCGPTBlock,
-    SCGPTEncoder,
-    GeneEncoder,
-    ContinuousValueEncoder,
-    CategoryValueEncoder,
-    ExprDecoder,
-    MVCDecoder,
-    AffineExprDecoder,
-    init_config_defaults,
-    gene_encoder_defaults,
-)
 from llmfoundry.models.utils.param_init_fns import (
     MODEL_INIT_REGISTRY,
 )
+from omegaconf import DictConfig
+from torch import Tensor, nn
 
+from mosaicfm.loss import MaskedMseMetric, MaskedSpearmanMetric, masked_mse_loss
+from mosaicfm.model.blocks import (
+    AffineExprDecoder,
+    CategoryValueEncoder,
+    ContinuousValueEncoder,
+    ExprDecoder,
+    GeneEncoder,
+    MVCDecoder,
+    SCGPTBlock,
+    SCGPTEncoder,
+    gene_encoder_defaults,
+    init_config_defaults,
+)
 
 log = logging.getLogger(__name__)
 
@@ -68,9 +68,7 @@ class SCGPTModel(nn.Module):
         if self.cell_emb_style not in ["cls", "avg-pool", "w-pool"]:
             raise ValueError(f"Unknown cell_emb_style: {self.cell_emb_style}")
 
-        # TODO: add dropout in the GeneEncoder
-
-        self.gene_encoder = GeneEncoder(  # a.k.a self.encoder
+        self.gene_encoder = GeneEncoder(
             self.vocab_size,
             self.d_model,
             padding_idx=self.pad_token_id,
@@ -80,12 +78,13 @@ class SCGPTModel(nn.Module):
 
         expression_encoder_config = model_config.expression_encoder
         self.input_emb_style = expression_encoder_config.get(
-            "input_emb_style", "continuous"
+            "input_emb_style",
+            "continuous",
         )
         if self.input_emb_style not in ["category", "continuous"]:
             raise ValueError(
                 f"input_emb_style should be one of category or continuous"
-                f"got {self.input_emb_style}"
+                f"got {self.input_emb_style}",
             )
         if self.input_emb_style == "continuous":
             self.expression_encoder = ContinuousValueEncoder(
@@ -143,11 +142,10 @@ class SCGPTModel(nn.Module):
 
         if self.init_device != "meta":
             log.info(
-                f'MosaicML recommends using config.init_device="meta" with Composer + FSDP for faster initialization.'
+                'MosaicML recommends using config.init_device="meta" with Composer + FSDP for faster initialization.',
             )
             self.apply(self.param_init_fn)
 
-        
     def param_init_fn(self, module: nn.Module):
         init_fn_name = self.init_config["name"]
         MODEL_INIT_REGISTRY[init_fn_name](
@@ -162,13 +160,11 @@ class SCGPTModel(nn.Module):
         src: Tensor,
         values: Tensor,
         src_key_padding_mask: Tensor,
-        input_pert_flags: Optional[Tensor] = None,
     ) -> Tensor:
         src = self.gene_encoder(src)  # (batch, seq_len, embsize)
         self.cur_gene_token_embs = src
         values = self.expression_encoder(values)  # (batch, seq_len, embsize)
         total_embs = src + values
-
         output = self.transformer_encoder(
             pcpt_total_embs=total_embs,
             gen_total_embs=None,
@@ -192,10 +188,11 @@ class SCGPTModel(nn.Module):
         if gen_genes is not None:
             gen_token_embs = self.gene_encoder(gen_genes)  # (batch, gen_len, embsize)
             self.cur_gene_token_embs = torch.cat(
-                [pcpt_token_embs, gen_token_embs], dim=1
+                [pcpt_token_embs, gen_token_embs],
+                dim=1,
             )
             gen_flags = self.flag_encoder(
-                torch.tensor(1, device=pcpt_values.device)
+                torch.tensor(1, device=pcpt_values.device),
             ).expand(gen_genes.shape[0], gen_genes.shape[1], -1)
 
             gen_total_embs = gen_token_embs + gen_flags
@@ -216,7 +213,9 @@ class SCGPTModel(nn.Module):
         return pcpt_output, gen_output
 
     def _get_cell_emb_from_layer(
-        self, layer_output: Tensor, weights: Tensor = None
+        self,
+        layer_output: Tensor,
+        weights: Tensor = None,
     ) -> Tensor:
         """
         Args:
@@ -234,7 +233,7 @@ class SCGPTModel(nn.Module):
         elif self.cell_emb_style == "w-pool":
             if weights is None:
                 raise ValueError("weights is required when cell_emb_style is w-pool")
-            if weights.dim() != 2:
+            if weights.dim() != 2:  # noqa: PLR2004
                 raise ValueError("weights should be 2D")
             cell_emb = torch.sum(layer_output * weights.unsqueeze(2), dim=1)
             cell_emb = F.normalize(cell_emb, p=2, dim=1)  # (batch, embsize)
@@ -266,14 +265,11 @@ class SCGPTModel(nn.Module):
         *args,
         **kwargs,
     ) -> Mapping[str, Tensor]:
-        """
-        Wrapper to call either generative_forward or perceptual_forward, depending
-        on the value of the "generative_training" kwarg.
-        """
-
+        """Wrapper to call either generative_forward or perceptual_forward,
+        depending on the value of the "generative_training" kwarg."""
         if "generative_training" not in kwargs:
             raise ValueError(
-                "Please specify generative_training argument and set to False if doing inference"
+                "Please specify generative_training argument and set to False if doing inference",
             )
         # get the generative training flag and pop it out
         do_generative_training = kwargs.pop("generative_training")
@@ -386,13 +382,15 @@ class SCGPTModel(nn.Module):
     def activation_checkpointing_fn(self, module):
         return isinstance(module, SCGPTBlock)
 
+
 class ComposerSCGPTModel(ComposerModel):
     def __init__(self, model_config, collator_config, device=None):
         super().__init__()
         self.criterion = masked_mse_loss
         self.pad_token_id = collator_config.pad_token_id
         self.use_cell_conditioned_generation = model_config.get(
-            "use_cell_conditioned_generation", False
+            "use_cell_conditioned_generation",
+            False,
         )
         self.model = SCGPTModel(
             model_config=model_config,
@@ -501,10 +499,7 @@ class ComposerSCGPTModel(ComposerModel):
 
     def get_metrics(self, is_train=False):
         # defines which metrics to use in each phase of training
-        if is_train:
-            metric_dict = self.train_metrics
-        else:
-            metric_dict = self.val_metrics
+        metric_dict = self.train_metrics if is_train else self.val_metrics
         return metric_dict
 
     def flops_per_batch(self, batch: Mapping) -> int:
@@ -530,26 +525,23 @@ class ComposerSCGPTModel(ComposerModel):
         return 2 * normalized_value - 1
 
 
-
 class ComposerSCGPTPerturbationModel(ComposerModel):
     def __init__(self, model_config, collator_config, device=None):
         super().__init__()
         self.criterion = masked_mse_loss
         self.pad_token_id = collator_config.pad_token_id
         self.use_cell_conditioned_generation = model_config.get(
-            "use_cell_conditioned_generation", False
+            "use_cell_conditioned_generation",
+            False,
         )
         self.model = SCGPTModel(
             model_config=model_config,
             collator_config=collator_config,
             device=device,
         )
-        self.pert_encoder = nn.Embedding(3, self.model.d_model,
-                                        padding_idx=0)
+        self.pert_encoder = nn.Embedding(3, self.model.d_model, padding_idx=0)
         self.pert_decoder = AffineExprDecoder(self.model.d_model)
 
-
-    
     def forward(self, batch):
         gene_ids = batch["genes"]
         ctrl_expr = batch["expressions_ctrl"]
@@ -562,18 +554,18 @@ class ComposerSCGPTPerturbationModel(ComposerModel):
         combined_input_embs = gene_token_emb + gene_expr_emb + pert_flag_emb
 
         transformer_encoding = self.model.transformer_encoder(
-            pcpt_total_embs = combined_input_embs,
-            gen_total_embs = None,
-            pcpt_key_padding_mask = key_padding_mask,
-            gen_key_padding_mask = None
+            pcpt_total_embs=combined_input_embs,
+            gen_total_embs=None,
+            pcpt_key_padding_mask=key_padding_mask,
+            gen_key_padding_mask=None,
         )
         predicted_post_expr = self.pert_decoder(transformer_encoding, ctrl_expr)
         output = {
-            "predicted_expr_perturbed": predicted_post_expr["pred"]
+            "predicted_expr_perturbed": predicted_post_expr["pred"],
             # "gene_encodings": transformer_encoding
         }
         return output
-    
+
     def loss(self, outputs, batch):
         expr_target = batch["expressions_perturbed"]
         gene_ids = batch["genes"]
@@ -582,11 +574,11 @@ class ComposerSCGPTPerturbationModel(ComposerModel):
 
         loss_mse = self.criterion(
             expr_pred,
-            expr_target, 
-            positions_to_match
+            expr_target,
+            positions_to_match,
         )
         return loss_mse
-    
+
     # def get_metrics(self, is_train=False):
-    
+
     # def update_metric(self, batch, outputs, is_train: bool = False):

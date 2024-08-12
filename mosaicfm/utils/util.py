@@ -1,30 +1,16 @@
-import random
-from typing import Dict, Union
-from anndata import AnnData
-import boto3
+# Copyright (C) Vevo Therapeutics 2024. All rights reserved.
 import logging
 from pathlib import Path
+from typing import Union
 from urllib.parse import urlparse
-import numpy as np
+
+import boto3
 import torch
 from scipy.stats import pearsonr
 
 
-def set_seed(seed):
-    """set random seed."""
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    # if n_gpu > 0:
-    #     torch.cuda.manual_seed_all(seed)
-
-
 def add_file_handler(logger: logging.Logger, log_file_path: Path):
-    """
-    Add a file handler to the logger.
-    """
+    """Add a file handler to the logger."""
     h = logging.FileHandler(log_file_path)
 
     # format showing time, name, function, and message
@@ -38,12 +24,10 @@ def add_file_handler(logger: logging.Logger, log_file_path: Path):
 
 
 def download_file_from_s3_url(s3_url, local_file_path):
-    """
-    Downloads a file from an S3 URL to the specified local path.
+    """Downloads a file from an S3 URL to the specified local path.
 
-    :param s3_url: S3 URL of the file in the format "s3://bucket_name/path/to/file".
-    :param local_file_path: Local path where the file will be saved.
-    :return: The local path to the downloaded file.
+    :param local_file_path: Local path where the file will be saved. :return:
+    The local path to the downloaded file.
     """
     # Validate the S3 URL format
     assert s3_url.startswith("s3://"), "URL must start with 's3://'"
@@ -76,8 +60,8 @@ def map_raw_id_to_vocab_id(
     raw_ids: Union[np.ndarray, torch.Tensor],
     gene_ids: np.ndarray,
 ) -> Union[np.ndarray, torch.Tensor]:
-    """
-    Map some raw ids which are indices of the raw gene names to the indices of the
+    """Map some raw ids which are indices of the raw gene names to the indices
+    of the.
 
     Args:
         raw_ids: the raw ids to map
@@ -92,7 +76,7 @@ def map_raw_id_to_vocab_id(
         return_pt = False
         dtype = raw_ids.dtype
     else:
-        raise ValueError(f"raw_ids must be either torch.Tensor or np.ndarray.")
+        raise ValueError("raw_ids must be either torch.Tensor or np.ndarray.")
 
     if raw_ids.ndim != 1:
         raise ValueError(f"raw_ids must be 1d, got {raw_ids.ndim}d.")
@@ -109,30 +93,38 @@ def map_raw_id_to_vocab_id(
 
 def calc_pearson_metrics(preds, targets, conditions, mean_ctrl):
 
-    conditions_unique =  np.unique(conditions)
+    conditions_unique = np.unique(conditions)
     condition2idx = {c: np.where(conditions == c)[0] for c in conditions_unique}
 
     targets_mean_perturbed_by_condition = np.array(
-        [targets[condition2idx[c]].mean(0) for c in conditions_unique]
+        [targets[condition2idx[c]].mean(0) for c in conditions_unique],
     )  # (n_conditions, n_genes)
 
     preds_mean_perturbed_by_condition = np.array(
-        [preds[condition2idx[c]].mean(0) for c in conditions_unique]
+        [preds[condition2idx[c]].mean(0) for c in conditions_unique],
     )  # (n_conditions, n_genes)
 
     pearson = []
-    for cond, t,p in zip(conditions_unique, targets_mean_perturbed_by_condition, preds_mean_perturbed_by_condition):
-        print(cond, pearsonr(t,p))
-        pearson.append(pearsonr(t,p)[0])
+    for cond, t, p in zip(
+        conditions_unique,
+        targets_mean_perturbed_by_condition,
+        preds_mean_perturbed_by_condition,
+    ):
+        print(cond, pearsonr(t, p))
+        pearson.append(pearsonr(t, p)[0])
 
     pearson_delta = []
-    for cond, t,p in zip(conditions_unique, targets_mean_perturbed_by_condition, preds_mean_perturbed_by_condition):
-        t -= mean_ctrl 
+    for cond, t, p in zip(
+        conditions_unique,
+        targets_mean_perturbed_by_condition,
+        preds_mean_perturbed_by_condition,
+    ):
+        t -= mean_ctrl
         p -= mean_ctrl
-        print(cond, pearsonr(t,p))
-        pearson_delta.append(pearsonr(t,p)[0])
-    
+        print(cond, pearsonr(t, p))
+        pearson_delta.append(pearsonr(t, p)[0])
+
     return {
-        'pearson':  np.mean(pearson),
-        'pearson_delta': np.mean(pearson_delta)
+        "pearson": np.mean(pearson),
+        "pearson_delta": np.mean(pearson_delta),
     }
