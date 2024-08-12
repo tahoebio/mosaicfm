@@ -1,5 +1,5 @@
+# Copyright (C) Vevo Therapeutics 2024. All rights reserved.
 import numpy as np
-
 from composer.core.callback import Callback
 
 from mosaicfm.utils import calc_pearson_metrics
@@ -14,10 +14,9 @@ class PerturbationCallback(Callback):
         self.preds = []
         self.targets = []
         self.conditions = []
-        self.mean_ctrl = mean_ctrl # (n_genes,)
+        self.mean_ctrl = mean_ctrl  # (n_genes,)
         # self.preds_delta = []
         # self.targets_delta = []
-
 
     def eval_start(self, state, logger):
         # Clear predictions and labels at the start of evaluation
@@ -30,10 +29,10 @@ class PerturbationCallback(Callback):
 
     def eval_batch_end(self, state, logger):
 
-         # Collect predictions and true labels from the batch
+        # Collect predictions and true labels from the batch
         model_output = state.outputs
         batch = state.batch
-        
+
         # Assuming model_output and batch contain the necessary data
         preds = model_output["predicted_expr_perturbed"].detach().cpu().numpy()
         targets = batch["expressions_perturbed"].detach().cpu().numpy()
@@ -42,7 +41,7 @@ class PerturbationCallback(Callback):
         # mean_ctrl = batch['mean_ctrl'].detach().cpu().numpy()
 
         self.preds.append(preds)
-        self.targets.append(targets)   
+        self.targets.append(targets)
         self.conditions.append(conditions)
 
         ##calculate pred-mean_ctrl and target-mean_ctrl
@@ -50,7 +49,7 @@ class PerturbationCallback(Callback):
         # self.targets_delta.append(targets - mean_ctrl)
 
     def eval_end(self, state, logger):
-        
+
         # Concatenate all predictions and labels
         preds = np.concatenate(self.preds, axis=0)
         targets = np.concatenate(self.targets, axis=0)
@@ -60,10 +59,8 @@ class PerturbationCallback(Callback):
 
         print("Evaluation ended. Total predictions collected:", len(preds))
 
-        
         # Compute Pearson metrics
         metrics = calc_pearson_metrics(preds, targets, conditions, self.mean_ctrl)
 
         # Log metrics
         logger.log_metrics(metrics)
-

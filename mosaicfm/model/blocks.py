@@ -489,7 +489,7 @@ class AffineExprDecoder(torch.nn.Module):
                 "zero_probs": coeff["zero_probs"],
             }
 
-        return dict(pred=coeff["pred"] * values + bias["pred"])
+        return {"pred": coeff["pred"] * values + bias["pred"]}
 
 
 class MVCDecoder(nn.Module):
