@@ -186,18 +186,28 @@ def main(cfg: DictConfig) -> Dataset:
                     assert all(genes_pert == genes_ctrl)
 
                     cell_record = {
-                        "growth_rate": growth_rate,
-                        "growth_rate_mdn": growth_rate_mdn,
-                        "growth_rate_bin": growth_rate_bin,
-                        "expressions_ctrl_raw": expressions_ctrl,
-                        "expressions_perturbed_raw": expressions_perturbed,
-                        "perturbation_target_genes": perturbation_targets,
+                        "growth_rate": np.float32(growth_rate),
+                        "growth_rate_mdn": np.float32(growth_rate_mdn),
+                        "growth_rate_bin": np.int64(growth_rate_bin),
+                        "expressions_ctrl_raw": np.array(
+                            expressions_ctrl,
+                            dtype=np.float32,
+                        ),
+                        "expressions_perturbed_raw": np.array(
+                            expressions_perturbed,
+                            dtype=np.float32,
+                        ),
+                        "perturbation_target_genes": np.array(
+                            perturbation_targets,
+                            dtype=np.int64,
+                        ),
                         "genes": np.array(genes_pert, dtype=np.int64),
                         "cell_line": cell_line,
                         "drug": drug,
                         "cell_key": cell.obs.index.values[0],
                         "cell_key_ctrl": ctrl_adata[ctrl_id].obs.index[0],
                     }
+
                     for key in cell_record:
                         records[key].append(cell_record[key])
 
@@ -207,7 +217,10 @@ def main(cfg: DictConfig) -> Dataset:
     log.info(f"Generated mosaic dataset with {len(mosaic_dataset)} records.")
 
     log.info(f"Saving mosaic dataset to {dataset_save_path}...")
-    mosaic_dataset.save_to_disk(dataset_save_path)
+    mosaic_dataset.save_to_disk(
+        dataset_save_path,
+        max_shard_size=cfg.get("max_shard_size", "200MB"),
+    )
     log.info(f"Saved mosaic dataset to {dataset_save_path}")
 
     return mosaic_dataset

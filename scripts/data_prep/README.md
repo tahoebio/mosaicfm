@@ -38,9 +38,28 @@ The output root folder may now be uploaded to S3 and used as a path in the train
 For this task we have considered the drugs screened in the Resistance-if-Futile screen (dataset ID: 35) that 
 have a well characterized set of target genes.
 
+The data is processed as follows:
+- Preprocessing:
+  - Select genes that are present in the MosaicFM vocabulary (matched using Ensemble gene ID, not gene symbol)
+  - Select the 5000 most variable genes using Seurat v3 (Note: Seurat v3 expects un-normalized raw counts)
+  - Add the 
+- Iterate over cell-lines
+   - Retrieve cells with drug = "DMSO_TF" as the control group
+   - Iterate over drugs that have data in the cell-line (except control)
+     - Get the sensitivity from the sensitivity table (growth_rate, growth_rate_bin, growth_rate_mdn)
+     - Get the drug-targets from the drug-target table (derived using manual curation)
+     - Enumerate cells in that combination (drug, dose, cell-line). Only the highest dose for each drug is selected. 
+     - Sample `num_ctrl_samples_to_pair` control cells from the matched control set for the cell-line
+     - Store raw counts for the perturbed and control cells for all genes (n_genes=5008)
+     - Also record sensitivity, drug-targets, and cell-line information
+
+The heatmap below shows the distribution of drugs and cell-lines in the dataset.
 
 ![img](assets/drug_cell_line_heatmap.png)
+
+To reproduce the dataset, run the following command:
 ```shell
 python process_mosaic_sensitivity.py yamls/mosaic_resistance_is_futile.yml
 ```
+
 
