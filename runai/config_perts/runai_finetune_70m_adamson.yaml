@@ -3,14 +3,14 @@ seed: ${global_seed}
 device_train_batch_size: 32
 global_train_batch_size: 32 #256 #32
 device_test_batch_size: 32 #256 #32
-
 device_train_microbatch_size: "auto"
-max_duration: "10ep" #"15ep"
+max_duration: "15ep" #"15ep"
 precision: amp_bf16
 model:
   cfg_path: "/vevo/scgpt/checkpoints/release/scgpt-70m-1024-fix-norm-apr24-data/model_config.yml"
   collator_cfg_path: "/vevo/scgpt/checkpoints/release/scgpt-70m-1024-fix-norm-apr24-data/collator_config.yml"
   checkpoint_path: "/vevo/scgpt/checkpoints/release/scgpt-70m-1024-fix-norm-apr24-data/best-model.pt"
+  freeze: False
 optimizer:
   name: decoupled_adamw
   lr: 1.0e-4
@@ -37,7 +37,7 @@ train_loader:
     do_padding: True
     pad_value: -2
     mask_value: -1
-    max_len: 1536 #5060
+    max_len: 1536 #1536
   drop_last: False
   num_workers: 8
   pin_memory: True
@@ -61,7 +61,6 @@ valid_loader:
   pin_memory: True
   prefetch_factor: 48
   persistent_workers: True
-
 callbacks:
   speed_monitor:
     window_size: 20
@@ -70,8 +69,8 @@ callbacks:
   runtime_estimator: {}
 loggers:
   wandb:
-    project: vevo-scgpt
+    project: perturbation_exps
     log_artifacts: False
-run_name: thetaf_test
+run_name: full_finetune-70m-len1536_seed3
 save_folder: "s3://vevo-ml-datasets/vevo-scgpt/models/{run_name}"
 save_overwrite: True

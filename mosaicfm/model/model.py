@@ -319,7 +319,7 @@ class SCGPTModel(nn.Module):
             gen_key_padding_mask,
             input_cell_emb=input_cell_emb,
         )
-        if gen_output is None:
+        if gen_output is None:  # type: ignore
             transformer_output = pcpt_output
         else:
             transformer_output = torch.cat([pcpt_output, gen_output], dim=1)
@@ -546,7 +546,7 @@ class ComposerSCGPTPerturbationModel(ComposerModel):
         gene_ids = batch["genes"]
         ctrl_expr = batch["expressions_ctrl"]
         key_padding_mask = ~gene_ids.eq(self.pad_token_id)
-        perturbation_flags = batch["perturb_flag"]
+        perturbation_flags = batch["perturb_flags"]
 
         gene_token_emb = self.model.gene_encoder(gene_ids)
         gene_expr_emb = self.model.expression_encoder(ctrl_expr)

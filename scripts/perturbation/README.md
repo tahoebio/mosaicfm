@@ -9,7 +9,7 @@ python scripts/perturbation/prepare_data.py --data_path "/vevo/datasets/perturba
 2. Change the config and run finetune.py with composer
 
 ```
-composer scripts/perturbation/finetune.py config_perts/runai_finetune_70m.yaml 
+composer scripts/perturbation/finetune.py runai/config_perts/runai_finetune_70m_adamson.yaml 
 ```
 
 

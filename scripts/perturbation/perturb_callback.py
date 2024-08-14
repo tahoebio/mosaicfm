@@ -15,16 +15,13 @@ class PerturbationCallback(Callback):
         self.targets = []
         self.conditions = []
         self.mean_ctrl = mean_ctrl  # (n_genes,)
-        # self.preds_delta = []
-        # self.targets_delta = []
 
     def eval_start(self, state, logger):
         # Clear predictions and labels at the start of evaluation
         self.preds.clear()
         self.targets.clear()
         self.conditions.clear()
-        # self.preds_delta.clear()
-        # self.targets_delta.clear()
+
         print("Collecting predictions started.")
 
     def eval_batch_end(self, state, logger):
@@ -36,7 +33,7 @@ class PerturbationCallback(Callback):
         # Assuming model_output and batch contain the necessary data
         preds = model_output["predicted_expr_perturbed"].detach().cpu().numpy()
         targets = batch["expressions_perturbed"].detach().cpu().numpy()
-        conditions = batch["perturb_name"]
+        conditions = batch["perturb_names"]
 
         # mean_ctrl = batch['mean_ctrl'].detach().cpu().numpy()
 
@@ -44,18 +41,12 @@ class PerturbationCallback(Callback):
         self.targets.append(targets)
         self.conditions.append(conditions)
 
-        ##calculate pred-mean_ctrl and target-mean_ctrl
-        # self.preds_delta.append(preds - mean_ctrl)
-        # self.targets_delta.append(targets - mean_ctrl)
-
     def eval_end(self, state, logger):
 
         # Concatenate all predictions and labels
         preds = np.concatenate(self.preds, axis=0)
         targets = np.concatenate(self.targets, axis=0)
         conditions = np.concatenate(self.conditions, axis=0)
-        # preds_delta = np.concatenate(self.preds_delta, axis=0)
-        # targets_delta = np.concatenate(self.targets_delta, axis=0)
 
         print("Evaluation ended. Total predictions collected:", len(preds))
 

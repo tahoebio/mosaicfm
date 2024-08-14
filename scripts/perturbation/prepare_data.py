@@ -15,7 +15,7 @@ def prepare_data(data_path, dataset_name, vocab_path, batch_size=1):
     data_dir = os.path.join(data_path, dataset_name)
     pert_data = PertData(data_dir)
     pert_data.load(data_name=dataset_name)
-    pert_data.prepare_split(split="simulation", seed=1)
+    pert_data.prepare_split(split="simulation", seed=3)
 
     # remove control conditions
     if "ctrl" in pert_data.set2conditions["train"]:

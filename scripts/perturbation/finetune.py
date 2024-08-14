@@ -115,6 +115,10 @@ def main(cfg: DictConfig) -> composer.Trainer:
     model_collator_cfg = om.load(model_collator_cfg_path)
 
     model_file = model_cfg.get("checkpoint_path")
+    freeze = model_cfg.get(
+        "freeze",
+        False,
+    )  # if the transformer (SCGPT model) is freezed or not!
 
     # Load datasets and build loaders
     train_loader_cfg: DictConfig = pop_config(cfg, "train_loader", must_exist=True)
@@ -192,6 +196,13 @@ def main(cfg: DictConfig) -> composer.Trainer:
         model_config=model_config,
         collator_config=model_collator_cfg,
     )
+
+    # Freeze transformer layers if necessary
+    if freeze:
+        for (
+            param
+        ) in model.model.transformer_encoder.parameters():  # model.model is SCGPTModel
+            param.requires_grad = False
 
     # Optimizer
     optimizer_config: Dict[str, Any] = pop_config(
