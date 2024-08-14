@@ -545,7 +545,6 @@ class ComposerSCGPTPerturbationModel(ComposerModel):
     def forward(self, batch):
         gene_ids = batch["genes"]
         ctrl_expr = batch["expressions_ctrl"]
-        key_padding_mask = ~gene_ids.eq(self.pad_token_id)
         perturbation_flags = batch["perturb_flags"]
 
         gene_token_emb = self.model.gene_encoder(gene_ids)
@@ -556,7 +555,7 @@ class ComposerSCGPTPerturbationModel(ComposerModel):
         transformer_encoding = self.model.transformer_encoder(
             pcpt_total_embs=combined_input_embs,
             gen_total_embs=None,
-            pcpt_key_padding_mask=key_padding_mask,
+            pcpt_key_padding_mask=None,
             gen_key_padding_mask=None,
         )
         predicted_post_expr = self.pert_decoder(transformer_encoding, ctrl_expr)
@@ -569,13 +568,14 @@ class ComposerSCGPTPerturbationModel(ComposerModel):
     def loss(self, outputs, batch):
         expr_target = batch["expressions_perturbed"]
         gene_ids = batch["genes"]
-        positions_to_match = ~gene_ids.eq(self.pad_token_id)
+        mask = torch.ones_like(gene_ids, dtype=torch.bool)
+
         expr_pred = outputs["predicted_expr_perturbed"]
 
         loss_mse = self.criterion(
             expr_pred,
             expr_target,
-            positions_to_match,
+            mask,
         )
         return loss_mse
 

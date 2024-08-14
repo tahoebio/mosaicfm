@@ -1,8 +1,8 @@
 global_seed: 777
 seed: ${global_seed}
 device_train_batch_size: 32
-global_train_batch_size: 32 #256 #32
-device_test_batch_size: 32 #256 #32
+global_train_batch_size: 32 #256 #Haotian: 64
+device_test_batch_size: 32 #256 #Haotian: 64
 device_train_microbatch_size: "auto"
 max_duration: "15ep" #"15ep"
 precision: amp_bf16
@@ -33,11 +33,7 @@ train_loader:
     allow_unsafe_types: True
     shuffle: True
     shuffle_seed: ${global_seed}
-  collator:
-    do_padding: True
-    pad_value: -2
-    mask_value: -1
-    max_len: 1536 #1536
+  max_len: 1536 #1536
   drop_last: False
   num_workers: 8
   pin_memory: True
@@ -51,11 +47,7 @@ valid_loader:
     allow_unsafe_types: True
     shuffle: False
     shuffle_seed: ${global_seed}
-  collator:
-    do_padding: True
-    pad_value: -2
-    mask_value: -1
-    max_len: 5060  #1536
+  max_len: 5060  #1536
   drop_last: False
   num_workers: 8
   pin_memory: True

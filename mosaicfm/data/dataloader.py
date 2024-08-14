@@ -6,7 +6,6 @@ import numpy as np
 import torch
 from composer.core.data_spec import DataSpec
 from datasets import Dataset
-from llmfoundry.utils.config_utils import pop_config
 from omegaconf import DictConfig
 from streaming import StreamingDataLoader, StreamingDataset
 
@@ -83,14 +82,9 @@ def build_perturbation_dataloader(
     """
 
     data_path = loader_cfg.get("dataset")["local"]
-    collator_config: DictConfig = pop_config(loader_cfg, "collator", must_exist=True)
-    max_len = collator_config.pop("max_len")
+    max_len = loader_cfg.get("max_len")
 
     dataset = Dataset.load_from_disk(data_path)
-
-    # #load mean_ctrl
-    # mean_path = data_path.rsplit('/', 1)[0] + "/mean_ctrl.npz"
-    # mean_ctrl = np.load(mean_path)["mean_ctrl"] # (n_genes,)
 
     def collate_fn(examples: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
 
@@ -105,7 +99,6 @@ def build_perturbation_dataloader(
         perturb_flags = torch.stack([example["perturb_flag"] for example in examples])
         perturb_names = [example["perturb_name"] for example in examples]
         de_flags = torch.stack([example["de_flag"] for example in examples])
-        # mean_ctrl = mean_ctrl.repeat(batch_size, 1)
 
         # Randomly sample if sequence is longer than max_seq_len
         indices = (
@@ -114,7 +107,6 @@ def build_perturbation_dataloader(
 
         return {
             "genes": genes[:, indices],
-            # 'mean_ctrl': mean_ctrl[:, indices], #Used for calculating deltas
             "expressions_ctrl": expressions_ctrls[:, indices],
             "expressions_perturbed": expressions_perturbeds[:, indices],
             "perturb_flags": perturb_flags[:, indices],
@@ -154,7 +146,7 @@ class CountDataset(torch.utils.data.Dataset):
     def __len__(self) -> int:
         return len(self.count_matrix)
 
-    def __getitem__(self, idx) -> Dict[str, torch.Tensor]:
+    def __getitem__(self, idx) -> Dict[str, torch.Tensor]:  # type: ignore
         row = self.count_matrix[idx]
         nonzero_idx = np.nonzero(row)[0]
         values = row[nonzero_idx]

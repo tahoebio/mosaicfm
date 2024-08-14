@@ -15,7 +15,7 @@ def prepare_data(data_path, dataset_name, vocab_path, batch_size=1):
     data_dir = os.path.join(data_path, dataset_name)
     pert_data = PertData(data_dir)
     pert_data.load(data_name=dataset_name)
-    pert_data.prepare_split(split="simulation", seed=3)
+    pert_data.prepare_split(split="simulation", seed=4)
 
     # remove control conditions
     if "ctrl" in pert_data.set2conditions["train"]:
@@ -59,6 +59,7 @@ def prepare_data(data_path, dataset_name, vocab_path, batch_size=1):
             len(set(gene_list) & set(gene_to_id.keys())) / len(set(gene_list))
         ) * 100
         print(f"Mapped {percent_mapped:.2f}% of {len(gene_list)} genes")
+        print("Pad token ID:", gene_to_id["<pad>"])  # pAad_token_id = 60699
 
     # compute mean control gene expression
     adata = pert_data.adata
