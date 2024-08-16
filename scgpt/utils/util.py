@@ -457,6 +457,8 @@ def compute_perturbation_metrics(
         "pearson_de": [],
         "pearson_delta": [],
         "pearson_de_delta": [],
+        "r2_delta": [],
+        "r2_de_delta": [],
     }
 
     metrics_across_conditions = {
@@ -501,6 +503,16 @@ def compute_perturbation_metrics(
                 y_ = y_[non_zero_mask[i]]
             res_list.append(pearsonr(x_, y_)[0])
 
+    def r2_over_genes(x, y, conditions, res_list, skip_rows=[]):
+        """compute r2 over genes for each condition"""
+        from sklearn.metrics import r2_score
+
+        for i, c in enumerate(conditions):
+            if i in skip_rows:
+                continue
+            x_, y_ = x[i], y[i]
+            res_list.append(r2_score(x_, y_))
+
     corr_over_genes(
         true_mean_perturbed_by_condition,
         pred_mean_perturbed_by_condition,
@@ -516,6 +528,13 @@ def compute_perturbation_metrics(
         metrics_across_genes["pearson_delta"],
         zero_rows,
         non_zero_mask=true_mean_perturbed_by_condition != 0 if non_zero_genes else None,
+    )
+    r2_over_genes(
+        true_mean_delta_by_condition,
+        pred_mean_delta_by_condition,
+        conditions,
+        metrics_across_genes["r2_delta"],
+        zero_rows,
     )
 
     def find_DE_genes(adata, condition, geneid2idx, non_zero_genes=False, top_n=20):
@@ -582,6 +601,13 @@ def compute_perturbation_metrics(
         pred_mean_delta_by_condition_de,
         conditions,
         metrics_across_genes["pearson_de_delta"],
+        zero_rows_de,
+    )
+    r2_over_genes(
+        true_mean_delta_by_condition_de,
+        pred_mean_delta_by_condition_de,
+        conditions,
+        metrics_across_genes["r2_de_delta"],
         zero_rows_de,
     )
 
