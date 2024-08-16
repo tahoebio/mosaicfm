@@ -55,6 +55,11 @@ hyperparameter_defaults = dict(
     data_name="adamson",  # "norman" #"adamson" #"k562_1900_100_re_ctrl_sample"
     load_model="../save/scGPT_human", # "/scratch/ssd004/datasets/cellxgene/save/cellxgene_census_human-May23-08-36-2023",
     # "../save/scGPT_human",
+    # eval_model="./save/dev_perturb_adamson-Aug02-20-00",  # from-scratch-full, corrected vocab
+    # eval_model="./save/dev_perturb_adamson-Aug02-12-13",  # from-scratch-freeze, corrected vocab
+    eval_model="./save/dev_perturb_adamson-Jun03-11-11",  # scgpt public
+    # eval_model="./save/dev_perturb_adamson-Aug02-12-13",  # from-scratch-freeze, corrected vocab
+    do_train=False,
     max_seq_len=1536,
     lr=1e-4,
     batch_size=64,
@@ -225,6 +230,9 @@ model = TransformerGenerator(
     decoder_adaptive_bias=config.decoder_adaptive_bias,
     use_fast_transformer=config.use_fast_transformer,
 )
+eval_model_dir = Path(config.eval_model)
+model_file = eval_model_dir / "best_model.pt"
+model.load_state_dict(torch.load(model_file))
 # if load_param_prefixs is not None and config.load_model is not None:
 #     # only load params that start with the prefix
 #     model_dict = model.state_dict()
@@ -435,65 +443,66 @@ def eval_perturb(
 # %%
 best_val_loss = float("inf")
 best_val_corr = 0
-best_model = None
+best_model = model
 patience = 0
 
-for epoch in range(1, config.epochs + 1):
-    epoch_start_time = time.time()
-    train_loader = pert_data.dataloader["train_loader"]
-    valid_loader = pert_data.dataloader["val_loader"]
+if config.do_train:
+    for epoch in range(1, config.epochs + 1):
+        epoch_start_time = time.time()
+        train_loader = pert_data.dataloader["train_loader"]
+        valid_loader = pert_data.dataloader["val_loader"]
 
-    train(
-        model,
-        train_loader,
-    )
+        train(
+            model,
+            train_loader,
+        )
 
-    val_res = eval_perturb(valid_loader, model, device)
-    val_metrics = compute_perturbation_metrics(
-        val_res, pert_data.adata[pert_data.adata.obs["condition"] == "ctrl"]
-    )
-    logger.info(f"val_metrics at epoch {epoch}: ")
-    logger.info(val_metrics)
-    wandb.log({f"valid/{k}": v for k, v in val_metrics.items()})
+        val_res = eval_perturb(valid_loader, model, device)
+        val_metrics = compute_perturbation_metrics(
+            val_res, pert_data.adata[pert_data.adata.obs["condition"] == "ctrl"]
+        )
+        logger.info(f"val_metrics at epoch {epoch}: ")
+        logger.info(val_metrics)
+        wandb.log({f"valid/{k}": v for k, v in val_metrics.items()})
 
-    # test_loader = pert_data.dataloader["test_loader"]
-    # test_res = eval_perturb(test_loader, model, device)
-    # test_metrics = compute_perturbation_metrics(
-    #     test_res, pert_data.adata[pert_data.adata.obs["condition"] == "ctrl"]
-    # )
-    # logger.info(f"test_metrics at epoch {epoch}: ")
-    # logger.info(test_metrics)
-    # wandb.log({f"test/{k}": v for k, v in test_metrics.items()})
+        # test_loader = pert_data.dataloader["test_loader"]
+        # test_res = eval_perturb(test_loader, model, device)
+        # test_metrics = compute_perturbation_metrics(
+        #     test_res, pert_data.adata[pert_data.adata.obs["condition"] == "ctrl"]
+        # )
+        # logger.info(f"test_metrics at epoch {epoch}: ")
+        # logger.info(test_metrics)
+        # wandb.log({f"test/{k}": v for k, v in test_metrics.items()})
 
-    # torch.save(model.state_dict(), save_dir / f"model_{epoch}.pt")
+        # torch.save(model.state_dict(), save_dir / f"model_{epoch}.pt")
 
-    elapsed = time.time() - epoch_start_time
-    logger.info(f"| end of epoch {epoch:3d} | time: {elapsed:5.2f}s | ")
+        elapsed = time.time() - epoch_start_time
+        logger.info(f"| end of epoch {epoch:3d} | time: {elapsed:5.2f}s | ")
 
-    # if val_loss < best_val_loss:
-    #     best_val_loss = val_loss
-    val_score = val_metrics["pearson"]
-    if val_score > best_val_corr:
-        best_val_corr = val_score
-        best_model = copy.deepcopy(model)
-        logger.info(f"Best model with score {val_score:5.4f}")
-        patience = 0
-    else:
-        patience += 1
-        if patience >= config.early_stop:
-            logger.info(f"Early stop at epoch {epoch}")
-            break
+        # if val_loss < best_val_loss:
+        #     best_val_loss = val_loss
+        val_score = val_metrics["pearson"]
+        if val_score > best_val_corr:
+            best_val_corr = val_score
+            best_model = copy.deepcopy(model)
+            logger.info(f"Best model with score {val_score:5.4f}")
+            patience = 0
+        else:
+            patience += 1
+            if patience >= config.early_stop:
+                logger.info(f"Early stop at epoch {epoch}")
+                break
 
-    # torch.save(
-    #     model.state_dict(),
-    #     save_dir / f"model_{epoch}.pt",
-    # )
+        # torch.save(
+        #     model.state_dict(),
+        #     save_dir / f"model_{epoch}.pt",
+        # )
 
-    scheduler.step()  # TODO: have this back
+        scheduler.step()  # TODO: have this back
 
 
-# %%
-torch.save(best_model.state_dict(), save_dir / "best_model.pt")
+    # %%
+    torch.save(best_model.state_dict(), save_dir / "best_model.pt")
 
 
 # %% [markdown]
@@ -632,80 +641,36 @@ with open(f"{save_dir}/test_metrics.json", "w") as f:
 
 wandb.log(test_metrics)
 
-deeper_res = deeper_analysis(pert_data.adata, test_res)
-non_dropout_res = non_dropout_analysis(pert_data.adata, test_res)
+# deeper_res = deeper_analysis(pert_data.adata, test_res)
+# non_dropout_res = non_dropout_analysis(pert_data.adata, test_res)
 
-metrics = ["pearson_delta", "pearson_delta_de"]
-metrics_non_dropout = [
-    "pearson_delta_top20_de_non_dropout",
-    "pearson_top20_de_non_dropout",
-]
-subgroup_analysis = {}
-for name in pert_data.subgroup["test_subgroup"].keys():
-    subgroup_analysis[name] = {}
-    for m in metrics:
-        subgroup_analysis[name][m] = []
+# metrics = ["pearson_delta", "pearson_delta_de"]
+# metrics_non_dropout = [
+#     "pearson_delta_top20_de_non_dropout",
+#     "pearson_top20_de_non_dropout",
+# ]
+# subgroup_analysis = {}
+# for name in pert_data.subgroup["test_subgroup"].keys():
+#     subgroup_analysis[name] = {}
+#     for m in metrics:
+#         subgroup_analysis[name][m] = []
 
-    for m in metrics_non_dropout:
-        subgroup_analysis[name][m] = []
+#     for m in metrics_non_dropout:
+#         subgroup_analysis[name][m] = []
 
-for name, pert_list in pert_data.subgroup["test_subgroup"].items():
-    for pert in pert_list:
-        for m in metrics:
-            subgroup_analysis[name][m].append(deeper_res[pert][m])
+# for name, pert_list in pert_data.subgroup["test_subgroup"].items():
+#     for pert in pert_list:
+#         for m in metrics:
+#             subgroup_analysis[name][m].append(deeper_res[pert][m])
 
-        for m in metrics_non_dropout:
-            subgroup_analysis[name][m].append(non_dropout_res[pert][m])
+#         for m in metrics_non_dropout:
+#             subgroup_analysis[name][m].append(non_dropout_res[pert][m])
 
-for name, result in subgroup_analysis.items():
-    for m in result.keys():
-        mean_value = np.mean(subgroup_analysis[name][m])
-        logger.info("test_" + name + "_" + m + ": " + str(mean_value))
-        if not np.isnan(mean_value):
-            wandb.log({f"test/{name}_{m}": mean_value})
-
-# %%
-if data_name.startswith("k562_1900_"):
-    test_res = eval_perturb(test_loader_TF, best_model, device)
-    # test_metrics, test_pert_res = compute_metrics(test_res)
-    test_metrics = compute_perturbation_metrics(
-        test_res, pert_data.adata[pert_data.adata.obs["condition"] == "ctrl"]
-    )
-    print("test on TFs:", test_metrics)
-
-    # save the dicts in json
-    with open(f"{save_dir}/test_metrics_TF.json", "w") as f:
-        json.dump(test_metrics, f)
-
-    wandb.log({f"test_TF/{k}": v for k, v in test_metrics.items()})
-
-    deeper_res = deeper_analysis(pert_data.adata, test_res)
-    non_dropout_res = non_dropout_analysis(pert_data.adata, test_res)
-
-    subgroup_analysis = {}
-    for name in pert_data.subgroup["test_subgroup"].keys():
-        subgroup_analysis[name] = {}
-        for m in metrics:
-            subgroup_analysis[name][m] = []
-
-        for m in metrics_non_dropout:
-            subgroup_analysis[name][m] = []
-
-    for name, pert_list in pert_data.subgroup["test_subgroup"].items():
-        for pert in pert_list:
-            if pert in test_list:
-                for m in metrics:
-                    subgroup_analysis[name][m].append(deeper_res[pert][m])
-
-                for m in metrics_non_dropout:
-                    subgroup_analysis[name][m].append(non_dropout_res[pert][m])
-
-    for name, result in subgroup_analysis.items():
-        for m in result.keys():
-            subgroup_analysis[name][m] = np.mean(subgroup_analysis[name][m])
-            logger.info(
-                "test_" + name + "_" + m + ": " + str(subgroup_analysis[name][m])
-            )
-
+# for name, result in subgroup_analysis.items():
+#     for m in result.keys():
+#         mean_value = np.mean(subgroup_analysis[name][m])
+#         logger.info("test_" + name + "_" + m + ": " + str(mean_value))
+#         if not np.isnan(mean_value):
+#             wandb.log({f"test/{name}_{m}": mean_value})
 # %%
 wandb.finish()
