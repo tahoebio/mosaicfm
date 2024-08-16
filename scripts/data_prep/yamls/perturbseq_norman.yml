@@ -1,0 +1,17 @@
+# Path parameters
+vocab_path: "/vevo/scgpt/checkpoints/release/scgpt-1_3b-2048/vocab.json"
+gene_to_ensembl_path: "/vevo/cellxgene/cellxgene_primary_2024-04-29_MDS/gene_info_2024-04-29.json"
+# From https://ftp.ncbi.nlm.nih.gov/gene/DATA/GENE_INFO/Mammalia/Homo_sapiens.gene_info
+gene_info_path: "/vevo/scgpt/datasets/perturbseq/Homo_sapiens.gene_info.gz"
+raw_data_path: "/vevo/scgpt/datasets/perturbseq/norman.h5ad.gz"
+norman_metadata_path: "/vevo/scgpt/datasets/perturbseq/norman__perturbation_summary.csv.gz"
+depmap_scores_path: "/vevo/depmap/raw_counts/depmap-gene-dependencies.csv"
+dataset_save_path: "/vevo/scgpt/datasets/perturbseq/vevo-processed/aidan_filtered/norman.dataset"
+
+# Processing parameters
+k562_depmap_id: "ACH-000551"  # K562 DepMap ID
+n_top_genes: 5000  # Number of highly variable genes to select
+num_ctrl_samples_to_pair: 5  # Number of control samples to pair with each perturbation
+
+# Dataset sharding
+max_shard_size: "200MB"  # Maximum shard size when saving the dataset

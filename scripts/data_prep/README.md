@@ -96,7 +96,7 @@ The data is processed as follows:
 python process_perturbseq.py yamls/perturbseq_adamson.yml
 ```
 
-The following fields are stored:
+Example record:
 ```python
 {'depmap_dependency': 1.0,
  'perturbation_edist': 62.28814212111882,
@@ -111,6 +111,27 @@ The following fields are stored:
 The DepMap dependency score is used as a proxy for sensitivity to the perturbation.
 The e-distance is a measure of the degree of change induced by the perturbation and 
 may be seen as a measure of intensity of the signal present in the data.
+
+## PerturbSeq - Norman et al Dataset
+
+The data is processed as follows:
+
+```shell
+python process_perturbseq.py yamls/perturbseq_norman.yml
+```
+
+Example record:
+```python
+{'depmap_dependency': [0.0941306056201959],
+ 'perturbation_edist': 58.21759247789265,
+ 'perturbation_target_genes': [5338],
+ 'expressions_ctrl_raw': array([ 0.,  1.,  0., ..., 12.,  0.,  0.], dtype=float32),
+ 'expressions_perturbed_raw': array([ 0.,  0.,  0., ..., 11.,  0.,  2.], dtype=float32),
+ 'genes': array([24905, 47418, 29728, ..., 17079, 48327, 48331], dtype=int32),
+ 'cell_line': 'K562',
+ 'perturbation_name': 'COL2A1+ctrl'}
+```
+
 
 
 

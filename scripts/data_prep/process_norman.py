@@ -8,6 +8,7 @@ import pandas as pd
 import scanpy as sc
 from datasets import Dataset
 from omegaconf import DictConfig, OmegaConf
+from tqdm.auto import tqdm
 
 from mosaicfm.tokenizer import GeneVocab
 
@@ -44,9 +45,35 @@ def generate_gene_aliases(gene_info_path: str) -> pd.DataFrame:
         columns=["synonym", "gene_symbol"],
     )
     df.set_index("synonym", inplace=True)
+    df.loc["KIAA1804"] = "MAP3K21"  # Add missing gene alias
 
     log.info(f"Generated gene alias DataFrame with {len(df)} entries.")
     return df
+
+
+def map_gene_names_to_vocab(gene_name_list, vocab, gene_alias_df):
+    vocab_map_per_row = []
+    for gene_name in gene_name_list:
+        if gene_name in vocab:
+            vocab_map_per_row.append(vocab[gene_name])
+        elif gene_name in gene_alias_df.index:
+            vocab_map_per_row.append(vocab[gene_alias_df.loc[gene_name, "gene_symbol"]])
+        else:
+            return None
+    return vocab_map_per_row if vocab_map_per_row else None
+
+
+def map_gene_name_to_dep(gene_name_list, dep_scores, gene_alias_df):
+    dep_scores_per_row = []
+    for gene_name in gene_name_list:
+        if gene_name in dep_scores:
+            dep_scores_per_row.append(dep_scores[gene_name])
+        elif gene_name in gene_alias_df.index:
+            gene_alias = gene_alias_df.loc[gene_name, "gene_symbol"]
+            dep_scores_per_row.append(dep_scores[gene_alias])
+        else:
+            return None
+    return dep_scores_per_row if dep_scores_per_row else None
 
 
 def record_generator(
@@ -58,7 +85,7 @@ def record_generator(
     perturbation_list = list(set(adata.obs["perturbation"]))
     log.info(f"Using {len(perturbation_list)} perturbations")
 
-    for perturbation_name in perturbation_list:
+    for perturbation_name in tqdm(perturbation_list):
         perturb_adata = adata[adata.obs["perturbation"] == perturbation_name]
         log.info(f"Retrieved {len(perturb_adata)} cells for {perturbation_name}")
         perturbation_edist = perturbation_metadata.loc[perturbation_name, "edist"]
@@ -66,8 +93,9 @@ def record_generator(
             perturbation_name,
             "depmap_dependency",
         ]
-        perturbation_targets = [
-            perturbation_metadata.loc[perturbation_name, "target_gene_vocab_id"],
+        perturbation_targets = perturbation_metadata.loc[
+            perturbation_name,
+            "target_gene_vocab_id",
         ]
 
         for cell in perturb_adata:
@@ -84,6 +112,8 @@ def record_generator(
 
             for ctrl_id in random_ids:
                 expressions_ctrl = ctrl_adata[ctrl_id].X.A[0]
+                genes_ctrl = ctrl_adata[ctrl_id].var["id_in_vocab"].values
+                assert all(genes_pert == genes_ctrl)
 
                 yield {
                     "depmap_dependency": np.float32(depmap_dependency),
@@ -127,39 +157,30 @@ def main(cfg: DictConfig) -> None:
     # Load in raw data
     log.info(f"Loading raw data from {cfg.raw_data_path}...")
     adata = sc.read_h5ad(cfg.raw_data_path)
-    adata.var["gene_name"] = adata.var.index  # Add gene_name column to var
+    adata.var["gene_name"] = adata.var.index
+    adata.var = adata.var.rename(columns={"ensemble_id": "ensembl_id"})
     log.info(f"Raw data loaded. Data shape: {adata.shape}")
 
     # Load metadata
-    log.info(f"Loading Adamson metadata from {cfg.adamson_metadata_path}...")
-    metadata_df = pd.read_csv(cfg.adamson_metadata_path)
-    metadata_df = metadata_df[
-        ~metadata_df["perturbation"].isin(["Gal4-4(mod)", "63(mod)"])
-    ]  # Filter out these perturbations if present, these don't map to a gene
-    log.info(f"Adamson metadata loaded with {len(metadata_df)} records.")
-
-    metadata_df["target_gene_name"] = metadata_df["perturbation"].apply(
-        lambda x: x.split("+")[0].strip(),
+    log.info(f"Loading Norman metadata from {cfg.norman_metadata_path}...")
+    norman_df = pd.read_csv(cfg.norman_metadata_path)
+    norman_df["target_gene_names"] = norman_df["perturbation"].apply(
+        lambda x: [
+            gene_name.strip() for gene_name in x.split("+") if gene_name != "ctrl"
+        ],
     )
-
-    log.info("Mapping target genes to vocab IDs...")
-    mapped_id = []
-    for gene_name in metadata_df["target_gene_name"]:
-        if gene_name in vocab:
-            mapped_id.append(vocab[gene_name])
-        elif gene_name in gene_alias_df.index:
-            mapped_id.append(vocab[gene_alias_df.loc[gene_name, "gene_symbol"]])
-        else:
-            mapped_id.append(vocab["<pad>"])
-    metadata_df["target_gene_vocab_id"] = mapped_id
-    assert (
-        vocab["<pad>"]
-        not in metadata_df[metadata_df["perturbation"] != "ctrl"][
-            "target_gene_vocab_id"
-        ]
-    ), "Some target genes were not found in the vocabulary."
-
-    metadata_df = metadata_df.set_index("perturbation", drop=False)
+    norman_df["target_gene_vocab_id"] = norman_df["target_gene_names"].apply(
+        lambda gene_name_list: map_gene_names_to_vocab(
+            gene_name_list,
+            vocab,
+            gene_alias_df,
+        ),
+    )
+    norman_df = norman_df.set_index("perturbation", drop=False)
+    assert not any(
+        norman_df[norman_df["perturbation"] != "ctrl"]["target_gene_vocab_id"].isna(),
+    )
+    log.info(f"Norman metadata loaded with {len(norman_df)} records.")
 
     # Load DepMap dependency score
     log.info(f"Loading DepMap dependency scores from {cfg.depmap_scores_path}...")
@@ -172,22 +193,19 @@ def main(cfg: DictConfig) -> None:
         .loc[k562_depmap_id, :]
         .transpose()
         .to_dict()
-    )  # Extract K562 dependency scores as dictionary with gene symbol as key
+    )
     k562_dependency_scores = {
         k.split(" (")[0]: v for k, v in k562_dependency_scores.items()
     }
 
-    adamson_dep_scores = []
-    for gene_symbol in metadata_df["target_gene_name"]:
-        if gene_symbol in k562_dependency_scores:
-            adamson_dep_scores.append(k562_dependency_scores[gene_symbol])
-        elif gene_symbol in gene_alias_df.index:
-            gene_alias = gene_alias_df.loc[gene_symbol, "gene_symbol"]
-            adamson_dep_scores.append(k562_dependency_scores.get(gene_alias, None))
-        else:
-            adamson_dep_scores.append(None)
-    metadata_df["depmap_dependency"] = adamson_dep_scores
-    log.info("DepMap dependency scores added to perturbation metadata.")
+    norman_df["depmap_dependency"] = norman_df["target_gene_names"].apply(
+        lambda gene_name_list: map_gene_name_to_dep(
+            gene_name_list,
+            k562_dependency_scores,
+            gene_alias_df,
+        ),
+    )
+    log.info("DepMap dependency scores added to Norman metadata.")
 
     # Data preparation
     log.info("Starting data preparation...")
@@ -209,8 +227,11 @@ def main(cfg: DictConfig) -> None:
         subset=False,
         flavor="seurat_v3",
     )
+    target_genesymbol_set = [
+        gene for gene_list in norman_df["target_gene_names"] for gene in gene_list
+    ]
     filter_hvg = (
-        adata.var["gene_name"].isin(metadata_df["target_gene_name"])
+        adata.var["gene_name"].isin(target_genesymbol_set)
         | adata.var["highly_variable"]
     )
     log.info(
@@ -220,32 +241,29 @@ def main(cfg: DictConfig) -> None:
 
     # Create Dataset using from_generator
     log.info("Creating Hugging Face dataset using from_generator...")
-    hf_dataset = Dataset.from_generator(
+    mosaic_dataset = Dataset.from_generator(
         lambda: record_generator(
             adata=adata,
-            perturbation_metadata=metadata_df,
+            perturbation_metadata=norman_df,
             cfg=cfg,
         ),
     )
-    hf_dataset.set_format(type="torch")
-    log.info(f"Generated Adamson dataset with {len(hf_dataset)} records.")
+    mosaic_dataset.set_format(type="torch")
+    log.info(f"Generated mosaic dataset with {len(mosaic_dataset)} records.")
 
     dataset_save_path = cfg.dataset_save_path
-    log.info(f"Saving Adamson dataset to {dataset_save_path}...")
-    hf_dataset.save_to_disk(
+    log.info(f"Saving mosaic dataset to {dataset_save_path}...")
+    mosaic_dataset.save_to_disk(
         dataset_save_path,
         max_shard_size=cfg.get("max_shard_size", "200MB"),
     )
-    log.info(f"Saved Adamson dataset to {dataset_save_path}")
+    log.info(f"Saved mosaic dataset to {dataset_save_path}")
 
 
 if __name__ == "__main__":
     yaml_path = sys.argv[1]
 
-    # Disable resolving environment variables through omegaconf.
     OmegaConf.clear_resolver("oc.env")
-
-    # Load yaml file.
     log.info(f"Loading configuration from {yaml_path}...")
     with open(yaml_path) as f:
         cfg = OmegaConf.load(f)
