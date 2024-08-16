@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sys
+from typing import Dict
 
 import numpy as np
 import pandas as pd
@@ -21,7 +22,88 @@ logging.basicConfig(
 logging.getLogger(__name__).setLevel("INFO")
 
 
-def main(cfg: DictConfig) -> Dataset:
+def record_generator(
+    adata: sc.AnnData,
+    sensitivity_df: pd.DataFrame,
+    drug_targets_df: pd.DataFrame,
+    cfg: DictConfig,
+) -> Dict:
+    cell_line_list = list(set(adata.obs["cell_line"]))
+    log.info(f"Using {len(cell_line_list)} cell-lines")
+
+    for cell_line in tqdm(cell_line_list):
+        log.info(f"Processing cell line: {cell_line}")
+        ctrl_adata = adata[
+            (adata.obs["cell_line"] == cell_line) & (adata.obs["drug"] == "DMSO_TF")
+        ]
+        log.info(f"Retrieved {len(ctrl_adata)} DMSO_TF cells for {cell_line}")
+        drug_list_for_cell_line = set(
+            adata[(adata.obs["cell_line"] == cell_line)].obs["drug"],
+        ) - {"DMSO_TF"}
+        log.info(f"Using {len(drug_list_for_cell_line)} drugs for {cell_line}")
+        for drug in drug_list_for_cell_line:
+            log.info(f"Processing drug: {drug} for cell line: {cell_line}")
+            drug_adata = adata[
+                (adata.obs["cell_line"] == cell_line) & (adata.obs["drug"] == drug)
+            ]
+            log.info(f"Retrieved {len(drug_adata)} {drug} cells for {cell_line}")
+            drugname_drugconc = set(drug_adata.obs["drugname_drugconc"].values)
+            assert (
+                len(drugname_drugconc) == 1
+            ), f"Only one drug concentration should be present, found {len(drugname_drugconc)}: {drugname_drugconc}"
+            drugname_drugconc = next(iter(drugname_drugconc))
+            sensitivity_data = sensitivity_df[
+                (sensitivity_df["condition"] == drugname_drugconc)
+                & (sensitivity_df["cell_line"] == cell_line)
+            ]
+            assert (
+                len(sensitivity_data) == 1
+            ), f"Sensitivity data must match exactly one row, found {len(sensitivity_data)}"
+
+            growth_rate = sensitivity_data["growth_rate"].values[0]
+            growth_rate_mdn = sensitivity_data["growth_rate_mdn"].values[0]
+            growth_rate_bin = sensitivity_data["growth_rate_bin"].values[0]
+
+            for cell in drug_adata:
+                expressions_perturbed = cell.X.A[0]
+                genes_pert = cell.var["id_in_vocab"].values
+                perturbation_targets = drug_targets_df.loc[drug, "target_id"]
+
+                random_ids = np.random.randint(
+                    low=0,
+                    high=len(ctrl_adata),
+                    size=cfg.num_ctrl_samples_to_pair,
+                )
+                for ctrl_id in random_ids:
+                    expressions_ctrl = ctrl_adata[ctrl_id].X.A[0]
+                    genes_ctrl = ctrl_adata[ctrl_id].var["id_in_vocab"].values
+                    assert all(genes_pert == genes_ctrl)
+
+                    yield {
+                        "growth_rate": np.float32(growth_rate),
+                        "growth_rate_mdn": np.float32(growth_rate_mdn),
+                        "growth_rate_bin": np.int64(growth_rate_bin),
+                        "expressions_ctrl_raw": np.array(
+                            expressions_ctrl,
+                            dtype=np.float32,
+                        ),
+                        "expressions_perturbed_raw": np.array(
+                            expressions_perturbed,
+                            dtype=np.float32,
+                        ),
+                        "perturbation_target_genes": np.array(
+                            perturbation_targets,
+                            dtype=np.int64,
+                        ),
+                        "genes": np.array(genes_pert, dtype=np.int64),
+                        "cell_line": cell_line,
+                        "drug": drug,
+                        "cell_key": cell.obs.index.values[0],
+                        "cell_key_ctrl": ctrl_adata[ctrl_id].obs.index[0],
+                    }
+
+
+def main(cfg: DictConfig) -> None:
     log.info("Starting main script execution...")
 
     # Load in raw data
@@ -120,99 +202,11 @@ def main(cfg: DictConfig) -> Dataset:
         f"Dataset has {len(adata.obs)} cells and {len(adata.var)} genes after filtering",
     )
 
-    records = {
-        "growth_rate": [],
-        "growth_rate_mdn": [],
-        "growth_rate_bin": [],
-        "expressions_ctrl_raw": [],
-        "expressions_perturbed_raw": [],
-        "perturbation_target_genes": [],
-        "genes": [],
-        "cell_line": [],
-        "drug": [],
-        "cell_key": [],
-        "cell_key_ctrl": [],
-    }
-
-    cell_line_list = list(set(adata.obs["cell_line"]))
-    log.info(f"Using {len(cell_line_list)} cell-lines")
-
-    for cell_line in tqdm(cell_line_list):
-        log.info(f"Processing cell line: {cell_line}")
-        ctrl_adata = adata[
-            (adata.obs["cell_line"] == cell_line) & (adata.obs["drug"] == "DMSO_TF")
-        ]
-        log.info(f"Retrieved {len(ctrl_adata)} DMSO_TF cells for {cell_line}")
-        drug_list_for_cell_line = set(
-            adata[(adata.obs["cell_line"] == cell_line)].obs["drug"],
-        ) - {"DMSO_TF"}
-        log.info(f"Using {len(drug_list_for_cell_line)} drugs for {cell_line}")
-        for drug in drug_list_for_cell_line:
-            log.info(f"Processing drug: {drug} for cell line: {cell_line}")
-            drug_adata = adata[
-                (adata.obs["cell_line"] == cell_line) & (adata.obs["drug"] == drug)
-            ]
-            log.info(f"Retrieved {len(drug_adata)} {drug} cells for {cell_line}")
-            drugname_drugconc = set(drug_adata.obs["drugname_drugconc"].values)
-            assert (
-                len(drugname_drugconc) == 1
-            ), f"Only one drug concentration should be present, found {len(drugname_drugconc)}: {drugname_drugconc}"
-            drugname_drugconc = next(iter(drugname_drugconc))
-            sensitivity_data = sensitivity_df[
-                (sensitivity_df["condition"] == drugname_drugconc)
-                & (sensitivity_df["cell_line"] == cell_line)
-            ]
-            assert (
-                len(sensitivity_data) == 1
-            ), f"Sensitivity data must match exactly one row, found {len(sensitivity_data)}"
-
-            growth_rate = sensitivity_data["growth_rate"].values[0]
-            growth_rate_mdn = sensitivity_data["growth_rate_mdn"].values[0]
-            growth_rate_bin = sensitivity_data["growth_rate_bin"].values[0]
-
-            for cell in drug_adata:
-                expressions_perturbed = cell.X.A[0]
-                genes_pert = cell.var["id_in_vocab"].values
-                perturbation_targets = drug_targets.loc[drug, "target_id"]
-
-                random_ids = np.random.randint(
-                    low=0,
-                    high=len(ctrl_adata),
-                    size=cfg.num_ctrl_samples_to_pair,
-                )
-                for ctrl_id in random_ids:
-                    expressions_ctrl = ctrl_adata[ctrl_id].X.A[0]
-                    genes_ctrl = ctrl_adata[ctrl_id].var["id_in_vocab"].values
-                    assert all(genes_pert == genes_ctrl)
-
-                    cell_record = {
-                        "growth_rate": np.float32(growth_rate),
-                        "growth_rate_mdn": np.float32(growth_rate_mdn),
-                        "growth_rate_bin": np.int64(growth_rate_bin),
-                        "expressions_ctrl_raw": np.array(
-                            expressions_ctrl,
-                            dtype=np.float32,
-                        ),
-                        "expressions_perturbed_raw": np.array(
-                            expressions_perturbed,
-                            dtype=np.float32,
-                        ),
-                        "perturbation_target_genes": np.array(
-                            perturbation_targets,
-                            dtype=np.int64,
-                        ),
-                        "genes": np.array(genes_pert, dtype=np.int64),
-                        "cell_line": cell_line,
-                        "drug": drug,
-                        "cell_key": cell.obs.index.values[0],
-                        "cell_key_ctrl": ctrl_adata[ctrl_id].obs.index[0],
-                    }
-
-                    for key in cell_record:
-                        records[key].append(cell_record[key])
-
-    log.info("Creating Hugging Face dataset from records...")
-    mosaic_dataset = Dataset.from_dict(records)
+    # Create Dataset using from_generator
+    log.info("Creating Hugging Face dataset using from_generator...")
+    mosaic_dataset = Dataset.from_generator(
+        lambda: record_generator(adata, sensitivity_df, drug_targets, cfg),
+    )
     mosaic_dataset.set_format(type="torch")
     log.info(f"Generated mosaic dataset with {len(mosaic_dataset)} records.")
 
@@ -222,8 +216,6 @@ def main(cfg: DictConfig) -> Dataset:
         max_shard_size=cfg.get("max_shard_size", "200MB"),
     )
     log.info(f"Saved mosaic dataset to {dataset_save_path}")
-
-    return mosaic_dataset
 
 
 if __name__ == "__main__":

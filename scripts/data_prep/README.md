@@ -53,6 +53,8 @@ The data is processed as follows:
      - Store raw counts for the perturbed and control cells for all genes (n_genes=5008)
      - Also record sensitivity, drug-targets, and cell-line information
 
+
+
 The heatmap below shows the distribution of drugs and cell-lines in the dataset.
 
 ![img](assets/drug_cell_line_heatmap.png)
@@ -61,5 +63,23 @@ To reproduce the dataset, run the following command:
 ```shell
 python process_mosaic_sensitivity.py yamls/mosaic_resistance_is_futile.yml
 ```
+
+An example record in the dataset is show below:
+
+```
+{'growth_rate': [0.0259861653678554],
+ 'growth_rate_mdn': [0.132619704816021],
+ 'growth_rate_bin': [1],
+ 'expressions_ctrl_raw': [array([0., 0., 0., ..., 0., 0., 0.], dtype=float32)],
+ 'expressions_perturbed_raw': [array([0., 0., 0., ..., 0., 0., 0.], dtype=float32)],
+ 'perturbation_target_genes': [[8304, 8615]],
+ 'genes': [array([ 9393, 30891,  7312, ..., 50821, 21581, 50771])],
+ 'cell_line': ['c_38'],
+ 'drug': ['Lapatinib ditosylate'],
+ 'cell_key': ['04_06_31-lib_316'],
+ 'cell_key_ctrl': ['86_32_33-lib_310']}
+```
+
+
 
 
