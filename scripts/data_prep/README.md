@@ -66,7 +66,7 @@ python process_mosaic_sensitivity.py yamls/mosaic_resistance_is_futile.yml
 
 An example record in the dataset is show below:
 
-```
+```python
 {'growth_rate': [0.0259861653678554],
  'growth_rate_mdn': [0.132619704816021],
  'growth_rate_bin': [1],
@@ -79,6 +79,41 @@ An example record in the dataset is show below:
  'cell_key': ['04_06_31-lib_316'],
  'cell_key_ctrl': ['86_32_33-lib_310']}
 ```
+
+The dataset is then split by the drug-target. We used Galunisertib and LY3200882 as the test-set since they 
+both target TGFBR1. This results in a roughly 80-20 split between the train and test sets.
+
+| Dataset                 | Description                                                                                                   | s3 path |
+|-------------------------|---------------------------------------------------------------------------------------------------------------|---------|
+| Resistance is Futile v1 | Training data tokenized using the vocab for MosaicFM-1.3B. Contains a train and eval split segregated by drug | s3://vevo-ml-datasets/vevo-scgpt/datasets/resistance_is_futile_35_MDS_v1/ |
+
+
+## PerturbSeq - Adamson et al Dataset
+
+The data is processed as follows:
+
+```shell
+python process_perturbseq.py yamls/perturbseq_adamson.yml
+```
+
+The following fields are stored:
+```python
+{'depmap_dependency': 1.0,
+ 'perturbation_edist': 62.28814212111882,
+ 'perturbation_target_genes': [20254],
+ 'expressions_ctrl_raw': array([  0.,   0.,   2., ..., 185.,  12., 150.], dtype=float32),
+ 'expressions_perturbed_raw': array([ 0.,  1.,  1., ..., 56.,  0., 33.], dtype=float32),
+ 'genes': array([30607, 10954, 12241, ..., 17076, 17079, 17072], dtype=int32),
+ 'cell_line': 'K562',
+ 'perturbation_name': 'SLMO2+ctrl'}
+```
+
+The DepMap dependency score is used as a proxy for sensitivity to the perturbation.
+The e-distance is a measure of the degree of change induced by the perturbation and 
+may be seen as a measure of intensity of the signal present in the data.
+
+
+
 
 
 

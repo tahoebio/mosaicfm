@@ -8,7 +8,6 @@ import pandas as pd
 import scanpy as sc
 from datasets import Dataset
 from omegaconf import DictConfig, OmegaConf
-from tqdm.auto import tqdm
 
 from mosaicfm.tokenizer import GeneVocab
 
@@ -23,25 +22,25 @@ logging.getLogger(__name__).setLevel("INFO")
 def generate_gene_aliases(gene_info_path: str) -> pd.DataFrame:
     log.info(f"Generating gene aliases from {gene_info_path}...")
 
-    synonym_to_symbol = {}
-
     raw_df = pd.read_csv(gene_info_path, sep="\t")
-    for row in raw_df.to_dict(orient="records"):
-        symbol = row["Symbol"]
-        synonyms = row["Synonyms"].split("|")
-        for synonym in synonyms:
-            synonym_to_symbol[synonym] = symbol
+    synonym_to_symbol = {
+        synonym: row["Symbol"]
+        for row in raw_df.to_dict(orient="records")
+        for synonym in row["Synonyms"].split("|")
+    }
 
     # Ensure all symbols are included as their own synonym
-    new_rows = {}
-    for value in synonym_to_symbol.values():
-        if value not in synonym_to_symbol:
-            new_rows[value] = value
-    synonym_to_symbol_merged = synonym_to_symbol | new_rows
+    synonym_to_symbol.update(
+        {
+            value: value
+            for value in synonym_to_symbol.values()
+            if value not in synonym_to_symbol
+        },
+    )
 
     # Convert dictionary to DataFrame
     df = pd.DataFrame(
-        list(synonym_to_symbol_merged.items()),
+        list(synonym_to_symbol.items()),
         columns=["synonym", "gene_symbol"],
     )
     df.set_index("synonym", inplace=True)
@@ -59,7 +58,7 @@ def record_generator(
     perturbation_list = list(set(adata.obs["perturbation"]))
     log.info(f"Using {len(perturbation_list)} perturbations")
 
-    for perturbation_name in tqdm(perturbation_list):
+    for perturbation_name in perturbation_list:
         perturb_adata = adata[adata.obs["perturbation"] == perturbation_name]
         log.info(f"Retrieved {len(perturb_adata)} cells for {perturbation_name}")
         perturbation_edist = perturbation_metadata.loc[perturbation_name, "edist"]
@@ -85,8 +84,6 @@ def record_generator(
 
             for ctrl_id in random_ids:
                 expressions_ctrl = ctrl_adata[ctrl_id].X.A[0]
-                genes_ctrl = ctrl_adata[ctrl_id].var["id_in_vocab"].values
-                assert all(genes_pert == genes_ctrl)
 
                 yield {
                     "depmap_dependency": np.float32(depmap_dependency),
@@ -225,23 +222,23 @@ def main(cfg: DictConfig) -> None:
 
     # Create Dataset using from_generator
     log.info("Creating Hugging Face dataset using from_generator...")
-    mosaic_dataset = Dataset.from_generator(
+    hf_dataset = Dataset.from_generator(
         lambda: record_generator(
             adata=adata,
             perturbation_metadata=metadata_df,
             cfg=cfg,
         ),
     )
-    mosaic_dataset.set_format(type="torch")
-    log.info(f"Generated mosaic dataset with {len(mosaic_dataset)} records.")
+    hf_dataset.set_format(type="torch")
+    log.info(f"Generated Adamson dataset with {len(hf_dataset)} records.")
 
     dataset_save_path = cfg.dataset_save_path
-    log.info(f"Saving mosaic dataset to {dataset_save_path}...")
-    mosaic_dataset.save_to_disk(
+    log.info(f"Saving Adamson dataset to {dataset_save_path}...")
+    hf_dataset.save_to_disk(
         dataset_save_path,
         max_shard_size=cfg.get("max_shard_size", "200MB"),
     )
-    log.info(f"Saved mosaic dataset to {dataset_save_path}")
+    log.info(f"Saved Adamson dataset to {dataset_save_path}")
 
 
 if __name__ == "__main__":
