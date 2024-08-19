@@ -2,6 +2,7 @@
 import json
 import logging
 import sys
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -19,9 +20,11 @@ logging.basicConfig(
 logging.getLogger(__name__).setLevel("INFO")
 
 
-def generate_gene_aliases(gene_info_path: str) -> pd.DataFrame:
+def generate_gene_aliases(
+    gene_info_path: str,
+    custom_aliases: Optional[Dict[str, str]] = None,
+) -> pd.DataFrame:
     log.info(f"Generating gene aliases from {gene_info_path}...")
-
     raw_df = pd.read_csv(gene_info_path, sep="\t")
     synonym_to_symbol = {
         synonym: row["Symbol"]
@@ -38,19 +41,26 @@ def generate_gene_aliases(gene_info_path: str) -> pd.DataFrame:
         },
     )
 
+    # Apply any custom gene aliases (e.g., "KIAA1804" -> "MAP3K21")
+    if custom_aliases:
+        synonym_to_symbol.update(custom_aliases)
+
     # Convert dictionary to DataFrame
     df = pd.DataFrame(
         list(synonym_to_symbol.items()),
         columns=["synonym", "gene_symbol"],
     )
     df.set_index("synonym", inplace=True)
-    df.loc["KIAA1804"] = "MAP3K21"  # Add missing gene alias
 
     log.info(f"Generated gene alias DataFrame with {len(df)} entries.")
     return df
 
 
-def map_gene_names_to_vocab(gene_name_list, vocab, gene_alias_df):
+def map_gene_names_to_vocab(
+    gene_name_list: List[str],
+    vocab: GeneVocab,
+    gene_alias_df: pd.DataFrame,
+) -> Optional[List[int]]:
     vocab_map_per_row = []
     for gene_name in gene_name_list:
         if gene_name in vocab:
@@ -62,7 +72,11 @@ def map_gene_names_to_vocab(gene_name_list, vocab, gene_alias_df):
     return vocab_map_per_row if vocab_map_per_row else None
 
 
-def map_gene_name_to_dep(gene_name_list, dep_scores, gene_alias_df):
+def map_gene_name_to_dep(
+    gene_name_list: List[str],
+    dep_scores: Dict[str, float],
+    gene_alias_df: pd.DataFrame,
+) -> Optional[List[float]]:
     dep_scores_per_row = []
     for gene_name in gene_name_list:
         if gene_name in dep_scores:
@@ -98,23 +112,23 @@ def record_generator(
     adata: sc.AnnData,
     perturbation_metadata: pd.DataFrame,
     cfg: DictConfig,
-) -> dict:
-    ctrl_adata = adata[adata.obs["perturbation"] == "ctrl"]
+) -> Dict:
+    ctrl_adata = adata[adata.obs[cfg.perturbation_col] == cfg.control_value]
     num_ctrl_samples = len(ctrl_adata)
-    perturbation_list = list(set(adata.obs["perturbation"]) - {"ctrl"})
+    perturbation_list = list(set(adata.obs[cfg.perturbation_col]) - {cfg.control_value})
     log.info(f"Using {len(perturbation_list)} perturbations")
     gene_ids = np.array(adata.var["id_in_vocab"], dtype=np.int32)
     control_counts = ctrl_adata.X.A
     cell_line_name = cfg.cell_line_name
 
     for perturbation_name in perturbation_list:
-        perturb_adata = adata[adata.obs["perturbation"] == perturbation_name]
+        perturb_adata = adata[adata.obs[cfg.perturbation_col] == perturbation_name]
         log.info(f"Retrieved {len(perturb_adata)} cells for {perturbation_name}")
         perturbation_edist = np.float32(
-            perturbation_metadata.loc[perturbation_name, "edist"],
+            perturbation_metadata.loc[perturbation_name, cfg.edist_col],
         )
         depmap_dependency = np.array(
-            perturbation_metadata.loc[perturbation_name, "depmap_dependency"],
+            perturbation_metadata.loc[perturbation_name, cfg.depmap_col],
             np.float32,
         )
         perturbation_targets = np.array(
@@ -148,7 +162,7 @@ def record_generator(
                 }
 
 
-def main(cfg: DictConfig) -> None:
+def main(cfg: DictConfig) -> Dataset:
     dataset_name = cfg.dataset_name
     log.info(f"Starting processing for {dataset_name} Dataset...")
 
@@ -165,13 +179,16 @@ def main(cfg: DictConfig) -> None:
     ensembl_to_gene_name = {v: k for k, v in gene_to_ensembl.items()}
 
     # Generate gene aliases
-    gene_alias_df = generate_gene_aliases(cfg.gene_info_path)
+    gene_alias_df = generate_gene_aliases(
+        cfg.gene_info_path,
+        cfg.get("custom_aliases", None),
+    )
 
     # Load in raw data
     log.info(f"Loading raw data from {cfg.raw_data_path}...")
     adata = sc.read_h5ad(cfg.raw_data_path)
     adata.var["gene_name"] = adata.var.index
-    adata.var = adata.var.rename(columns={"ensemble_id": "ensembl_id"})
+    adata.var = adata.var.rename(columns={cfg.ensembl_col: "ensembl_id"})
     log.info(f"Raw data loaded. Data shape: {adata.shape}")
 
     # Load metadata
@@ -179,13 +196,15 @@ def main(cfg: DictConfig) -> None:
     perturbation_meta_df = pd.read_csv(cfg.metadata_path)
     # Remove metadata for ctrl perturbation (most fields are NaN)
     perturbation_meta_df = perturbation_meta_df[
-        perturbation_meta_df["perturbation"] != "ctrl"
+        perturbation_meta_df["perturbation"] != cfg.control_value
     ]
     perturbation_meta_df["target_gene_names"] = perturbation_meta_df[
-        "perturbation"
+        cfg.perturbation_col
     ].apply(
         lambda x: [
-            gene_name.strip() for gene_name in x.split("+") if gene_name != "ctrl"
+            gene_name.strip()
+            for gene_name in x.split("+")
+            if gene_name != cfg.control_value
         ],
     )
     perturbation_meta_df["target_gene_vocab_id"] = perturbation_meta_df[
@@ -197,7 +216,10 @@ def main(cfg: DictConfig) -> None:
             gene_alias_df,
         ),
     )
-    perturbation_meta_df = perturbation_meta_df.set_index("perturbation", drop=False)
+    perturbation_meta_df = perturbation_meta_df.set_index(
+        cfg.perturbation_col,
+        drop=False,
+    )
     assert not any(
         perturbation_meta_df["target_gene_vocab_id"].isna(),
     ), "All target genes must be mappable to a gene in the vocabulary"
@@ -235,14 +257,14 @@ def main(cfg: DictConfig) -> None:
 
     depmap_nan_perts = perturbation_meta_df[
         perturbation_meta_df["depmap_dependency"].isna()
-    ]["perturbation"].values
+    ][cfg.perturbation_col].values
     log.info(
         f"Found {len(depmap_nan_perts)} perturbations with missing DepMap dependency scores. Removing them.",
     )
     perturbation_meta_df = perturbation_meta_df[
-        ~perturbation_meta_df["perturbation"].isin(depmap_nan_perts)
+        ~perturbation_meta_df[cfg.perturbation_col].isin(depmap_nan_perts)
     ]
-    adata = adata[~adata.obs["perturbation"].isin(depmap_nan_perts)]
+    adata = adata[~adata.obs[cfg.perturbation_col].isin(depmap_nan_perts)]
 
     # Data preparation
     log.info("Starting data preparation...")
@@ -296,13 +318,16 @@ def main(cfg: DictConfig) -> None:
     ), "All target genes must be in adata"
 
     assert all(
-        perturbation_name in perturbation_meta_df["perturbation"]
-        for perturbation_name in (set(adata.obs["perturbation"]) - {"ctrl"})
+        perturbation_name in perturbation_meta_df[cfg.perturbation_col]
+        for perturbation_name in (
+            set(adata.obs[cfg.perturbation_col]) - {cfg.control_value}
+        )
     ), "All perturbations must have metadata"
 
     # Create Dataset using from_generator
     expected_samples = (
-        len(adata[adata.obs["perturbation"] != "ctrl"]) * cfg.num_ctrl_samples_to_pair
+        len(adata[adata.obs[cfg.perturbation_col] != cfg.control_value])
+        * cfg.num_ctrl_samples_to_pair
     )
     log.info(f"Creating HF dataset with {expected_samples} samples...")
     hf_dataset = Dataset.from_generator(
@@ -322,11 +347,11 @@ def main(cfg: DictConfig) -> None:
         max_shard_size=cfg.get("max_shard_size", "200MB"),
     )
     log.info(f"Saved {dataset_name} dataset to {dataset_save_path}")
+    return hf_dataset
 
 
 if __name__ == "__main__":
     yaml_path = sys.argv[1]
-
     OmegaConf.clear_resolver("oc.env")
     log.info(f"Loading configuration from {yaml_path}...")
     with open(yaml_path) as f:
