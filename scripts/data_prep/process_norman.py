@@ -8,7 +8,6 @@ import pandas as pd
 import scanpy as sc
 from datasets import Dataset
 from omegaconf import DictConfig, OmegaConf
-from tqdm.auto import tqdm
 
 from mosaicfm.tokenizer import GeneVocab
 
@@ -76,68 +75,82 @@ def map_gene_name_to_dep(gene_name_list, dep_scores, gene_alias_df):
     return dep_scores_per_row if dep_scores_per_row else None
 
 
+def map_gene_name_or_ensembl_to_vocab(
+    gene_name: str,
+    ensembl_id: str,
+    vocab: GeneVocab,
+    gene_alias_dict: dict,
+    ensembl_to_gene_name: dict,
+) -> int:
+    if gene_name in vocab:
+        return vocab[gene_name]
+    gene_alias = gene_alias_dict.get(gene_name, "None")
+    if gene_alias in vocab:
+        return vocab[gene_alias]
+    gene_name_from_id = ensembl_to_gene_name.get(ensembl_id, "None")
+    if gene_name_from_id in vocab:
+        return vocab[gene_name_from_id]
+    else:
+        return vocab["<pad>"]
+
+
 def record_generator(
     adata: sc.AnnData,
     perturbation_metadata: pd.DataFrame,
     cfg: DictConfig,
-):
+) -> dict:
     ctrl_adata = adata[adata.obs["perturbation"] == "ctrl"]
-    perturbation_list = list(set(adata.obs["perturbation"]))
+    num_ctrl_samples = len(ctrl_adata)
+    perturbation_list = list(set(adata.obs["perturbation"]) - {"ctrl"})
     log.info(f"Using {len(perturbation_list)} perturbations")
+    gene_ids = np.array(adata.var["id_in_vocab"], dtype=np.int32)
+    control_counts = ctrl_adata.X.A
+    cell_line_name = cfg.cell_line_name
 
-    for perturbation_name in tqdm(perturbation_list):
+    for perturbation_name in perturbation_list:
         perturb_adata = adata[adata.obs["perturbation"] == perturbation_name]
         log.info(f"Retrieved {len(perturb_adata)} cells for {perturbation_name}")
-        perturbation_edist = perturbation_metadata.loc[perturbation_name, "edist"]
-        depmap_dependency = perturbation_metadata.loc[
-            perturbation_name,
-            "depmap_dependency",
-        ]
-        perturbation_targets = perturbation_metadata.loc[
-            perturbation_name,
-            "target_gene_vocab_id",
-        ]
+        perturbation_edist = np.float32(
+            perturbation_metadata.loc[perturbation_name, "edist"],
+        )
+        depmap_dependency = np.array(
+            perturbation_metadata.loc[perturbation_name, "depmap_dependency"],
+            np.float32,
+        )
+        perturbation_targets = np.array(
+            perturbation_metadata.loc[perturbation_name, "target_gene_vocab_id"],
+            dtype=np.int32,
+        )
+        perturb_counts = perturb_adata.X.A
 
-        for cell in perturb_adata:
-            expressions_perturbed = cell.X.A[0]
-            genes_pert = cell.var["id_in_vocab"].values
+        assert all(target in gene_ids for target in perturbation_targets)
+
+        for idx in range(len(perturb_adata)):
+            expressions_perturbed = perturb_counts[idx]
 
             random_ids = np.random.randint(
                 low=0,
-                high=len(ctrl_adata),
+                high=num_ctrl_samples,
                 size=cfg.num_ctrl_samples_to_pair,
             )
 
-            assert all(target in genes_pert for target in perturbation_targets)
-
             for ctrl_id in random_ids:
-                expressions_ctrl = ctrl_adata[ctrl_id].X.A[0]
-                genes_ctrl = ctrl_adata[ctrl_id].var["id_in_vocab"].values
-                assert all(genes_pert == genes_ctrl)
-
+                expressions_ctrl = control_counts[ctrl_id]
                 yield {
-                    "depmap_dependency": np.float32(depmap_dependency),
-                    "perturbation_edist": np.float32(perturbation_edist),
-                    "perturbation_target_genes": np.array(
-                        perturbation_targets,
-                        dtype=np.int32,
-                    ),
-                    "expressions_ctrl_raw": np.array(
-                        expressions_ctrl,
-                        dtype=np.float32,
-                    ),
-                    "expressions_perturbed_raw": np.array(
-                        expressions_perturbed,
-                        dtype=np.float32,
-                    ),
-                    "genes": np.array(genes_pert, dtype=np.int32),
-                    "cell_line": "K562",
+                    "depmap_dependency": depmap_dependency,
+                    "perturbation_edist": perturbation_edist,
+                    "perturbation_target_genes": perturbation_targets,
+                    "expressions_ctrl_raw": expressions_ctrl,
+                    "expressions_perturbed_raw": expressions_perturbed,
+                    "genes": gene_ids,
+                    "cell_line": cell_line_name,
                     "perturbation_name": perturbation_name,
                 }
 
 
 def main(cfg: DictConfig) -> None:
-    log.info("Starting main script execution...")
+    dataset_name = cfg.dataset_name
+    log.info(f"Starting processing for {dataset_name} Dataset...")
 
     # Load vocab and gene mapping
     log.info(f"Loading vocab from {cfg.vocab_path}...")
@@ -162,63 +175,104 @@ def main(cfg: DictConfig) -> None:
     log.info(f"Raw data loaded. Data shape: {adata.shape}")
 
     # Load metadata
-    log.info(f"Loading Norman metadata from {cfg.norman_metadata_path}...")
-    norman_df = pd.read_csv(cfg.norman_metadata_path)
-    norman_df["target_gene_names"] = norman_df["perturbation"].apply(
+    log.info(f"Loading {dataset_name} metadata from {cfg.metadata_path}...")
+    perturbation_meta_df = pd.read_csv(cfg.metadata_path)
+    # Remove metadata for ctrl perturbation (most fields are NaN)
+    perturbation_meta_df = perturbation_meta_df[
+        perturbation_meta_df["perturbation"] != "ctrl"
+    ]
+    perturbation_meta_df["target_gene_names"] = perturbation_meta_df[
+        "perturbation"
+    ].apply(
         lambda x: [
             gene_name.strip() for gene_name in x.split("+") if gene_name != "ctrl"
         ],
     )
-    norman_df["target_gene_vocab_id"] = norman_df["target_gene_names"].apply(
+    perturbation_meta_df["target_gene_vocab_id"] = perturbation_meta_df[
+        "target_gene_names"
+    ].apply(
         lambda gene_name_list: map_gene_names_to_vocab(
             gene_name_list,
             vocab,
             gene_alias_df,
         ),
     )
-    norman_df = norman_df.set_index("perturbation", drop=False)
+    perturbation_meta_df = perturbation_meta_df.set_index("perturbation", drop=False)
     assert not any(
-        norman_df[norman_df["perturbation"] != "ctrl"]["target_gene_vocab_id"].isna(),
+        perturbation_meta_df["target_gene_vocab_id"].isna(),
+    ), "All target genes must be mappable to a gene in the vocabulary"
+
+    log.info(
+        f"{dataset_name} metadata loaded with {len(perturbation_meta_df)} records.",
     )
-    log.info(f"Norman metadata loaded with {len(norman_df)} records.")
 
     # Load DepMap dependency score
     log.info(f"Loading DepMap dependency scores from {cfg.depmap_scores_path}...")
     depmap_df = pd.read_csv(cfg.depmap_scores_path)
     depmap_df = depmap_df.rename(columns={"Unnamed: 0": "cell_line_depmap_id"})
 
-    k562_depmap_id = cfg.k562_depmap_id
-    k562_dependency_scores = (
+    cell_line_depmap_id = cfg.cell_line_depmap_id
+    cell_line_dependency_scores = (
         depmap_df.set_index("cell_line_depmap_id")
-        .loc[k562_depmap_id, :]
+        .loc[cell_line_depmap_id, :]
         .transpose()
         .to_dict()
     )
-    k562_dependency_scores = {
-        k.split(" (")[0]: v for k, v in k562_dependency_scores.items()
+    cell_line_dependency_scores = {
+        k.split(" (")[0]: v for k, v in cell_line_dependency_scores.items()
     }
 
-    norman_df["depmap_dependency"] = norman_df["target_gene_names"].apply(
+    perturbation_meta_df["depmap_dependency"] = perturbation_meta_df[
+        "target_gene_names"
+    ].apply(
         lambda gene_name_list: map_gene_name_to_dep(
             gene_name_list,
-            k562_dependency_scores,
+            cell_line_dependency_scores,
             gene_alias_df,
         ),
     )
-    log.info("DepMap dependency scores added to Norman metadata.")
+    log.info(f"DepMap dependency scores added to {dataset_name} metadata.")
+
+    depmap_nan_perts = perturbation_meta_df[
+        perturbation_meta_df["depmap_dependency"].isna()
+    ]["perturbation"].values
+    log.info(
+        f"Found {len(depmap_nan_perts)} perturbations with missing DepMap dependency scores. Removing them.",
+    )
+    perturbation_meta_df = perturbation_meta_df[
+        ~perturbation_meta_df["perturbation"].isin(depmap_nan_perts)
+    ]
+    adata = adata[~adata.obs["perturbation"].isin(depmap_nan_perts)]
 
     # Data preparation
     log.info("Starting data preparation...")
-    adata.var["id_in_vocab"] = [
-        vocab[ensembl_to_gene_name.get(gene_id, "<pad>")]
-        for gene_id in adata.var["ensembl_id"]
-    ]
+    gene_alias_to_gene_symbol = gene_alias_df["gene_symbol"].to_dict()
+    gene_ids_in_vocab = np.array(
+        [
+            map_gene_name_or_ensembl_to_vocab(
+                gene_name,
+                gene_id,
+                vocab,
+                gene_alias_to_gene_symbol,
+                ensembl_to_gene_name,
+            )
+            for gene_name, gene_id in zip(adata.var.index, adata.var["ensembl_id"])
+        ],
+    )
+
+    adata.var["id_in_vocab"] = gene_ids_in_vocab
     gene_ids_in_vocab = np.array(adata.var["id_in_vocab"])
     filter_vocab = adata.var["id_in_vocab"] != vocab["<pad>"]
     log.info(
         f"Matched {np.sum(filter_vocab)} / {len(gene_ids_in_vocab)} genes in vocabulary of size {len(vocab)}",
     )
     adata = adata[:, filter_vocab]
+
+    target_gene_vocab_id_set = {
+        gene
+        for gene_list in perturbation_meta_df["target_gene_vocab_id"]
+        for gene in gene_list
+    }
 
     log.info("Identifying highly variable genes...")
     sc.pp.highly_variable_genes(
@@ -227,11 +281,9 @@ def main(cfg: DictConfig) -> None:
         subset=False,
         flavor="seurat_v3",
     )
-    target_genesymbol_set = [
-        gene for gene_list in norman_df["target_gene_names"] for gene in gene_list
-    ]
+
     filter_hvg = (
-        adata.var["gene_name"].isin(target_genesymbol_set)
+        adata.var["id_in_vocab"].isin(target_gene_vocab_id_set)
         | adata.var["highly_variable"]
     )
     log.info(
@@ -239,25 +291,37 @@ def main(cfg: DictConfig) -> None:
     )
     adata = adata[:, filter_hvg]
 
+    assert all(
+        gene_id in set(adata.var["id_in_vocab"]) for gene_id in target_gene_vocab_id_set
+    ), "All target genes must be in adata"
+
+    assert all(
+        perturbation_name in perturbation_meta_df["perturbation"]
+        for perturbation_name in (set(adata.obs["perturbation"]) - {"ctrl"})
+    ), "All perturbations must have metadata"
+
     # Create Dataset using from_generator
-    log.info("Creating Hugging Face dataset using from_generator...")
-    mosaic_dataset = Dataset.from_generator(
+    expected_samples = (
+        len(adata[adata.obs["perturbation"] != "ctrl"]) * cfg.num_ctrl_samples_to_pair
+    )
+    log.info(f"Creating HF dataset with {expected_samples} samples...")
+    hf_dataset = Dataset.from_generator(
         lambda: record_generator(
             adata=adata,
-            perturbation_metadata=norman_df,
+            perturbation_metadata=perturbation_meta_df,
             cfg=cfg,
         ),
     )
-    mosaic_dataset.set_format(type="torch")
-    log.info(f"Generated mosaic dataset with {len(mosaic_dataset)} records.")
+    hf_dataset.set_format(type="torch")
+    log.info(f"Generated {dataset_name} dataset with {len(hf_dataset)} records.")
 
     dataset_save_path = cfg.dataset_save_path
-    log.info(f"Saving mosaic dataset to {dataset_save_path}...")
-    mosaic_dataset.save_to_disk(
+    log.info(f"Saving {dataset_name} dataset to {dataset_save_path}...")
+    hf_dataset.save_to_disk(
         dataset_save_path,
         max_shard_size=cfg.get("max_shard_size", "200MB"),
     )
-    log.info(f"Saved mosaic dataset to {dataset_save_path}")
+    log.info(f"Saved {dataset_name} dataset to {dataset_save_path}")
 
 
 if __name__ == "__main__":
