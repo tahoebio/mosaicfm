@@ -114,15 +114,20 @@ def main(cfg: DictConfig) -> composer.Trainer:
     model_collator_cfg_path = model_cfg.get("collator_cfg_path")
     model_collator_cfg = om.load(model_collator_cfg_path)
 
-    model_file = model_cfg.get("checkpoint_path")
     freeze = model_cfg.get(
         "freeze",
         False,
     )  # if the transformer (SCGPT model) is freezed or not!
+    pretrained = model_cfg.get(
+        "pretrained",
+        True,
+    )  # if the transformer weights are initialized with pretrained model or random!
+    model_file = model_cfg.get("checkpoint_path") if pretrained else None
 
     # Load datasets and build loaders
     train_loader_cfg: DictConfig = pop_config(cfg, "train_loader", must_exist=True)
     valid_loader_cfg: DictConfig = pop_config(cfg, "valid_loader", must_exist=True)
+    test_loader_cfg: DictConfig = pop_config(cfg, "test_loader", must_exist=True)
 
     train_loader = build_perturbation_dataloader(
         loader_cfg=train_loader_cfg,
@@ -136,13 +141,21 @@ def main(cfg: DictConfig) -> composer.Trainer:
         isTrain=False,
     )
 
+    test_loader = build_perturbation_dataloader(
+        loader_cfg=test_loader_cfg,
+        device_batch_size=device_test_batch_size,
+        isTrain=False,
+    )
+
     log.info(f"Training set number of samples: {len(train_loader)}")
     log.info(f"Validation set number of samples: {len(valid_loader)}")
+    log.info(f"Test set number of samples: {len(test_loader)}")
 
     logged_cfg.update(
         {
             "train_dataset_size": len(train_loader),
             "valid_dataset_size": len(valid_loader),
+            "test_dataset_size": len(test_loader),
         },
     )
 
@@ -189,7 +202,8 @@ def main(cfg: DictConfig) -> composer.Trainer:
     )
     mean_ctrl = np.load(mean_path)["mean_ctrl"]  # (n_genes,)
 
-    callbacks.append(PerturbationCallback(mean_ctrl))
+    pert_callback = PerturbationCallback(mean_ctrl)
+    callbacks.append(pert_callback)
 
     # Load model
     model = ComposerSCGPTPerturbationModel(
@@ -251,6 +265,14 @@ def main(cfg: DictConfig) -> composer.Trainer:
     trainer.fit()
     log.info("Training finished.")
 
+    # Run evaluation on the test_loader using the trainer's built-in eval method
+    trainer.eval(
+        eval_dataloader=test_loader,
+        # callbacks= pert_callback,  # Use the callback to collect and log metrics
+        subset_num_batches=None,  # Evaluate on the entire test set
+    )
+
+    print("Test set evaluation completed.")
     return trainer
 
 

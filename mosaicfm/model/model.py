@@ -526,8 +526,9 @@ class ComposerSCGPTModel(ComposerModel):
 
 
 class ComposerSCGPTPerturbationModel(ComposerModel):
-    def __init__(self, model_config, collator_config, device=None):
+    def __init__(self, model_config, collator_config, device="cuda"):
         super().__init__()
+        self.device = device
         self.criterion = masked_mse_loss
         self.pad_token_id = collator_config.pad_token_id
         self.use_cell_conditioned_generation = model_config.get(
@@ -547,9 +548,9 @@ class ComposerSCGPTPerturbationModel(ComposerModel):
         ctrl_expr = batch["expressions_ctrl"]
         perturbation_flags = batch["perturb_flags"]
 
-        gene_token_emb = self.model.gene_encoder(gene_ids)
-        gene_expr_emb = self.model.expression_encoder(ctrl_expr)
-        pert_flag_emb = self.pert_encoder(perturbation_flags)
+        gene_token_emb = self.model.gene_encoder(gene_ids.to(self.device))
+        gene_expr_emb = self.model.expression_encoder(ctrl_expr.to(self.device))
+        pert_flag_emb = self.pert_encoder(perturbation_flags.to(self.device))
         combined_input_embs = gene_token_emb + gene_expr_emb + pert_flag_emb
 
         transformer_encoding = self.model.transformer_encoder(
@@ -561,7 +562,6 @@ class ComposerSCGPTPerturbationModel(ComposerModel):
         predicted_post_expr = self.pert_decoder(transformer_encoding, ctrl_expr)
         output = {
             "predicted_expr_perturbed": predicted_post_expr["pred"],
-            # "gene_encodings": transformer_encoding
         }
         return output
 
@@ -578,7 +578,3 @@ class ComposerSCGPTPerturbationModel(ComposerModel):
             mask,
         )
         return loss_mse
-
-    # def get_metrics(self, is_train=False):
-
-    # def update_metric(self, batch, outputs, is_train: bool = False):

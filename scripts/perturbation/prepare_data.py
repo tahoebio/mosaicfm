@@ -9,13 +9,21 @@ from datasets import Dataset
 from gears import PertData
 from tqdm.auto import tqdm
 
+from mosaicfm.tokenizer import GeneVocab
 
-def prepare_data(data_path, dataset_name, vocab_path, batch_size=1):
+
+def prepare_data(
+    data_path: str,
+    dataset_name: str,
+    vocab_path: str,
+    gene_info_path: str,
+    batch_size: int = 1,
+):
 
     data_dir = os.path.join(data_path, dataset_name)
     pert_data = PertData(data_dir)
     pert_data.load(data_name=dataset_name)
-    pert_data.prepare_split(split="simulation", seed=4)
+    pert_data.prepare_split(split="simulation", seed=1)
 
     # remove control conditions
     if "ctrl" in pert_data.set2conditions["train"]:
@@ -45,21 +53,17 @@ def prepare_data(data_path, dataset_name, vocab_path, batch_size=1):
     """
 
     # map dataset genes to scgpt gene_ids
-    with open(vocab_path, "r") as f:
-        gene_to_id = json.load(f)  # n_genes in scgpt's vocab : 60736
+    # Mapping based on gene ensemble ids
 
-        gene_list = pert_data.adata.var[
-            "gene_name"
-        ].tolist()  # n_genes in adamson: 5060
-        mapped_gene_ids = [
-            gene_to_id.get(gene_name, gene_to_id["<pad>"]) for gene_name in gene_list
-        ]
-
-        percent_mapped = (
-            len(set(gene_list) & set(gene_to_id.keys())) / len(set(gene_list))
-        ) * 100
-        print(f"Mapped {percent_mapped:.2f}% of {len(gene_list)} genes")
-        print("Pad token ID:", gene_to_id["<pad>"])  # pAad_token_id = 60699
+    vocab = GeneVocab.from_file(vocab_path)
+    with open(gene_info_path) as f:
+        gene_to_ensembl = json.load(f)
+    ensembl_to_gene_name = {v: k for k, v in gene_to_ensembl.items()}
+    gene_id_list = pert_data.adata.var.index
+    mapped_gene_ids = np.array(
+        [vocab[ensembl_to_gene_name.get(gene_id, "<pad>")] for gene_id in gene_id_list],
+        dtype=int,
+    )
 
     # compute mean control gene expression
     adata = pert_data.adata
@@ -71,10 +75,6 @@ def prepare_data(data_path, dataset_name, vocab_path, batch_size=1):
         mean_ctrl=mean_ctrl,
     )
 
-    # #create a dictionary of gene_name: mean ctrl_val --> it could be used for calculating pred_delta, target_delta
-    # gene_to_mean_val = {k: v for k, v in zip(gene_list, mean_ctrl)}
-    # np.savez(os.path.join(data_dir, "gene_name_to_mean_val.npz"), **gene_to_mean_val)
-
     # save all splits in torch dataset format
     splits = ["train", "val", "test"]
     for split in splits:
@@ -85,11 +85,10 @@ def prepare_data(data_path, dataset_name, vocab_path, batch_size=1):
             dataset_name,
             split,
             mapped_gene_ids,
-            gene_list,
         )
 
 
-def yield_examples(dataloader, mapped_gene_ids, gene_list):
+def yield_examples(dataloader, mapped_gene_ids: np.array):
     for batch_data in dataloader:
         x = batch_data.x  # (batch_size * n_genes, 2)
         batch_size = len(batch_data.y)
@@ -114,11 +113,10 @@ def yield_examples(dataloader, mapped_gene_ids, gene_list):
 
 def save_to_torch_dataset(
     data_loader,
-    data_dir,
-    dataset_name,
-    split,
-    mapped_gene_ids,
-    gene_list,
+    data_dir: str,
+    dataset_name: str,
+    split: str,
+    mapped_gene_ids: dict,
 ):
 
     records = {
@@ -129,7 +127,7 @@ def save_to_torch_dataset(
         "perturb_name": [],
         "de_flag": [],
     }
-    for example in tqdm(yield_examples(data_loader, mapped_gene_ids, gene_list)):
+    for example in tqdm(yield_examples(data_loader, mapped_gene_ids)):
         for key in example:
             records[key].append(example[key])
 
@@ -148,19 +146,31 @@ if __name__ == "__main__":
         help="path to model's vocab.json.",
     )
     parser.add_argument(
+        "--gene_info_path",
+        required=True,
+        help="path to cellxgene gene_info.json.",
+    )
+    parser.add_argument(
         "--batch_size",
         type=int,
         default=1,
         help="Batch size for processing data",
     )
     """DATA_PATH = "/vevo/datasets/perturbation_datasets/" DATASET_NAME =
-    "adamson" VOCAB_APTH = "/vevo/scgpt/checkpoints/release/scgpt-70m-1024-fix-
-    norm-apr24-data/vocab.json"."""
+    "adamson" VOCAB_PATH = "/vevo/scgpt/checkpoints/release/scgpt-70m-1024-fix-
+    norm-apr24-data/vocab.json" GENE_INFO_PATH = "/vevo/datasets/cellxgene/cellx
+    gene_primary_2024-04-29_MDS/gene_info_2024-04-29.json"."""
 
     args = parser.parse_args()
 
     print("Processing Data...")
-    prepare_data(args.data_path, args.dataset_name, args.vocab_path, args.batch_size)
+    prepare_data(
+        args.data_path,
+        args.dataset_name,
+        args.vocab_path,
+        args.gene_info_path,
+        args.batch_size,
+    )
     print(f"Data Splits saved in {args.data_path}/{args.dataset_name}")
 
 # def convert_hf_to_mds() TODO
