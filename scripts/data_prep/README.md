@@ -6,11 +6,12 @@ data in the adata format from multiple sources into the MDS format used by our t
 ## Dataset List
 
 
-| Dataset                          | Description                                                                                                    | s3 path |
-|----------------------------------|----------------------------------------------------------------------------------------------------------------|---------|
-| Resistance is Futile v1 (splits) | Training data tokenized using the vocab for MosaicFM-1.3B. Contains a train and eval split segregated by drug  | s3://vevo-ml-datasets/vevo-scgpt/datasets/resistance_is_futile_35_MDS_v1/ |
-| Adamson (full dataset)           | Adamson dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/adamson.dataset/ |
-| Norman  (full dataset)           | Norman dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test  | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/norman.dataset/ |
+| Dataset                           | Description                                                                                                    | s3 path |
+|-----------------------------------|----------------------------------------------------------------------------------------------------------------|---------|
+| Resistance is Futile v1 (splits)  | Training data tokenized using the vocab for MosaicFM-1.3B. Contains a train and eval split segregated by drug  | s3://vevo-ml-datasets/vevo-scgpt/datasets/resistance_is_futile_35_MDS_v1/ |
+| Resistace is Futile v1 (splits)   | Resistance is futile data tokenized using vocab for MosaicFM-1.3B. Not split into train/test                   |s3://vevo-ml-datasets/vevo-scgpt/datasets/resistance_is_futile_full.dataset|
+| Adamson (full dataset)            | Adamson dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/adamson.dataset/ |
+| Norman  (full dataset)            | Norman dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test  | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/norman.dataset/ |
 
 ## CellXGene Dataset
 
