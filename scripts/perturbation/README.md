@@ -3,7 +3,7 @@
 1. Prepare data first by running
 
 ```
-python scripts/perturbation/prepare_data.py --data_path "/vevo/datasets/perturbation_datasets/" --dataset_name "norman" --vocab_path "/vevo/scgpt/checkpoints/release/scgpt-70m-1024-fix-norm-apr24-data/vocab.json" --gene_info_path "/vevo/datasets/cellxgene/cellxgene_primary_2024-04-29_MDS/gene_info_2024-04-29.json"
+python scripts/perturbation/prepare_data.py --data_path "/vevo/datasets/perturbation_datasets/" --dataset_name "adamson" --vocab_path "/vevo/scgpt/checkpoints/release/scgpt-70m-1024-fix-norm-apr24-data/vocab.json" --gene_info_path "/vevo/datasets/cellxgene/cellxgene_primary_2024-04-29_MDS/gene_info_2024-04-29.json"
 ```
 
 2. Change the config and run finetune.py with composer
