@@ -3,6 +3,15 @@
 This folder contains scripts for converting single-cell 
 data in the adata format from multiple sources into the MDS format used by our training workflow.
 
+## Dataset List
+
+
+| Dataset                          | Description                                                                                                    | s3 path |
+|----------------------------------|----------------------------------------------------------------------------------------------------------------|---------|
+| Resistance is Futile v1 (splits) | Training data tokenized using the vocab for MosaicFM-1.3B. Contains a train and eval split segregated by drug  | s3://vevo-ml-datasets/vevo-scgpt/datasets/resistance_is_futile_35_MDS_v1/ |
+| Adamson (full dataset)           | Adamson dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/adamson.dataset/ |
+| Norman  (full dataset)           | Norman dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test  | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/norman.dataset/ |
+
 ## CellXGene Dataset
 
 Step 1: Download data from CellXGene release into chunks
@@ -82,11 +91,6 @@ An example record in the dataset is show below:
 
 The dataset is then split by the drug-target. We used Galunisertib and LY3200882 as the test-set since they 
 both target TGFBR1. This results in a roughly 80-20 split between the train and test sets.
-
-| Dataset                 | Description                                                                                                   | s3 path |
-|-------------------------|---------------------------------------------------------------------------------------------------------------|---------|
-| Resistance is Futile v1 | Training data tokenized using the vocab for MosaicFM-1.3B. Contains a train and eval split segregated by drug | s3://vevo-ml-datasets/vevo-scgpt/datasets/resistance_is_futile_35_MDS_v1/ |
-
 
 ## PerturbSeq - Adamson et al Dataset
 

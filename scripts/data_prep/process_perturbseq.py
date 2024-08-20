@@ -112,6 +112,7 @@ def record_generator(
     adata: sc.AnnData,
     perturbation_metadata: pd.DataFrame,
     cfg: DictConfig,
+    include_depmap: bool,
 ) -> Dict:
     ctrl_adata = adata[adata.obs[cfg.perturbation_col] == cfg.control_value]
     num_ctrl_samples = len(ctrl_adata)
@@ -127,10 +128,13 @@ def record_generator(
         perturbation_edist = np.float32(
             perturbation_metadata.loc[perturbation_name, cfg.edist_col],
         )
-        depmap_dependency = np.array(
-            perturbation_metadata.loc[perturbation_name, cfg.depmap_col],
-            np.float32,
-        )
+        if include_depmap:
+            depmap_dependency = np.array(
+                perturbation_metadata.loc[perturbation_name, cfg.depmap_col],
+                np.float32,
+            )
+        else:
+            depmap_dependency = None
         perturbation_targets = np.array(
             perturbation_metadata.loc[perturbation_name, "target_gene_vocab_id"],
             dtype=np.int32,
@@ -150,8 +154,7 @@ def record_generator(
 
             for ctrl_id in random_ids:
                 expressions_ctrl = control_counts[ctrl_id]
-                yield {
-                    "depmap_dependency": depmap_dependency,
+                record = {
                     "perturbation_edist": perturbation_edist,
                     "perturbation_target_genes": perturbation_targets,
                     "expressions_ctrl_raw": expressions_ctrl,
@@ -160,9 +163,12 @@ def record_generator(
                     "cell_line": cell_line_name,
                     "perturbation_name": perturbation_name,
                 }
+                if depmap_dependency is not None:
+                    record["depmap_dependency"] = depmap_dependency
+                yield record
 
 
-def main(cfg: DictConfig) -> Dataset:
+def main(cfg: DictConfig) -> None:
     dataset_name = cfg.dataset_name
     log.info(f"Starting processing for {dataset_name} Dataset...")
 
@@ -196,7 +202,7 @@ def main(cfg: DictConfig) -> Dataset:
     perturbation_meta_df = pd.read_csv(cfg.metadata_path)
     # Remove metadata for ctrl perturbation (most fields are NaN)
     perturbation_meta_df = perturbation_meta_df[
-        perturbation_meta_df["perturbation"] != cfg.control_value
+        perturbation_meta_df[cfg.perturbation_col] != cfg.control_value
     ]
     perturbation_meta_df["target_gene_names"] = perturbation_meta_df[
         cfg.perturbation_col
@@ -228,43 +234,46 @@ def main(cfg: DictConfig) -> Dataset:
         f"{dataset_name} metadata loaded with {len(perturbation_meta_df)} records.",
     )
 
-    # Load DepMap dependency score
-    log.info(f"Loading DepMap dependency scores from {cfg.depmap_scores_path}...")
-    depmap_df = pd.read_csv(cfg.depmap_scores_path)
-    depmap_df = depmap_df.rename(columns={"Unnamed: 0": "cell_line_depmap_id"})
+    include_depmap = False
+    if "depmap_col" in cfg and "cell_line_depmap_id" in cfg:
+        include_depmap = True
+        # Load DepMap dependency score
+        log.info(f"Loading DepMap dependency scores from {cfg.depmap_scores_path}...")
+        depmap_df = pd.read_csv(cfg.depmap_scores_path)
+        depmap_df = depmap_df.rename(columns={"Unnamed: 0": "cell_line_depmap_id"})
 
-    cell_line_depmap_id = cfg.cell_line_depmap_id
-    cell_line_dependency_scores = (
-        depmap_df.set_index("cell_line_depmap_id")
-        .loc[cell_line_depmap_id, :]
-        .transpose()
-        .to_dict()
-    )
-    cell_line_dependency_scores = {
-        k.split(" (")[0]: v for k, v in cell_line_dependency_scores.items()
-    }
+        cell_line_depmap_id = cfg.cell_line_depmap_id
+        cell_line_dependency_scores = (
+            depmap_df.set_index("cell_line_depmap_id")
+            .loc[cell_line_depmap_id, :]
+            .transpose()
+            .to_dict()
+        )
+        cell_line_dependency_scores = {
+            k.split(" (")[0]: v for k, v in cell_line_dependency_scores.items()
+        }
 
-    perturbation_meta_df["depmap_dependency"] = perturbation_meta_df[
-        "target_gene_names"
-    ].apply(
-        lambda gene_name_list: map_gene_name_to_dep(
-            gene_name_list,
-            cell_line_dependency_scores,
-            gene_alias_df,
-        ),
-    )
-    log.info(f"DepMap dependency scores added to {dataset_name} metadata.")
+        perturbation_meta_df["depmap_dependency"] = perturbation_meta_df[
+            "target_gene_names"
+        ].apply(
+            lambda gene_name_list: map_gene_name_to_dep(
+                gene_name_list,
+                cell_line_dependency_scores,
+                gene_alias_df,
+            ),
+        )
+        log.info(f"DepMap dependency scores added to {dataset_name} metadata.")
 
-    depmap_nan_perts = perturbation_meta_df[
-        perturbation_meta_df["depmap_dependency"].isna()
-    ][cfg.perturbation_col].values
-    log.info(
-        f"Found {len(depmap_nan_perts)} perturbations with missing DepMap dependency scores. Removing them.",
-    )
-    perturbation_meta_df = perturbation_meta_df[
-        ~perturbation_meta_df[cfg.perturbation_col].isin(depmap_nan_perts)
-    ]
-    adata = adata[~adata.obs[cfg.perturbation_col].isin(depmap_nan_perts)]
+        depmap_nan_perts = perturbation_meta_df[
+            perturbation_meta_df["depmap_dependency"].isna()
+        ][cfg.perturbation_col].values
+        log.info(
+            f"Found {len(depmap_nan_perts)} perturbations with missing DepMap dependency scores. Removing them.",
+        )
+        perturbation_meta_df = perturbation_meta_df[
+            ~perturbation_meta_df[cfg.perturbation_col].isin(depmap_nan_perts)
+        ]
+        adata = adata[~adata.obs[cfg.perturbation_col].isin(depmap_nan_perts)]
 
     # Data preparation
     log.info("Starting data preparation...")
@@ -335,6 +344,7 @@ def main(cfg: DictConfig) -> Dataset:
             adata=adata,
             perturbation_metadata=perturbation_meta_df,
             cfg=cfg,
+            include_depmap=include_depmap,
         ),
     )
     hf_dataset.set_format(type="torch")
