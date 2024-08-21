@@ -1,5 +1,5 @@
 # Path parameters
-dataset_name: replogle
+dataset_name: replogle_rpe1
 vocab_path: "/vevo/scgpt/checkpoints/release/scgpt-1_3b-2048/vocab.json"
 gene_to_ensembl_path: "/vevo/cellxgene/cellxgene_primary_2024-04-29_MDS/gene_info_2024-04-29.json"
 # From https://ftp.ncbi.nlm.nih.gov/gene/DATA/GENE_INFO/Mammalia/Homo_sapiens.gene_info
@@ -19,6 +19,7 @@ control_value: "ctrl"  # Value representing control samples in perturbation colu
 cell_line_name: "RPE1"
 n_top_genes: 5000  # Number of highly variable genes to select
 num_ctrl_samples_to_pair: 5  # Number of control samples to pair with each perturbation
+remove_missing_target_perturbations: True # Remove perturbations missing for which target gene is not in adata.var
 
 # Dataset sharding
 max_shard_size: "200MB"  # Maximum shard size when saving the dataset

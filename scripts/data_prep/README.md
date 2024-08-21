@@ -117,6 +117,14 @@ The DepMap dependency score is used as a proxy for sensitivity to the perturbati
 The e-distance is a measure of the degree of change induced by the perturbation and 
 may be seen as a measure of intensity of the signal present in the data.
 
+The median counts per cell before any filtering is performed is *15239* for this dataset.
+
+If the training script requires log1p data the records may be transformed as follows:
+```python
+target_sum = 15239
+expressions_normed = torch.log1p((expressions_raw / expressions_raw.sum(axis=1, keepdims=True))*target_sum)
+```
+
 ## PerturbSeq - Norman et al Dataset
 
 The data is processed as follows:
@@ -136,6 +144,9 @@ Example record:
  'cell_line': 'K562',
  'perturbation_name': 'COL2A1+ctrl'}
 ```
+
+The median counts per cell before any filtering is performed is *13855* for this dataset. Similar to the Adamson dataset, 
+transforming the data to log1p may be done as described above.
 
 
 
