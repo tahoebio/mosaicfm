@@ -6,12 +6,14 @@ data in the adata format from multiple sources into the MDS format used by our t
 ## Dataset List
 
 
-| Dataset                           | Description                                                                                                    | s3 path |
-|-----------------------------------|----------------------------------------------------------------------------------------------------------------|---------|
-| Resistance is Futile v1 (splits)  | Training data tokenized using the vocab for MosaicFM-1.3B. Contains a train and eval split segregated by drug  | s3://vevo-ml-datasets/vevo-scgpt/datasets/resistance_is_futile_35_MDS_v1/ |
-| Resistace is Futile v1 (splits)   | Resistance is futile data tokenized using vocab for MosaicFM-1.3B. Not split into train/test                   |s3://vevo-ml-datasets/vevo-scgpt/datasets/resistance_is_futile_full.dataset|
-| Adamson (full dataset)            | Adamson dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/adamson.dataset/ |
-| Norman  (full dataset)            | Norman dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test  | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/norman.dataset/ |
+| Dataset                               | Description                                                                                                    | s3 path |
+|---------------------------------------|----------------------------------------------------------------------------------------------------------------|---------|
+| Resistance is Futile v1 (splits)      | Training data tokenized using the vocab for MosaicFM-1.3B. Contains a train and eval split segregated by drug  | s3://vevo-ml-datasets/vevo-scgpt/datasets/resistance_is_futile_35_MDS_v1/ |
+| Resistace is Futile v1 (full dataset) | Resistance is futile data tokenized using vocab for MosaicFM-1.3B. Not split into train/test                   |s3://vevo-ml-datasets/vevo-scgpt/datasets/resistance_is_futile_full.dataset|
+| Adamson (full dataset)                | Adamson dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/adamson.dataset/ |
+| Norman  (full dataset)                | Norman dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test  | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/norman.dataset/ |
+| Replogle RPE1 (full dataset)          | Replogle RPE1 dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/replogle_rpe1.dataset/ |
+| Replogle K562 (full dataset)          | Replogle K562 dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/replogle_k562.dataset/ |
 
 ## CellXGene Dataset
 
@@ -148,7 +150,42 @@ Example record:
 The median counts per cell before any filtering is performed is *13855* for this dataset. Similar to the Adamson dataset, 
 transforming the data to log1p may be done as described above.
 
+## PerturbSeq - Replogle RPE1 Dataset
 
+The data is processed as follows:
+
+```shell
+python process_perturbseq.py yamls/perturbseq_replogle_rpe1.yml
+```
+
+Example record:
+
+```python
+{'perturbation_edist': 14.8090,
+ 'perturbation_target_genes': [5384],
+ 'expressions_ctrl_raw': array([  1.,   1.,   1.,  ...,  48.,   6., 176.], dtype=float32),
+ 'expressions_perturbed_raw': array([ 0.,  1.,  0.,  ..., 14.,  0., 46.], dtype=float32),
+ 'genes': array([19766, 10954, 12241,  ..., 17078, 17079, 17072], dtype=int32),
+ 'cell_line': 'RPE1',
+ 'perturbation_name': 'COMTD1+ctrl'}
+```
+
+Note that the RPE dataset does not contain a depmap dependency score, since we couldn't map RPE1 to a depmap cell-line.
+The median counts per cell before any filtering is performed is *11899* for this dataset. 
+
+## PerturbSeq - Replogle K562 Dataset
+
+The data is processed as follows:
+
+```shell
+python process_perturbseq.py yamls/perturbseq_replogle_rpe1.yml
+```
+
+Example record:
+
+```python
+
+```
 
 
 

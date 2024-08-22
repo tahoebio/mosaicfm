@@ -24,6 +24,14 @@ remove_missing_target_perturbations: True # Remove perturbations missing for whi
 # Dataset sharding
 max_shard_size: "200MB"  # Maximum shard size when saving the dataset
 
+# Dataset splits
+split_column: "perturbation_name"
+train_proportion: 0.8
+val_proportion: 0.1
+test_proportion: 0.1
+random_seed: 42
+split_save_path: "/vevo/scgpt/datasets/perturbseq/vevo-processed/aidan_filtered/replogle_rpe1_splits"
+
 # Custom aliases (if any)
 custom_aliases:
   "KIAA1804": "MAP3K21"

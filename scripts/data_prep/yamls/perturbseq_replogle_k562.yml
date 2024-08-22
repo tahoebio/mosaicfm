@@ -12,7 +12,7 @@ dataset_save_path: "/vevo/scgpt/datasets/perturbseq/vevo-processed/aidan_filtere
 # Column and control parameters
 perturbation_col: "perturbation"  # Column name for perturbations in metadata
 ensembl_col: "ensembl_id"  # Column name for Ensembl IDs in raw data
-edist_col: "edist"  # Column name for perturbation edist values in metadata
+edist_col: "distance"  # Column name for perturbation edist values in metadata
 control_value: "ctrl"  # Value representing control samples in perturbation column
 depmap_col: "depmap_dependency"  # Column name for DepMap dependency scores in metadata
 
@@ -25,8 +25,17 @@ remove_missing_target_perturbations: True # Remove perturbations missing for whi
 
 # Dataset sharding
 max_shard_size: "200MB"  # Maximum shard size when saving the dataset
+cache_dir: "/home/shreshth/.cache"
 
 # Custom aliases (if any)
 custom_aliases:
   "KIAA1804": "MAP3K21"
   "AC118549.1": "ZZZ3"
+  "AC015871.1": "RP11-81A1.3"
+  "HIST3H2BB": "H2BU1"
+  "TBCE": "TBCE_ENSG00000284770"
+  "CYB561D2": "CYB561D2_ENSG00000114395"
+  "MATR3": "MATR3_ENSG00000015479"
+  "PINX1": "PINX1_ENSG00000258724"
+  "HIST3H2A": "H2AW"
+  "POLR2J3": "POLR2J3_ENSG00000168255"

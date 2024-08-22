@@ -9,6 +9,7 @@ import pandas as pd
 import scanpy as sc
 from datasets import Dataset
 from omegaconf import DictConfig, OmegaConf
+from scipy import sparse
 
 from mosaicfm.tokenizer import GeneVocab
 
@@ -59,42 +60,47 @@ def generate_gene_aliases(
 def map_gene_names_to_vocab(
     gene_name_list: List[str],
     vocab: GeneVocab,
-    gene_alias_df: pd.DataFrame,
+    gene_alias_dict: Dict[str, str],
 ) -> Optional[List[int]]:
     vocab_map_per_row = []
     for gene_name in gene_name_list:
+        gene_alias = gene_alias_dict.get(gene_name, "None")
         if gene_name in vocab:
             vocab_map_per_row.append(vocab[gene_name])
-        elif gene_name in gene_alias_df.index:
-            vocab_map_per_row.append(vocab[gene_alias_df.loc[gene_name, "gene_symbol"]])
+        elif gene_alias in vocab:
+            vocab_map_per_row.append(vocab[gene_alias])
         else:
             return None
-    return vocab_map_per_row if vocab_map_per_row else None
+    if len(vocab_map_per_row) == len(gene_name_list):
+        return vocab_map_per_row
+    return None
 
 
 def map_gene_name_to_dep(
     gene_name_list: List[str],
     dep_scores: Dict[str, float],
-    gene_alias_df: pd.DataFrame,
+    gene_alias_dict: Dict[str, str],
 ) -> Optional[List[float]]:
     dep_scores_per_row = []
     for gene_name in gene_name_list:
+        gene_alias = gene_alias_dict.get(gene_name, "None")
         if gene_name in dep_scores:
             dep_scores_per_row.append(dep_scores[gene_name])
-        elif gene_name in gene_alias_df.index:
-            gene_alias = gene_alias_df.loc[gene_name, "gene_symbol"]
+        elif gene_alias in dep_scores:
             dep_scores_per_row.append(dep_scores[gene_alias])
         else:
             return None
-    return dep_scores_per_row if dep_scores_per_row else None
+    if len(dep_scores_per_row) == len(gene_name_list):
+        return dep_scores_per_row
+    return None
 
 
 def map_gene_name_or_ensembl_to_vocab(
     gene_name: str,
     ensembl_id: str,
     vocab: GeneVocab,
-    gene_alias_dict: dict,
-    ensembl_to_gene_name: dict,
+    gene_alias_dict: Dict[str, str],
+    ensembl_to_gene_name: Dict[str, str],
 ) -> int:
     if gene_name in vocab:
         return vocab[gene_name]
@@ -168,7 +174,7 @@ def record_generator(
                 yield record
 
 
-def main(cfg: DictConfig) -> None:
+def main(cfg: DictConfig) -> Dataset:
     dataset_name = cfg.dataset_name
     log.info(f"Starting processing for {dataset_name} Dataset...")
 
@@ -190,9 +196,17 @@ def main(cfg: DictConfig) -> None:
         cfg.get("custom_aliases", None),
     )
 
+    gene_alias_to_gene_symbol = gene_alias_df["gene_symbol"].to_dict()
+
     # Load in raw data
     log.info(f"Loading raw data from {cfg.raw_data_path}...")
     adata = sc.read_h5ad(cfg.raw_data_path)
+    if isinstance(adata.X, np.ndarray):
+        log.warning(
+            "The adata.X object is dense. Converting to sparse matrix format...",
+        )
+        adata.X = sparse.csr_matrix(adata.X)
+        log.info("Conversion to sparse matrix format completed.")
     adata.var["gene_name"] = adata.var.index
     adata.var = adata.var.rename(columns={cfg.ensembl_col: "ensembl_id"})
     log.info(f"Raw data loaded. Data shape: {adata.shape}")
@@ -219,16 +233,20 @@ def main(cfg: DictConfig) -> None:
         lambda gene_name_list: map_gene_names_to_vocab(
             gene_name_list,
             vocab,
-            gene_alias_df,
+            gene_alias_to_gene_symbol,
         ),
     )
     perturbation_meta_df = perturbation_meta_df.set_index(
         cfg.perturbation_col,
         drop=False,
     )
-    assert not any(
-        perturbation_meta_df["target_gene_vocab_id"].isna(),
-    ), "All target genes must be mappable to a gene in the vocabulary"
+
+    unmapped_targets = perturbation_meta_df[
+        perturbation_meta_df["target_gene_vocab_id"].isna()
+    ][cfg.perturbation_col]
+    assert (
+        len(unmapped_targets) == 0
+    ), f"Couldn't map these genes to a vocab gene: {unmapped_targets.values}"
 
     log.info(
         f"{dataset_name} metadata loaded with {len(perturbation_meta_df)} records.",
@@ -259,7 +277,7 @@ def main(cfg: DictConfig) -> None:
             lambda gene_name_list: map_gene_name_to_dep(
                 gene_name_list,
                 cell_line_dependency_scores,
-                gene_alias_df,
+                gene_alias_to_gene_symbol,
             ),
         )
         log.info(f"DepMap dependency scores added to {dataset_name} metadata.")
@@ -277,7 +295,6 @@ def main(cfg: DictConfig) -> None:
 
     # Data preparation
     log.info("Starting data preparation...")
-    gene_alias_to_gene_symbol = gene_alias_df["gene_symbol"].to_dict()
     gene_ids_in_vocab = np.array(
         [
             map_gene_name_or_ensembl_to_vocab(
@@ -299,6 +316,30 @@ def main(cfg: DictConfig) -> None:
     )
     adata = adata[:, filter_vocab]
 
+    # Optionally remove perturbations with missing target genes
+    # Only do this when this is expected from the dataset
+    # Replogle RPE1 for example, has around 15% perturbations that are missing in the adata
+    if cfg.get("remove_missing_target_perturbations", False):
+        perturbations_to_remove = [
+            pert
+            for pert in perturbation_meta_df[cfg.perturbation_col]
+            if not all(
+                gene in set(adata.var["id_in_vocab"])
+                for gene in perturbation_meta_df.loc[pert, "target_gene_vocab_id"]
+            )
+        ]
+        log.info(
+            f"Found {len(perturbations_to_remove)} perturbations with missing target genes. Removing them.",
+        )
+        perturbation_meta_df = perturbation_meta_df[
+            ~perturbation_meta_df[cfg.perturbation_col].isin(perturbations_to_remove)
+        ]
+        filter_missing_perturb = ~adata.obs[cfg.perturbation_col].isin(
+            perturbations_to_remove,
+        )
+        adata = adata[filter_missing_perturb, :].copy()
+
+    # Create set of target genes, after filtering out missing perturbations
     target_gene_vocab_id_set = {
         gene
         for gene_list in perturbation_meta_df["target_gene_vocab_id"]
@@ -322,16 +363,25 @@ def main(cfg: DictConfig) -> None:
     )
     adata = adata[:, filter_hvg]
 
-    assert all(
-        gene_id in set(adata.var["id_in_vocab"]) for gene_id in target_gene_vocab_id_set
-    ), "All target genes must be in adata"
+    missing_gene_ids = [
+        gene_id
+        for gene_id in target_gene_vocab_id_set
+        if gene_id not in set(adata.var["id_in_vocab"])
+    ]
+    assert (
+        not missing_gene_ids
+    ), f"{len(missing_gene_ids)} target genes are missing in adata: {missing_gene_ids}"
 
-    assert all(
-        perturbation_name in perturbation_meta_df[cfg.perturbation_col]
+    missing_perturbations = [
+        perturbation_name
         for perturbation_name in (
             set(adata.obs[cfg.perturbation_col]) - {cfg.control_value}
         )
-    ), "All perturbations must have metadata"
+        if perturbation_name not in set(perturbation_meta_df[cfg.perturbation_col])
+    ]
+    assert (
+        not missing_perturbations
+    ), f"The following perturbations are missing metadata: {missing_perturbations}"
 
     # Create Dataset using from_generator
     expected_samples = (
@@ -346,6 +396,7 @@ def main(cfg: DictConfig) -> None:
             cfg=cfg,
             include_depmap=include_depmap,
         ),
+        cache_dir=cfg.get("cache_dir"),
     )
     hf_dataset.set_format(type="torch")
     log.info(f"Generated {dataset_name} dataset with {len(hf_dataset)} records.")
