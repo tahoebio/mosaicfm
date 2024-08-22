@@ -26,6 +26,7 @@ max_shard_size: "200MB"  # Maximum shard size when saving the dataset
 
 # Dataset splits
 split_column: "perturbation_name"
+num_proc: 64
 train_proportion: 0.8
 val_proportion: 0.1
 test_proportion: 0.1
@@ -36,3 +37,25 @@ split_save_path: "/vevo/scgpt/datasets/perturbseq/vevo-processed/aidan_filtered/
 custom_aliases:
   "KIAA1804": "MAP3K21"
   "AC118549.1": "ZZZ3"
+
+# MDS  parameters
+mds:
+    out_root: "/vevo/scgpt/datasets/perturbseq/vevo-processed/aidan_filtered/MDS/replogle_rpe1_v1"
+    root_dir: ${split_save_path}
+    splits:
+      - "train"
+      - "validation"
+      - "test"
+    columns:
+      perturbation_edist: "float32"
+      perturbation_target_genes: "pkl"
+      expressions_ctrl_raw: "pkl"
+      expressions_perturbed_raw: "pkl"
+      genes: "pkl"
+      cell_line: "str"
+      perturbation_name: "str"
+    compression: zstd
+    hashes:
+      - "sha1"
+      - "xxh64"
+

@@ -27,6 +27,14 @@ remove_missing_target_perturbations: True # Remove perturbations missing for whi
 max_shard_size: "200MB"  # Maximum shard size when saving the dataset
 cache_dir: "/home/shreshth/.cache"
 
+# Dataset splits
+split_column: "perturbation_name"
+train_proportion: 0.8
+val_proportion: 0.1
+test_proportion: 0.1
+random_seed: 42
+split_save_path: "/vevo/scgpt/datasets/perturbseq/vevo-processed/aidan_filtered/replogle_k562_splits"
+
 # Custom aliases (if any)
 custom_aliases:
   "KIAA1804": "MAP3K21"
@@ -39,3 +47,25 @@ custom_aliases:
   "PINX1": "PINX1_ENSG00000258724"
   "HIST3H2A": "H2AW"
   "POLR2J3": "POLR2J3_ENSG00000168255"
+
+# MDS  parameters
+mds:
+    out_root: "/vevo/scgpt/datasets/perturbseq/vevo-processed/aidan_filtered/MDS/replogle_k562_v1"
+    root_dir: ${split_save_path}
+    splits:
+      - "train"
+      - "validation"
+      - "test"
+    columns:
+      perturbation_edist: "float32"
+      depmap_dependency: "pkl"
+      perturbation_target_genes: "pkl"
+      expressions_ctrl_raw: "pkl"
+      expressions_perturbed_raw: "pkl"
+      genes: "pkl"
+      cell_line: "str"
+      perturbation_name: "str"
+    compression: zstd
+    hashes:
+      - "sha1"
+      - "xxh64"

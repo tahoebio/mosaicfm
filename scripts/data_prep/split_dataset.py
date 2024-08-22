@@ -118,7 +118,14 @@ def split_dataset(
     )
 
 
-def save_splits(output_dir, split_datasets, train_groups, val_groups, test_groups):
+def save_splits(
+    output_dir,
+    split_datasets,
+    train_groups,
+    val_groups,
+    test_groups,
+    num_proc=32,
+):
     log.info(f"Saving splits to {output_dir}...")
     os.makedirs(output_dir, exist_ok=True)
 
@@ -126,9 +133,9 @@ def save_splits(output_dir, split_datasets, train_groups, val_groups, test_group
     val_path = os.path.join(output_dir, "validation")
     test_path = os.path.join(output_dir, "test")
 
-    split_datasets["train"].save_to_disk(train_path)
-    split_datasets["validation"].save_to_disk(val_path)
-    split_datasets["test"].save_to_disk(test_path)
+    split_datasets["train"].save_to_disk(train_path, num_proc=num_proc)
+    split_datasets["validation"].save_to_disk(val_path, num_proc=num_proc)
+    split_datasets["test"].save_to_disk(test_path, num_proc=num_proc)
 
     # Save metadata.json
     metadata = {
@@ -164,6 +171,7 @@ def main(cfg: DictConfig):
         train_groups,
         val_groups,
         test_groups,
+        cfg.get("num_proc", 32),
     )
 
 

@@ -35,3 +35,26 @@ split_save_path: "/vevo/scgpt/datasets/perturbseq/vevo-processed/aidan_filtered/
 
 # Custom aliases (if any)
 custom_aliases: {}
+
+# MDS  parameters
+mds:
+    out_root: "/vevo/scgpt/datasets/perturbseq/vevo-processed/aidan_filtered/MDS/adamson_v1"
+    root_dir: ${split_save_path}
+    splits:
+      - "train"
+      - "validation"
+      - "test"
+    columns:
+      depmap_dependency: "pkl"
+      perturbation_edist: "float32"
+      perturbation_target_genes: "pkl"
+      expressions_ctrl_raw: "pkl"
+      expressions_perturbed_raw: "pkl"
+      genes: "pkl"
+      cell_line: "str"
+      perturbation_name: "str"
+    compression: zstd
+    hashes:
+      - "sha1"
+      - "xxh64"
+

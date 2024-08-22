@@ -125,7 +125,7 @@ def record_generator(
     perturbation_list = list(set(adata.obs[cfg.perturbation_col]) - {cfg.control_value})
     log.info(f"Using {len(perturbation_list)} perturbations")
     gene_ids = np.array(adata.var["id_in_vocab"], dtype=np.int32)
-    control_counts = ctrl_adata.X.A
+    control_counts = ctrl_adata.X.toarray()
     cell_line_name = cfg.cell_line_name
 
     for perturbation_name in perturbation_list:
@@ -145,7 +145,7 @@ def record_generator(
             perturbation_metadata.loc[perturbation_name, "target_gene_vocab_id"],
             dtype=np.int32,
         )
-        perturb_counts = perturb_adata.X.A
+        perturb_counts = perturb_adata.X.toarray()
 
         assert all(target in gene_ids for target in perturbation_targets)
 

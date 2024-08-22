@@ -6,14 +6,18 @@ data in the adata format from multiple sources into the MDS format used by our t
 ## Dataset List
 
 
-| Dataset                               | Description                                                                                                    | s3 path |
-|---------------------------------------|----------------------------------------------------------------------------------------------------------------|---------|
-| Resistance is Futile v1 (splits)      | Training data tokenized using the vocab for MosaicFM-1.3B. Contains a train and eval split segregated by drug  | s3://vevo-ml-datasets/vevo-scgpt/datasets/resistance_is_futile_35_MDS_v1/ |
-| Resistace is Futile v1 (full dataset) | Resistance is futile data tokenized using vocab for MosaicFM-1.3B. Not split into train/test                   |s3://vevo-ml-datasets/vevo-scgpt/datasets/resistance_is_futile_full.dataset|
-| Adamson (full dataset)                | Adamson dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/adamson.dataset/ |
-| Norman  (full dataset)                | Norman dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test  | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/norman.dataset/ |
-| Replogle RPE1 (full dataset)          | Replogle RPE1 dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/replogle_rpe1.dataset/ |
-| Replogle K562 (full dataset)          | Replogle K562 dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/replogle_k562.dataset/ |
+| Dataset                             | Description                                                                                                                  | s3 path                                                               |
+|-------------------------------------|------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------|
+| Resistance is Futile v1 (MDS)       | Training data tokenized using the vocab for MosaicFM-1.3B. Contains a train and eval split segregated by drug                | s3://vevo-ml-datasets/vevo-scgpt/datasets/resistance_is_futile_35_MDS_v1/ |
+| Adamson v1 (MDS)                    | Adamson data tokenized using the MosaicFM-1.3B vocab. Containes train, validation and test splits segregated by perturbation | s3://vevo-ml-datasets/vevo-scgpt/datasets/adamson_v1 |
+| Norman v1 (MDS)                     | Norman data tokenized using the MosaicFM-1.3B vocab. Containes train, validation and test splits segregated by perturbation  | s3://vevo-ml-datasets/vevo-scgpt/datasets/norman_v1  |
+| Replogle RPE1 v1 (MDS)              | Replogle RPE1 data tokenized using the MosaicFM-1.3B vocab. Containes train, validation and test splits segregated by perturbation | s3://vevo-ml-datasets/vevo-scgpt/datasets/replogle_rpe1_v1 |
+| Replogle K562 v1 (MDS)              | Replogle K562 data tokenized using the MosaicFM-1.3B vocab. Containes train, validation and test splits segregated by perturbation | s3://vevo-ml-datasets/vevo-scgpt/datasets/replogle_k562_v1 |
+| Resistace is Futile v1 (HF dataset) | Resistance is futile data tokenized using vocab for MosaicFM-1.3B. Not split into train/test                                 | s3://vevo-ml-datasets/vevo-scgpt/datasets/resistance_is_futile_full.dataset |
+| Adamson (HF dataset)                | Adamson dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test               | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/adamson.dataset/ |
+| Norman  (HF dataset)                | Norman dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test                | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/norman.dataset/ |
+| Replogle RPE1 (HF dataset)          | Replogle RPE1 dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test         | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/replogle_rpe1.dataset/ |
+| Replogle K562 (HF dataset)          | Replogle K562 dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test         | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/replogle_k562.dataset/ |
 
 ## CellXGene Dataset
 
@@ -184,11 +188,70 @@ python process_perturbseq.py yamls/perturbseq_replogle_rpe1.yml
 Example record:
 
 ```python
-
+{'perturbation_edist': 1.6231,
+ 'perturbation_target_genes': [31002],
+ 'expressions_ctrl_raw': array([1., 0., 1.,  ..., 3., 0., 0.], dtype=float32),
+ 'expressions_perturbed_raw': array([0., 0., 0.,  ..., 0., 0., 0.], dtype=float32),
+ 'genes': array([14169, 12851, 10954,  ..., 48326, 48331, 48328], dtype=int32),
+ 'cell_line': 'K562',
+ 'perturbation_name': 'SET+ctrl',
+ 'depmap_dependency': [0.0144]}
 ```
 
+The Replogle K562 dataset has a median count of *11306* before any filtering is performed. It is the largest of the
+PerturbSeq datasets with a total of around 7M cells (~1.4M unique). This dataset includes a mix of both essential and inessential genes.
+The magnitude of the effect (e-distance) is larger for the essential genes. For training the perturbations are not filtered.
 
+# Splits and MDS Generation
 
+To split the HF dataset according to a column, modify the Dataset splits section in the yaml. 
+The following parameters are used for example in the Adamson dataset:
 
+```yaml
+# Dataset splits
+split_column: "perturbation_name"
+train_proportion: 0.8
+val_proportion: 0.1
+test_proportion: 0.1
+random_seed: 42
+split_save_path: "/vevo/scgpt/datasets/perturbseq/vevo-processed/aidan_filtered/adamson_splits"
+```
+
+The splits are then generated using the following command:
+
+```shell
+python split_dataset.py yamls/perturbseq_adamson.yml
+```
+The MDS parameters need to be specified in the MDS section in the yaml. An encoding type 
+for each column needs to be specified. Note that pytorch tensors are stored as pkls (any general object). In order to 
+load them in a StreamingDataset the argument `allow_unsafe_types=True` needs to be set.
+
+```yaml
+mds:
+    out_root: "/vevo/scgpt/datasets/perturbseq/vevo-processed/aidan_filtered/MDS/adamson_v1"
+    root_dir: ${split_save_path}
+    splits:
+      - "train"
+      - "validation"
+      - "test"
+    columns:
+      depmap_dependency: "pkl"
+      perturbation_edist: "float32"
+      perturbation_target_genes: "pkl"
+      expressions_ctrl_raw: "pkl"
+      expressions_perturbed_raw: "pkl"
+      genes: "pkl"
+      cell_line: "str"
+      perturbation_name: "str"
+    compression: zstd
+    hashes:
+      - "sha1"
+      - "xxh64"
+```
+The MDS dataset is then generated using the following command:
+
+```shell
+python generate_mds_perturbseq.py yamls/perturbseq_adamson.yml
+```
 
 
