@@ -19,6 +19,22 @@ data in the adata format from multiple sources into the MDS format used by our t
 | Replogle RPE1 (HF dataset)          | Replogle RPE1 dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test         | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/replogle_rpe1.dataset/ |
 | Replogle K562 (HF dataset)          | Replogle K562 dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test         | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/replogle_k562.dataset/ |
 
+The MDS folders also contain
+ - `metadata.json` : Contains the splits and meadian_library_size for each dataset.
+ - `mean_ctrl_log1p.json`: Dictionary mapping each vocab ID to its corresponding mean log1p value in the control cells.
+This can also be computed from the dataset quickly as follows:
+```python
+target_sum = metadata["median_library_size"]
+expressions_raw = dataset["expressions_ctrl_raw"]
+expressions_normed = torch.log1p((expressions_raw / expressions_raw.sum(axis=1, keepdims=True))*target_sum)
+mean_perturbed_log1p = torch.mean(expressions_normed, axis=0)
+mean_ctrl_dict = {
+    int(gene_id):float(log1p) for (gene_id, log1p) in zip(hf[0]["genes"], mean_perturbed_log1p)
+}
+ ```
+
+
+
 ## CellXGene Dataset
 
 Step 1: Download data from CellXGene release into chunks
