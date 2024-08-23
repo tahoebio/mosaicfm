@@ -1,9 +1,9 @@
 integrations:
 - integration_type: git_repo
   git_repo: vevotx/vevo-scgpt-private
-  git_branch: dev-temp
+  git_branch: main
   # git_commit:  # OR use your commit hash
-  pip_install: -e . --no-deps
+  pip_install: --no-build-isolation --no-deps -e .
   ssh_clone: true  # Should be true if using a private repo
 
 # We are fetching, converting, and training on the 'val' split
@@ -20,13 +20,9 @@ name: scgpt-dev-70m
 
 compute:
   gpus: 16 # Number of GPUs to use
-  cluster: r14z3
+  cluster: r14z3p1
 scheduling:
-  max_duration: 12 # Maximum duration of the run in hours
-
-  ## These configurations are optional
-  # cluster:
-  # gpu_type: a100_80gb # Type of GPU to use. We use a100_80gb in our experiments
+  max_duration: 0.1 # Maximum duration of the run in hours
 
 
 # The below is injected as a YAML file: /mnt/config/parameters.yaml
@@ -162,4 +158,3 @@ parameters:
   save_folder: "s3://vevo-ml-datasets/vevo-scgpt/models/{run_name}"
   save_interval: "2000ba"
   autoresume: True
-  run_name: "scgpt-70m-1024-fix-norm-apr24-data"

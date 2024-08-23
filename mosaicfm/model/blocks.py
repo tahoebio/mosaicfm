@@ -246,17 +246,11 @@ class SCGPTEncoder(nn.Module):
                 )  # (B, S)
         p_len = pcpt_total_embs.shape[1]
         total_len = total_embs.shape[1]
-        g_len = total_len - p_len
-        attention_mask = self._make_mask(p_len, g_len, total_embs.device)
-        attn_bias = torch.zeros_like(
-            attention_mask,
+        attn_bias = torch.zeros(
+            size=(total_len, total_len),
             dtype=total_embs.dtype,
-            device=attention_mask.device,
-            requires_grad=False,
-        ).masked_fill(
-            ~attention_mask,
-            torch.finfo(total_embs.dtype).min,
-        )  # Matrix with -inf at the place of masked values and 0 elsewhere
+            device=total_embs.device,
+        )
         attn_bias = attn_bias.unsqueeze(0).unsqueeze(
             1,
         )  # Broadcastable to (B,H, S_Q, S_K) dimensions
@@ -436,7 +430,7 @@ class AffineExprDecoder(torch.nn.Module):
         adaptive_bias: bool = False,
     ):
         """Predict the expression value of each gene in an affine like form of
-        Ax + b. This decoder takes two ExprDecoder intrinsically to genrate the
+        Ax + b. This decoder takes two ExprDecoder intrinsically to generate the
         coefficient A and bias b.
 
         Args:
