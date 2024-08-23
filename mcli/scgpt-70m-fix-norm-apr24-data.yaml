@@ -1,7 +1,7 @@
 integrations:
 - integration_type: git_repo
   git_repo: vevotx/vevo-scgpt-private
-  git_branch: main
+  git_branch: log1p_training
   # git_commit:  # OR use your commit hash
   pip_install: --no-build-isolation --no-deps -e .
   ssh_clone: true  # Should be true if using a private repo
@@ -79,7 +79,8 @@ parameters:
     do_padding: True
     pad_value: -2
     do_mlm: True
-    do_binning: True
+    do_binning: False
+    log_transform: True
     mlm_probability: 0.5
     mask_value: -1
     max_length: 1024
