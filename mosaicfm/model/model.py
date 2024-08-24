@@ -129,6 +129,7 @@ class SCGPTModel(nn.Module):
             n_outputs=expression_decoder_config.get("n_outputs", 1),
             n_layers=expression_decoder_config.get("n_layers", 2),
             activation=expression_decoder_config.get("activation", "leaky_relu"),
+            output_activation=expression_decoder_config.get("output_activation", None),
         )
 
         if model_config.mvc is not None:

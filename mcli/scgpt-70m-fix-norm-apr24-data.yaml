@@ -75,6 +75,7 @@ parameters:
       n_outputs: 1
       n_layers: 1
       activation: "leaky_relu"
+      output_activation: "softplus"
   collator:
     do_padding: True
     pad_value: -2
@@ -158,4 +159,5 @@ parameters:
       log_artifacts: False
   save_folder: "s3://vevo-ml-datasets/vevo-scgpt/models/{run_name}"
   save_interval: "2000ba"
+  run_name: "scgpt-70m-log1p-no-attn-mask"
   autoresume: True

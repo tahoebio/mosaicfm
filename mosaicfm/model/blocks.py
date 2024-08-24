@@ -401,6 +401,7 @@ class ExprDecoder(nn.Module):
         n_outputs: int = 1,
         n_layers: int = 2,
         activation: str = "leaky_relu",
+        output_activation: Optional[str] = None,
     ):
         super().__init__()
         d_in = d_model
@@ -409,6 +410,10 @@ class ExprDecoder(nn.Module):
             [nn.Linear(d_in, d_model) for _ in range(n_layers)],
         )
         self.out_proj = nn.Linear(d_model, n_outputs)
+        if output_activation is not None:
+            self.output_activation = resolve_ffn_act_fn({"name": output_activation})
+        else:
+            self.output_activation = None
 
     def forward(self, x: Tensor) -> Dict[str, Tensor]:
         """X is the output of the transformer, (batch, seq_len, d_model)"""
@@ -417,6 +422,8 @@ class ExprDecoder(nn.Module):
         pred_value = self.out_proj(x)  # (batch, seq_len, n_outputs)
         if pred_value.shape[-1] == 1:
             pred_value = pred_value.squeeze(-1)
+        if self.output_activation is not None:
+            pred_value = self.output_activation(pred_value)
         return {"pred": pred_value}
 
 
