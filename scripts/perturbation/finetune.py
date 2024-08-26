@@ -5,7 +5,6 @@ import sys
 from typing import Any, Dict, List, Optional
 
 import composer
-import numpy as np
 from composer.core.callback import Callback
 from composer.utils import reproducibility
 from llmfoundry.utils.builders import (
@@ -24,6 +23,7 @@ from perturb_callback import PerturbationCallback
 
 from mosaicfm.data import build_perturbation_dataloader
 from mosaicfm.model import ComposerSCGPTPerturbationModel
+from mosaicfm.utils import load_mean_ctrl
 
 log = logging.getLogger(__name__)
 
@@ -195,12 +195,12 @@ def main(cfg: DictConfig) -> composer.Trainer:
         else []
     )
 
-    # Add pertubration callback for calculating pearson metrics
-    mean_path = (
-        train_loader_cfg.get("dataset")["local"].rsplit("/", 1)[0]
-        + "/mean_ctrl_log1p.npz"
+    path_mean_ctrl: str = pop_config(
+        valid_loader_cfg,
+        "path_mean_ctrl",
+        must_exist=True,
     )
-    mean_ctrl = np.load(mean_path)["mean_ctrl"]  # (n_genes,)
+    mean_ctrl = load_mean_ctrl(path_mean_ctrl)
 
     pert_callback = PerturbationCallback(mean_ctrl)
     callbacks.append(pert_callback)

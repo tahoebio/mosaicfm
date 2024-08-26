@@ -83,24 +83,77 @@ def build_perturbation_dataloader(
 
     data_path = loader_cfg.get("dataset")["local"]
     max_len = loader_cfg.get("max_len")
+    median = loader_cfg.get("median")
 
     dataset = Dataset.load_from_disk(data_path)
 
-    def collate_fn(examples: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
+    def my_collate_fn(
+        examples: List[Dict[str, torch.Tensor]],
+        median: int,
+    ) -> Dict[str, torch.Tensor]:
 
         genes = torch.stack([example["genes"] for example in examples])
         n_genes = len(genes[0])
-        expressions_ctrls = torch.stack(
-            [example["expressions_ctrl"] for example in examples],
-        )
-        expressions_perturbeds = torch.stack(
-            [example["expressions_perturbed"] for example in examples],
-        )
-        perturb_flags = torch.stack([example["perturb_flag"] for example in examples])
-        perturb_names = [example["perturb_name"] for example in examples]
-        de_flags = torch.stack([example["de_flag"] for example in examples])
 
-        # Randomly sample if sequence is longer than max_seq_len
+        if "expressions_ctrl" in examples[0]:
+            expressions_ctrls = torch.stack(
+                [example["expressions_ctrl"] for example in examples],
+            )
+        else:
+            expressions_ctrls = torch.stack(
+                [
+                    torch.log1p(
+                        (
+                            example["expressions_ctrl_raw"]
+                            / example["expressions_ctrl_raw"].sum()
+                        )
+                        * median,
+                    )
+                    for example in examples
+                ],
+            )
+
+        if "expressions_perturbed" in examples[0]:
+            expressions_perturbeds = torch.stack(
+                [example["expressions_perturbed"] for example in examples],
+            )
+        else:
+            expressions_perturbeds = torch.stack(
+                [
+                    torch.log1p(
+                        (
+                            example["expressions_perturbed_raw"]
+                            / example["expressions_perturbed_raw"].sum()
+                        )
+                        * median,
+                    )
+                    for example in examples
+                ],
+            )
+
+        if "perturb_flag" in examples[0]:
+            perturb_flags = torch.stack(
+                [example["perturb_flag"] for example in examples],
+            )
+        else:
+            perturb_flags = torch.stack(
+                [
+                    torch.isin(
+                        example["genes"],
+                        example["perturbation_target_genes"],
+                    ).long()
+                    for example in examples
+                ],
+            )
+
+        perturb_names = (
+            [example["perturb_name"] for example in examples]
+            if "perturb_name" in examples[0]
+            else [example["perturbation_name"] for example in examples]
+        )
+        # de_flags = torch.stack([example["de_flag"] for example in examples]) if "de_flag" in examples[0] else None
+
+        # Randomly sample if sequence is longer than max_seq_len (Only downsample train set)
         indices = (
             torch.randperm(n_genes)[:max_len] if isTrain else torch.arange(n_genes)
         )
@@ -111,13 +164,19 @@ def build_perturbation_dataloader(
             "expressions_perturbed": expressions_perturbeds[:, indices],
             "perturb_flags": perturb_flags[:, indices],
             "perturb_names": perturb_names,
-            "de_flags": de_flags[:, indices],
+            # "de_flags": de_flags[:, indices],
         }
+
+    def collate_wrapper(median: int):
+        def collate_fn(batch):
+            return my_collate_fn(batch, median)
+
+        return collate_fn
 
     data_loader = StreamingDataLoader(
         dataset,
         batch_size=device_batch_size,
-        collate_fn=collate_fn,
+        collate_fn=collate_wrapper(median),
     )
 
     return data_loader

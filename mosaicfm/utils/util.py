@@ -94,3 +94,27 @@ def calc_pearson_metrics(preds, targets, conditions, mean_ctrl):
         "pearson": np.mean(pearson),
         "pearson_delta": np.mean(pearson_delta),
     }
+
+
+def load_mean_ctrl(path_mean_ctrl: str):
+    # file_extension = os.path.splitext(path_mean_ctrl)[1]
+
+    # if file_extension == '.json':
+    #     with open(path_mean_ctrl, 'r') as file:
+    #         data = json.load(file)
+    #     #Create mean_ctrl vector with the correct order
+    #     mean_ctrl = np.array([data[str(gene_id)] for gene_id in gene_ids])
+    #     # print("gene_ids", gene_ids)
+    #     # print("mean_ctrl", mean_ctrl)
+    #     # exit()
+
+    # elif file_extension == '.npz':
+    #     data = np.load(path_mean_ctrl)
+    #     mean_ctrl = data['mean_ctrl']
+
+    # else:
+    #     raise ValueError(f"Unsupported file format: {file_extension}")
+    data = np.load(path_mean_ctrl)
+    mean_ctrl = data["mean_ctrl"]
+
+    return mean_ctrl
