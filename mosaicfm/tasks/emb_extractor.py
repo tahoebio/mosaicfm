@@ -45,7 +45,7 @@ def get_batch_embeddings(
 
     count_matrix = adata.X
     count_matrix = (
-        count_matrix if isinstance(count_matrix, np.ndarray) else count_matrix.A
+        count_matrix if isinstance(count_matrix, np.ndarray) else count_matrix.toarray()
     )
 
     # gene vocabulary ids
@@ -70,6 +70,8 @@ def get_batch_embeddings(
         do_mlm=False,  # Disable masking for inference
         do_binning=collator_cfg.get("do_binning", True),
         mlm_probability=collator_cfg.mlm_probability,  # Not used
+        log_transform=collator_cfg.get("log_transform", False),
+        normalize_total=collator_cfg.get("normalize_total", 10000),
         mask_value=collator_cfg.mask_value,
         max_length=max_length,
         sampling=collator_cfg.sampling,  # Turned on since max-length can be less than the number of genes

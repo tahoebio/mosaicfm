@@ -10,14 +10,11 @@ import os
 import pickle
 
 import anndata as ad
-import geneformer.perturber_utils as pu
 import numpy as np
 import pandas as pd
 import scanpy as sc
 import torch
 import utils
-from geneformer import EmbExtractor
-from geneformer.tokenizer import TOKEN_DICTIONARY_FILE
 from omegaconf import OmegaConf as om
 from tqdm import tqdm, trange
 
@@ -162,7 +159,7 @@ def run_scgpt(base_path, model_path, model_name):
     log.info(f"saved gene embeddings to {outpath}")
 
     # load genes and scores for marginal essentiality task
-    genes, scores = utils.get_marginal_genes_scores(base_path)
+    genes, scores = utils.get_marginal_genes_scores(base_path, log=log)
 
     # reload embeddings
     embs_npz = np.load(
@@ -227,7 +224,7 @@ def run_scgpt(base_path, model_path, model_name):
     # get count matrix
     count_matrix = adata.X
     count_matrix = (
-        count_matrix if isinstance(count_matrix, np.ndarray) else count_matrix.A
+        count_matrix if isinstance(count_matrix, np.ndarray) else count_matrix.toarray()
     )
 
     # verify gene IDs
@@ -252,6 +249,8 @@ def run_scgpt(base_path, model_path, model_name):
         do_mlm=False,
         do_binning=collator_config.get("do_binning", True),
         mlm_probability=collator_config.mlm_probability,
+        log_transform=collator_config.get("log_transform", False),
+        normalize_total=collator_config.get("normalize_total", 10000),
         mask_value=collator_config.mask_value,
         max_length=max_length,
         sampling=False,
@@ -349,6 +348,9 @@ def run_scgpt(base_path, model_path, model_name):
 
 # generate embeddings for a Geneformer model
 def run_gf(base_path, model_path, model_name, data_path, layer_offset=0):
+    import geneformer.perturber_utils as pu
+    from geneformer import EmbExtractor
+    from geneformer.tokenizer import TOKEN_DICTIONARY_FILE
 
     # extract cell line embeddings
     log.info("extracting cell embeddings")

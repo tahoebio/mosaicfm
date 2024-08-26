@@ -181,6 +181,19 @@ class GeneVocab(Vocab):
             raise ValueError(f"{default_token} is not in the vocabulary.")
         self.set_default_index(self[default_token])
 
+    def get(self, token: str, default: int = -1) -> int:
+        """Get the index of a token.
+
+        Args:
+            token (str): Token to get the index of.
+            default (int): Default value to return if the token is not in the
+                vocabulary.
+
+        Returns:
+            int: Index of the token.
+        """
+        return self[token] if token in self else default  # noqa: SIM401
+
 
 def tokenize_batch(
     data: np.ndarray,
