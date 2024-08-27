@@ -1,6 +1,7 @@
 # Copyright (C) Vevo Therapeutics 2024. All rights reserved.
 import copy
 import logging
+import os
 import sys
 from typing import Any, Dict, List, Optional, Union
 
@@ -19,6 +20,7 @@ from llmfoundry.utils.config_utils import (
 )
 from omegaconf import DictConfig
 from omegaconf import OmegaConf as om
+from perturb_algorithm import SetFindUnusedParameters
 from perturb_callback import PerturbationCallback
 
 from mosaicfm.data import build_perturbation_dataloader
@@ -26,6 +28,7 @@ from mosaicfm.model import ComposerSCGPTPerturbationModel
 from mosaicfm.utils import download_file_from_s3_url, load_mean_ctrl
 
 log = logging.getLogger(__name__)
+os.environ["TORCH_DISTRIBUTED_DEBUG"] = "DETAIL"
 
 
 def main(cfg: DictConfig) -> composer.Trainer:
@@ -248,6 +251,9 @@ def main(cfg: DictConfig) -> composer.Trainer:
     pert_callback = PerturbationCallback(mean_ctrl)
     callbacks.append(pert_callback)
 
+    # Algorithms
+    algorithms = [SetFindUnusedParameters()]
+
     # Load model
     model = ComposerSCGPTPerturbationModel(
         model_config=model_config,
@@ -292,6 +298,7 @@ def main(cfg: DictConfig) -> composer.Trainer:
         schedulers=scheduler,
         loggers=loggers,
         callbacks=callbacks,
+        algorithms=algorithms,
         train_dataloader=train_loader,
         eval_dataloader=valid_loader,
         load_strict_model_weights=False,
