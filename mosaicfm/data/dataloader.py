@@ -1,6 +1,6 @@
 # Copyright (C) Vevo Therapeutics 2024. All rights reserved.
 from collections.abc import MutableSequence
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import numpy as np
 import torch
@@ -98,11 +98,11 @@ def build_perturbation_dataloader(
     # dataset = Dataset.load_from_disk(dataset_cfg['local'])
 
     def my_collate_fn(
-        examples: List[Dict[str, torch.Tensor]],
+        examples: List[Dict[str, Any]],
         median: int,
     ) -> Dict[str, torch.Tensor]:
 
-        genes = torch.stack([example["genes"] for example in examples])
+        genes = torch.stack([torch.tensor(example["genes"]) for example in examples])
         n_genes = len(genes[0])
 
         if "expressions_ctrl" in examples[0]:

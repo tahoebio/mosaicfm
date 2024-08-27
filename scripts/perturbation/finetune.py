@@ -120,11 +120,7 @@ def main(cfg: DictConfig) -> composer.Trainer:
     model_cfg: DictConfig = pop_config(cfg, "model", must_exist=True, convert=True)
 
     # model_cfg_path: str = model_cfg.get("cfg_path")
-    model_cfg_path: DictConfig = pop_config(
-        model_cfg,
-        "cfg_path",
-        must_exist=True,
-    )
+    model_cfg_path: DictConfig = pop_config(model_cfg, "cfg_path", must_exist=True)
 
     if dist.get_local_rank() == 0:
         download_file_from_s3_url(
@@ -233,7 +229,7 @@ def main(cfg: DictConfig) -> composer.Trainer:
         else []
     )
 
-    path_mean_ctrl: Dict[str, Any] = pop_config(
+    path_mean_ctrl: DictConfig = pop_config(
         valid_loader_cfg,
         "path_mean_ctrl",
         must_exist=True,
