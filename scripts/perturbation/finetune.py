@@ -115,7 +115,6 @@ def main(cfg: DictConfig) -> composer.Trainer:
         model_cfg,
         "cfg_path",
         must_exist=True,
-        convert=True,
     )
 
     if dist.get_local_rank() == 0:
@@ -133,7 +132,6 @@ def main(cfg: DictConfig) -> composer.Trainer:
         model_cfg,
         "collator_cfg_path",
         must_exist=True,
-        convert=True,
     )
 
     if dist.get_local_rank() == 0:
@@ -226,12 +224,21 @@ def main(cfg: DictConfig) -> composer.Trainer:
         else []
     )
 
-    path_mean_ctrl: str = pop_config(
+    path_mean_ctrl: Dict[str, Any] = pop_config(
         valid_loader_cfg,
         "path_mean_ctrl",
         must_exist=True,
     )
-    mean_ctrl = load_mean_ctrl(path_mean_ctrl)
+
+    if dist.get_local_rank() == 0:
+        download_file_from_s3_url(
+            s3_url=path_mean_ctrl.get("remote"),
+            local_file_path=path_mean_ctrl.get("local"),
+        )
+    with dist.local_rank_zero_download_and_wait(path_mean_ctrl.get("local")):
+        dist.barrier()
+
+    mean_ctrl = load_mean_ctrl(path_mean_ctrl.get("local"))
 
     pert_callback = PerturbationCallback(mean_ctrl)
     callbacks.append(pert_callback)
