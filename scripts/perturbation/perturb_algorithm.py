@@ -5,7 +5,7 @@ from composer import Algorithm, Event, Logger, State
 class SetFindUnusedParameters(Algorithm):
     def match(self, state: State, event: Event, logger: Logger) -> bool:
         # This algorithm can run at any event or you can specify a specific event.
-        return event == Event.AFTER_LOAD
+        return event == Event.FIT_START
 
     def apply(self, state: State, event: Event, logger: Logger):
         # No specific changes needed in state, this is just to set find_unused_parameters
