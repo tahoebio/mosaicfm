@@ -2,11 +2,11 @@
 import copy
 import logging
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import composer
 from composer.core.callback import Callback
-from composer.utils import dist, reproducibility
+from composer.utils import dist, get_device, reproducibility
 from llmfoundry.utils.builders import (
     build_callback,
     build_logger,
@@ -39,6 +39,15 @@ def main(cfg: DictConfig) -> composer.Trainer:
     # Set seed first
     seed: int = pop_config(cfg, "seed", must_exist=True)
     reproducibility.seed_all(seed)
+
+    # Initialize pytorch distributed training process groups
+    dist_timeout: Union[int, float] = pop_config(
+        cfg,
+        "dist_timeout",
+        must_exist=False,
+        default_value=600.0,
+    )
+    dist.initialize_dist(get_device(None), timeout=dist_timeout)
 
     # Mandatory hyperparameters for training
     device_train_batch_size: int = pop_config(
@@ -296,6 +305,7 @@ def main(cfg: DictConfig) -> composer.Trainer:
         load_ignore_keys=["state/model/pert_encoder*", "state/model/pert_decoder*"],
         max_duration=max_duration,
         autoresume=autoresume,
+        dist_timeout=dist_timeout,
     )
 
     # Train
