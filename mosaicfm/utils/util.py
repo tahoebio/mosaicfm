@@ -1,5 +1,6 @@
 # Copyright (C) Vevo Therapeutics 2024. All rights reserved.
 import logging
+import os
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -41,6 +42,11 @@ def download_file_from_s3_url(s3_url, local_file_path):
     # Ensure bucket name and file key are not empty
     assert bucket_name, "Bucket name cannot be empty"
     assert s3_file_key, "S3 file key cannot be empty"
+
+    # Create the directory if it doesn't exist
+    local_dir = os.path.dirname(local_file_path)
+    if not os.path.exists(local_dir):
+        os.makedirs(local_dir)
 
     # Create an S3 client
     s3 = boto3.client("s3")

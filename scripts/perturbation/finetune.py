@@ -117,10 +117,10 @@ def main(cfg: DictConfig) -> composer.Trainer:
     log.info("Downloading pretrained model ...")
 
     # Pop necessary configs
-    model_cfg: Dict[str, Any] = pop_config(cfg, "model", must_exist=True, convert=True)
+    model_cfg: DictConfig = pop_config(cfg, "model", must_exist=True, convert=True)
 
     # model_cfg_path: str = model_cfg.get("cfg_path")
-    model_cfg_path: Dict[str, Any] = pop_config(
+    model_cfg_path: DictConfig = pop_config(
         model_cfg,
         "cfg_path",
         must_exist=True,
@@ -137,7 +137,7 @@ def main(cfg: DictConfig) -> composer.Trainer:
     model_config = om.load(model_cfg_path.get("local"))
 
     # model_collator_cfg_path = model_cfg.get("collator_cfg_path")
-    model_collator_cfg_path = pop_config(
+    model_collator_cfg_path: DictConfig = pop_config(
         model_cfg,
         "collator_cfg_path",
         must_exist=True,
