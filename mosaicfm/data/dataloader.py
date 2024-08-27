@@ -114,8 +114,8 @@ def build_perturbation_dataloader(
                 [
                     torch.log1p(
                         (
-                            example["expressions_ctrl_raw"]
-                            / example["expressions_ctrl_raw"].sum()
+                            torch.tensor(example["expressions_ctrl_raw"])
+                            / torch.tensor(example["expressions_ctrl_raw"]).sum()
                         )
                         * median,
                     )
@@ -132,8 +132,8 @@ def build_perturbation_dataloader(
                 [
                     torch.log1p(
                         (
-                            example["expressions_perturbed_raw"]
-                            / example["expressions_perturbed_raw"].sum()
+                            torch.tensor(example["expressions_perturbed_raw"])
+                            / torch.tensor(example["expressions_perturbed_raw"]).sum()
                         )
                         * median,
                     )
@@ -149,8 +149,8 @@ def build_perturbation_dataloader(
             perturb_flags = torch.stack(
                 [
                     torch.isin(
-                        example["genes"],
-                        example["perturbation_target_genes"],
+                        torch.tensor(example["genes"]),
+                        torch.tensor(example["perturbation_target_genes"]),
                     ).long()
                     for example in examples
                 ],
