@@ -5,7 +5,6 @@ from typing import Dict, List
 import numpy as np
 import torch
 from composer.core.data_spec import DataSpec
-from datasets import Dataset
 from omegaconf import DictConfig
 from streaming import StreamingDataLoader, StreamingDataset
 
@@ -81,11 +80,22 @@ def build_perturbation_dataloader(
             that the dataloader will produce.
     """
 
-    data_path = loader_cfg.get("dataset")["local"]
-    max_len = loader_cfg.get("max_len")
-    median = loader_cfg.get("median")
+    dataset_cfg = loader_cfg.dataset
+    max_len = loader_cfg.max_len
+    median = loader_cfg.median
 
-    dataset = Dataset.load_from_disk(data_path)
+    # Build Dataset
+    dataset = StreamingDataset(
+        remote=dataset_cfg.remote,
+        local=dataset_cfg.local,
+        download_timeout=dataset_cfg.get("download_timeout", 300),
+        allow_unsafe_types=dataset_cfg.get("allow_unsafe_types", True),
+        shuffle=dataset_cfg.shuffle,
+        predownload=dataset_cfg.get("predownload", None),
+        shuffle_seed=dataset_cfg.get("shuffle_seed", None),
+        num_canonical_nodes=dataset_cfg.get("num_canonical_nodes", 2),
+    )
+    # dataset = Dataset.load_from_disk(dataset_cfg['local'])
 
     def my_collate_fn(
         examples: List[Dict[str, torch.Tensor]],
