@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional
 
 import composer
 from composer.core.callback import Callback
-from composer.utils import reproducibility
+from composer.utils import dist, reproducibility
 from llmfoundry.utils.builders import (
     build_callback,
     build_logger,
@@ -23,7 +23,7 @@ from perturb_callback import PerturbationCallback
 
 from mosaicfm.data import build_perturbation_dataloader
 from mosaicfm.model import ComposerSCGPTPerturbationModel
-from mosaicfm.utils import load_mean_ctrl
+from mosaicfm.utils import download_file_from_s3_url, load_mean_ctrl
 
 log = logging.getLogger(__name__)
 
@@ -105,14 +105,45 @@ def main(cfg: DictConfig) -> composer.Trainer:
         default_value=autoresume_default,
     )
 
+    log.info("Downloading pretrained model ...")
+
     # Pop necessary configs
     model_cfg: Dict[str, Any] = pop_config(cfg, "model", must_exist=True, convert=True)
 
-    model_cfg_path: str = model_cfg.get("cfg_path")
-    model_config = om.load(model_cfg_path)
+    # model_cfg_path: str = model_cfg.get("cfg_path")
+    model_cfg_path: Dict[str, Any] = pop_config(
+        model_cfg,
+        "cfg_path",
+        must_exist=True,
+        convert=True,
+    )
 
-    model_collator_cfg_path = model_cfg.get("collator_cfg_path")
-    model_collator_cfg = om.load(model_collator_cfg_path)
+    if dist.get_local_rank() == 0:
+        download_file_from_s3_url(
+            s3_url=model_cfg_path.get("remote"),
+            local_file_path=model_cfg_path.get("local"),
+        )
+    with dist.local_rank_zero_download_and_wait(model_cfg_path.get("local")):
+        dist.barrier()
+
+    model_config = om.load(model_cfg_path.get("local"))
+
+    # model_collator_cfg_path = model_cfg.get("collator_cfg_path")
+    model_collator_cfg_path = pop_config(
+        model_cfg,
+        "collator_cfg_path",
+        must_exist=True,
+        convert=True,
+    )
+
+    if dist.get_local_rank() == 0:
+        download_file_from_s3_url(
+            s3_url=model_collator_cfg_path.get("remote"),
+            local_file_path=model_collator_cfg_path.get("local"),
+        )
+    with dist.local_rank_zero_download_and_wait(model_collator_cfg_path.get("local")):
+        dist.barrier()
+    model_collator_cfg = om.load(model_collator_cfg_path.get("local"))
 
     freeze = model_cfg.get(
         "freeze",
