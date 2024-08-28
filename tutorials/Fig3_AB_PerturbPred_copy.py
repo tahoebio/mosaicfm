@@ -67,9 +67,11 @@ hyperparameter_defaults = dict(
     early_stop=10,
     decoder_activation=None,
     decoder_adaptive_bias=False,
+    permtrain=False,
     log_interval=100,
     use_fast_transformer=True,
-    freeze=False,
+    freeze=True,
+    fix_pert_flag=True,
     amp=True,
 )
 
@@ -79,6 +81,7 @@ run = wandb.init(
     tags=["perturbation", "dev"],
     reinit=True,
     settings=wandb.Settings(start_method="fork"),
+    name="from-scratch-freeze-fix_pertflag-corrected_vocab"
 )
 wandb.run.log_code(".")
 config = wandb.config
@@ -310,11 +313,27 @@ def train(model: nn.Module, train_loader: torch.utils.data.DataLoader) -> None:
                 input_gene_ids = (
                     ori_gene_values.nonzero()[:, 1].flatten().unique().sort()[0]
                 )
+            if config.permtrain:
+                # manuualy reset pert_flags to 0
+                pert_flags = torch.zeros_like(pert_flags)
+                # manually random pick one gene to perturb
+                pert_flags[:, torch.randint(0, ori_gene_values.size(1), (1,))] = 1
+
             # sample input_gene_id
             if len(input_gene_ids) > config.max_seq_len:
                 input_gene_ids = torch.randperm(len(input_gene_ids), device=device)[
                     : config.max_seq_len
                 ]
+                if config.fix_pert_flag:
+                    # Find the index that have pert_flags > 0
+                    perturb_idx = pert_flags.nonzero()
+                    # randomly select a subset of genes, but make sure the perturbed genes are included
+                    input_gene_ids = torch.cat(
+                        [
+                            input_gene_ids,
+                            perturb_idx[:, 1].unique(),
+                        ]
+                    ).unique()
             input_values = ori_gene_values[:, input_gene_ids]
             input_pert_flags = pert_flags[:, input_gene_ids]
             target_values = target_gene_values[:, input_gene_ids]

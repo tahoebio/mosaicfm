@@ -313,6 +313,10 @@ class TransformerGenerator(nn.Module):
         x: torch.Tensor = batch_data.x
         ori_gene_values = x[:, 0].view(batch_size, -1)  # (batch_size, n_genes)
         pert_flags = x[:, 1].long().view(batch_size, -1)
+        # # manuualy reset pert_flags to 0
+        # pert_flags = torch.zeros_like(pert_flags)
+        # # manually random pick one gene to perturb
+        # pert_flags[:, torch.randint(0, ori_gene_values.size(1), (1,))] = 1
 
         if include_zero_gene in ["all", "batch-wise"]:
             assert gene_ids is not None
