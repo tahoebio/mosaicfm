@@ -3,7 +3,7 @@ from composer import Algorithm, Event, Logger, State
 
 
 class SetFindUnusedParameters(Algorithm):
-    def match(self, state: State, event: Event, logger: Logger) -> bool:
+    def match(self, state: State, event: Event) -> bool:
         # This algorithm can run at any event or you can specify a specific event.
         return event == Event.INIT
 
