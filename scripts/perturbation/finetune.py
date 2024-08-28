@@ -306,6 +306,7 @@ def main(cfg: DictConfig) -> composer.Trainer:
         load_path=model_file,
         load_weights_only=True,
         load_ignore_keys=["state/model/pert_encoder*", "state/model/pert_decoder*"],
+        save_folder=save_folder,
         max_duration=max_duration,
         autoresume=autoresume,
         dist_timeout=dist_timeout,
