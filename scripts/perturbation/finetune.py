@@ -9,6 +9,7 @@ import composer
 from composer.core.callback import Callback
 from composer.utils import dist, get_device, reproducibility
 from llmfoundry.utils.builders import (
+    build_algorithm,
     build_callback,
     build_logger,
     build_optimizer,
@@ -204,12 +205,20 @@ def main(cfg: DictConfig) -> composer.Trainer:
         default_value=None,
         convert=True,
     )
+
     callback_configs: Optional[DictConfig] = pop_config(
         cfg,
         "callbacks",
         must_exist=False,
         default_value=None,
         convert=True,
+    )
+
+    algorithm_configs: Optional[DictConfig] = pop_config(
+        cfg,
+        "algorithms",
+        must_exist=False,
+        default_value=None,
     )
 
     # Loggers
@@ -252,7 +261,16 @@ def main(cfg: DictConfig) -> composer.Trainer:
     callbacks.append(pert_callback)
 
     # Algorithms
-    algorithms = [SetFindUnusedParameters()]
+    algorithms = (
+        [
+            build_algorithm(str(name), algorithm_cfg)
+            for name, algorithm_cfg in algorithm_configs.items()
+        ]
+        if algorithm_configs
+        else None
+    )
+
+    algorithms.append(SetFindUnusedParameters())
 
     # Load model
     model = ComposerSCGPTPerturbationModel(
