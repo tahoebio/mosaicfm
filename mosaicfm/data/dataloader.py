@@ -71,6 +71,7 @@ def build_perturbation_dataloader(
     loader_cfg: DictConfig,
     device_batch_size: int,
     isTrain: bool,
+    mean_perturb: np.ndarray,
 ) -> DataSpec:
     """Builds a dataloader from a config for perturbation task.
 
@@ -141,6 +142,8 @@ def build_perturbation_dataloader(
                 ],
             )
 
+        expressions_perturbeds_delta = expressions_perturbeds - mean_perturb
+
         if "perturb_flag" in examples[0]:
             perturb_flags = torch.stack(
                 [example["perturb_flag"] for example in examples],
@@ -171,10 +174,10 @@ def build_perturbation_dataloader(
         return {
             "genes": genes[:, indices],
             "expressions_ctrl": expressions_ctrls[:, indices],
-            "expressions_perturbed": expressions_perturbeds[:, indices],
+            # "expressions_perturbed": expressions_perturbeds[:, indices],
+            "expressions_perturbed_delta": expressions_perturbeds_delta[:, indices],
             "perturb_flags": perturb_flags[:, indices],
             "perturb_names": perturb_names,
-            # "de_flags": de_flags[:, indices],
         }
 
     def collate_wrapper(median: int):
@@ -187,6 +190,11 @@ def build_perturbation_dataloader(
         dataset,
         batch_size=device_batch_size,
         collate_fn=collate_wrapper(median),
+        drop_last=loader_cfg.get("drop_last", False),
+        num_workers=loader_cfg.get("num_workers", 8),
+        pin_memory=loader_cfg.get("pin_memory", True),
+        prefetch_factor=loader_cfg.get("prefetch_factor", 48),
+        persistent_workers=loader_cfg.get("persistent_workers", True),
     )
 
     return data_loader

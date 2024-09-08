@@ -61,7 +61,7 @@ def download_file_from_s3_url(s3_url, local_file_path):
         return None
 
 
-def calc_pearson_metrics(preds, targets, conditions, mean_ctrl):
+def calc_pearson_metrics(preds, targets, conditions, mean_ctrl, mean_perturb=None):
 
     conditions_unique = np.unique(conditions)
     condition2idx = {c: np.where(conditions == c)[0] for c in conditions_unique}
@@ -90,8 +90,13 @@ def calc_pearson_metrics(preds, targets, conditions, mean_ctrl):
         preds_mean_perturbed_by_condition,
     ):
         tm, pm = t, p
-        tm -= mean_ctrl
-        pm -= mean_ctrl
+
+        if mean_perturb is not None:
+            tm -= mean_ctrl - mean_perturb
+            pm -= mean_ctrl - mean_perturb
+        else:
+            tm -= mean_ctrl
+            pm -= mean_ctrl
 
         print(cond, pearsonr(tm, pm))
         pearson_delta.append(pearsonr(tm, pm)[0])
@@ -103,24 +108,16 @@ def calc_pearson_metrics(preds, targets, conditions, mean_ctrl):
 
 
 def load_mean_ctrl(path_mean_ctrl: str):
-    # file_extension = os.path.splitext(path_mean_ctrl)[1]
 
-    # if file_extension == '.json':
-    #     with open(path_mean_ctrl, 'r') as file:
-    #         data = json.load(file)
-    #     #Create mean_ctrl vector with the correct order
-    #     mean_ctrl = np.array([data[str(gene_id)] for gene_id in gene_ids])
-    #     # print("gene_ids", gene_ids)
-    #     # print("mean_ctrl", mean_ctrl)
-    #     # exit()
-
-    # elif file_extension == '.npz':
-    #     data = np.load(path_mean_ctrl)
-    #     mean_ctrl = data['mean_ctrl']
-
-    # else:
-    #     raise ValueError(f"Unsupported file format: {file_extension}")
     data = np.load(path_mean_ctrl)
     mean_ctrl = data["mean_ctrl"]
 
     return mean_ctrl
+
+
+def load_mean_perturb(path_mean_perturb: str):
+
+    data = np.load(path_mean_perturb)
+    mean_perturb = data["mean_perturbed_log1p"]
+
+    return mean_perturb

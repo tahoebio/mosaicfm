@@ -9,15 +9,20 @@ from mosaicfm.utils import calc_pearson_metrics
 
 # Define your custom callback (ensure it's defined somewhere in your codebase)
 class PerturbationCallback(Callback):
-    def __init__(self, mean_ctrl: np.ndarray, non_zero_genes: bool = False):
+    def __init__(
+        self,
+        mean_ctrl: np.ndarray,
+        mean_perturb: np.ndarray,
+        non_zero_genes: bool = False,
+    ):
 
         super().__init__()
         self.non_zero_genes = non_zero_genes
         self.preds = []
         self.targets = []
         self.conditions = []
-        self.mean_ctrl = mean_ctrl  # (n_genes,)
-
+        self.mean_ctrl = mean_ctrl
+        self.mean_perturb = mean_perturb
         self.reset()
         self.test_mode = False
 
@@ -40,8 +45,8 @@ class PerturbationCallback(Callback):
         batch = state.batch
 
         # Assuming model_output and batch contain the necessary data
-        preds = model_output["predicted_expr_perturbed"].detach().cpu().numpy()
-        targets = batch["expressions_perturbed"].detach().cpu().numpy()
+        preds = model_output["predicted_expr_perturbed_delta"].detach().cpu().numpy()
+        targets = batch["expressions_perturbed_delta"].detach().cpu().numpy()
         conditions = batch["perturb_names"]
 
         self.preds.append(preds)
@@ -58,7 +63,13 @@ class PerturbationCallback(Callback):
         print("Evaluation ended. Total predictions collected:", len(preds))
 
         # Compute Pearson metrics
-        metrics = calc_pearson_metrics(preds, targets, conditions, self.mean_ctrl)
+        metrics = calc_pearson_metrics(
+            preds,
+            targets,
+            conditions,
+            self.mean_ctrl,
+            self.mean_perturb,
+        )
 
         if self.test_mode:
             # Log the test metrics with a "test/" prefix

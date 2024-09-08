@@ -26,10 +26,18 @@ from perturb_callback import PerturbationCallback
 
 from mosaicfm.data import build_perturbation_dataloader
 from mosaicfm.model import ComposerSCGPTPerturbationModel
-from mosaicfm.utils import download_file_from_s3_url, load_mean_ctrl
+from mosaicfm.utils import (
+    download_file_from_s3_url,
+    load_mean_ctrl,
+    load_mean_perturb,
+)
 
 log = logging.getLogger(__name__)
 os.environ["TORCH_DISTRIBUTED_DEBUG"] = "DETAIL"
+
+
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
 def main(cfg: DictConfig) -> composer.Trainer:
@@ -167,22 +175,42 @@ def main(cfg: DictConfig) -> composer.Trainer:
     valid_loader_cfg: DictConfig = pop_config(cfg, "valid_loader", must_exist=True)
     test_loader_cfg: DictConfig = pop_config(cfg, "test_loader", must_exist=True)
 
+    # Load mean perturbations
+    path_mean_perturb: DictConfig = pop_config(
+        valid_loader_cfg,
+        "path_mean_perturb",
+        must_exist=True,
+    )
+
+    if dist.get_local_rank() == 0:
+        download_file_from_s3_url(
+            s3_url=path_mean_perturb.get("remote"),
+            local_file_path=path_mean_perturb.get("local"),
+        )
+    with dist.local_rank_zero_download_and_wait(path_mean_perturb.get("local")):
+        dist.barrier()
+
+    mean_perturb = load_mean_perturb(path_mean_perturb.get("local"))
+
     train_loader = build_perturbation_dataloader(
         loader_cfg=train_loader_cfg,
         device_batch_size=device_train_batch_size,
         isTrain=True,
+        mean_perturb=mean_perturb,
     )
 
     valid_loader = build_perturbation_dataloader(
         loader_cfg=valid_loader_cfg,
         device_batch_size=device_test_batch_size,
         isTrain=False,
+        mean_perturb=mean_perturb,
     )
 
     test_loader = build_perturbation_dataloader(
         loader_cfg=test_loader_cfg,
         device_batch_size=device_test_batch_size,
         isTrain=False,
+        mean_perturb=mean_perturb,
     )
 
     log.info(f"Training set number of samples: {len(train_loader)}")
@@ -231,16 +259,7 @@ def main(cfg: DictConfig) -> composer.Trainer:
         else []
     )
 
-    # Callbacks
-    callbacks: List[Callback] = (
-        [
-            build_callback(str(name), callback_cfg, om.to_container(logged_cfg))
-            for name, callback_cfg in callback_configs.items()
-        ]
-        if callback_configs
-        else []
-    )
-
+    # Load mean controls
     path_mean_ctrl: DictConfig = pop_config(
         valid_loader_cfg,
         "path_mean_ctrl",
@@ -257,7 +276,17 @@ def main(cfg: DictConfig) -> composer.Trainer:
 
     mean_ctrl = load_mean_ctrl(path_mean_ctrl.get("local"))
 
-    pert_callback = PerturbationCallback(mean_ctrl)
+    # Callbacks
+    callbacks: List[Callback] = (
+        [
+            build_callback(str(name), callback_cfg, om.to_container(logged_cfg))
+            for name, callback_cfg in callback_configs.items()
+        ]
+        if callback_configs
+        else []
+    )
+
+    pert_callback = PerturbationCallback(mean_ctrl, mean_perturb)
     callbacks.append(pert_callback)
 
     # Algorithms
@@ -284,6 +313,22 @@ def main(cfg: DictConfig) -> composer.Trainer:
             param
         ) in model.model.transformer_encoder.parameters():  # model.model is SCGPTModel
             param.requires_grad = False
+
+    # Log number of parameters
+    n_params = sum(p.numel() for p in model.parameters())
+    n_trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    logged_cfg.update(
+        {
+            "n_params": n_params,
+            "n_trainable_params": n_trainable_params,
+        },
+    )
+    log.info(f"Total parameters: {n_params / (10 ** 6)} M")
+    log.info(f"Total trainable parameters: {n_trainable_params / (10 ** 6)} M ")
+    for name, sub_model in model.model.named_children():
+        log.info(f"{name}: {count_parameters(sub_model) / (10 ** 6)} M parameters")
+
+    print(f"Total parameters: {n_params / (10 ** 6)} M")
 
     # Optimizer
     optimizer_config: Dict[str, Any] = pop_config(
@@ -325,6 +370,7 @@ def main(cfg: DictConfig) -> composer.Trainer:
         load_weights_only=True,
         load_ignore_keys=["state/model/pert_encoder*", "state/model/pert_decoder*"],
         save_folder=save_folder,
+        save_overwrite=save_overwrite,
         max_duration=max_duration,
         autoresume=autoresume,
         dist_timeout=dist_timeout,

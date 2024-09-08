@@ -559,18 +559,18 @@ class ComposerSCGPTPerturbationModel(ComposerModel):
             pcpt_key_padding_mask=None,
             gen_key_padding_mask=None,
         )
-        predicted_post_expr = self.pert_decoder(transformer_encoding, ctrl_expr)
+        predicted_post_expr_delta = self.pert_decoder(transformer_encoding, ctrl_expr)
         output = {
-            "predicted_expr_perturbed": predicted_post_expr["pred"],
+            "predicted_expr_perturbed_delta": predicted_post_expr_delta["pred"],
         }
         return output
 
     def loss(self, outputs, batch):
-        expr_target = batch["expressions_perturbed"]
+        expr_target = batch["expressions_perturbed_delta"]
         gene_ids = batch["genes"]
         mask = torch.ones_like(gene_ids, dtype=torch.bool)
 
-        expr_pred = outputs["predicted_expr_perturbed"]
+        expr_pred = outputs["predicted_expr_perturbed_delta"]
 
         loss_mse = self.criterion(
             expr_pred,
