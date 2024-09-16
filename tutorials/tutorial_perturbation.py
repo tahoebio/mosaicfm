@@ -41,7 +41,7 @@ torch.cuda.set_device(0)
 
 hyperparameter_defaults = dict(
     seed=0,
-    data_name="norman",  # "norman", "adamson"
+    data_name="adamson",  # "norman", "adamson"
     load_model="../save/scGPT_human",
     model_name="70M",
     max_seq_len=1536,
@@ -50,7 +50,7 @@ hyperparameter_defaults = dict(
     grad_accu_to_batch_size=64,
     n_bins=0,
     dropout=0,
-    epochs=15,
+    epochs=6,
     early_stop=10,
     decoder_activation=None,
     decoder_adaptive_bias=False,
@@ -224,7 +224,7 @@ def train(
         batch_data.to(device)
         x: torch.Tensor = batch_data.x  # (batch_size * n_genes, 2)
         ori_gene_values = x[:, 0].view(batch_size, n_genes)
-        pert_flags = x[:, 1].long().view(batch_size, n_genes)
+        pert_flags = x[:, 1].long().view(batch_size, n_genes)  # (batch_size, n_genes)
         target_gene_values = batch_data.y  # (batch_size, n_genes)
 
         if include_zero_gene in ["all", "batch-wise"]:

@@ -313,7 +313,7 @@ class SCGPTModel(nn.Module):
             input_pert_flags=input_pert_flags,
         )
         output = {}
-        mlm_output = self.pert_decoder(transformer_output, values)
+        mlm_output = self.pert_decoder(transformer_output, values, input_pert_flags)
         output["mlm_output"] = mlm_output["pred"]
         return output
 
@@ -504,25 +504,27 @@ class AffineExprDecoder(nn.Module):
         self.explicit_zero_prob = explicit_zero_prob
         self.tanh_coeff = tanh_coeff
         self.adaptive_bias = adaptive_bias
-        self.coeff_decoder = ExprDecoder(d_model)
-        self.bias_decoder = ExprDecoder(d_model)
+        self.coeff_decoder = ExprDecoder(d_model + 1)
+        self.bias_decoder = ExprDecoder(d_model + 1)
 
         self.activation = activation
         if activation is not None:
             assert hasattr(nn, activation), f"Unknown activation: {activation}"
             self.activation = getattr(nn, activation)()
 
-    def forward(self, x: Tensor, values: Tensor) -> Tensor:
+    def forward(self, x: Tensor, values: Tensor, input_pert_flags: Optional[Tensor]) -> Tensor:
         """
         Args:
             x: Tensor, shape [batch_size, seq_len, embsize]
             values: Tensor, shape [batch_size, seq_len]
+            input_pert_flags: Tensor, shape [batch_size, seq_len]
 
         Returns:
             output Tensor of shape [batch_size, seq_len]
         """
-        coeff = self.coeff_decoder(x)
-        bias = self.bias_decoder(x)
+        concat_input = torch.cat([x, input_pert_flags.unsqueeze(-1)], dim=-1) # (batch, seq_len, embsize+1)
+        coeff = self.coeff_decoder(concat_input)
+        bias = self.bias_decoder(concat_input)
 
         if self.activation is not None:
             coeff["pred"] = self.activation(coeff["pred"])
