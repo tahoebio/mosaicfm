@@ -1,0 +1,7 @@
+version: "2024-07-01"
+chunk_size: 200000
+base_vocabulary_path: "/vevo/cellxgene/cellxgene_primary_2024-04-29_MDS/cellxgene_primary_2024-04-29_vocab.json"
+gene_info_csv_url: "/vevo/cellxgene/cellxgene_primary_2024-04-29_MDS/gene_info_2024-04-29.json"
+output_root: "/vevo/cellxgene/july_01_2024"
+vocab_save_path: "/vevo/cellxgene/july_01_2024/cellxgene_primary_2024-07-01_vocab.json"
+dataset_save_path: "/vevo/cellxgene/july_01_2024/cellxgene_primary_2024-07-01.dataset"

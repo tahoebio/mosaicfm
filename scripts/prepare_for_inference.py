@@ -7,8 +7,8 @@ from omegaconf import OmegaConf as om
 from mosaicfm.tokenizer import GeneVocab
 from mosaicfm.utils import download_file_from_s3_url
 
-model_name = "scgpt-70m-1024-fix-norm-apr24-data"
-wandb_id = "55n5wvdm"
+model_name = "scgpt-70m-no-attn-mask"
+wandb_id = "gda45ggo"
 api = wandb.Api()
 run = api.run(f"vevotx/vevo-scgpt/{wandb_id}")
 yaml_path = run.file("config.yaml").download(replace=True)

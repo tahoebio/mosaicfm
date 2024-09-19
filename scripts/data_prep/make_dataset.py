@@ -58,8 +58,6 @@ def process_data(args):
     adata_files = find_h5ad_files(args.adata_dir, args.ignore_dir)
     vocab = GeneVocab.from_file(args.vocab_path)
     gene_col = "feature_name"
-
-    datasets.disable_caching()
     chunks = np.array_split(adata_files, 10)
     for i, chunk in enumerate(chunks):
         save_path = os.path.join(args.output_dir, f"chunk_{i}.dataset")
@@ -75,9 +73,9 @@ def process_data(args):
                 "gene_col": gene_col,
             },
             num_proc=len(chunk),
-            keep_in_memory=True,
+            cache_dir="./cache",
         )
-        chunk_dataset.save_to_disk(save_path)
+        chunk_dataset.save_to_disk(save_path, num_proc=32)
         log.info(f"Chunk {i} dataset saved to disk with length: {len(chunk_dataset)}")
         chunk_dataset.cleanup_cache_files()
         del chunk_dataset

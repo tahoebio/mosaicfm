@@ -28,8 +28,8 @@ def process_datasets(path: str, dataset_name: str):
     print(f"train set number of samples: {len(train_dataset)}")
     print(f"valid set number of samples: {len(valid_dataset)}")
 
-    train_dataset.save_to_disk(f"{path}/{dataset_name}_train.dataset")
-    valid_dataset.save_to_disk(f"{path}/{dataset_name}_valid.dataset")
+    train_dataset.save_to_disk(f"{path}/{dataset_name}_train.dataset", num_proc=32)
+    valid_dataset.save_to_disk(f"{path}/{dataset_name}_valid.dataset", num_proc=32)
 
 
 if __name__ == "__main__":
