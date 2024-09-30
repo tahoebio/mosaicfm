@@ -149,7 +149,7 @@ def build_perturbation_dataloader(
 
         if "perturb_flag" in examples[0]:
             perturb_flags = torch.stack(
-                [example["perturb_flag"] for example in examples],
+                [torch.tensor(example["perturb_flag"]) for example in examples],
             )
         else:
             perturb_flags = torch.stack(
