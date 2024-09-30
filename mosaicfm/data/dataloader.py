@@ -108,7 +108,7 @@ def build_perturbation_dataloader(
 
         if "expressions_ctrl" in examples[0]:
             expressions_ctrls = torch.stack(
-                [example["expressions_ctrl"] for example in examples],
+                [torch.tensor(example["expressions_ctrl"]) for example in examples],
             )
         else:
             expressions_ctrls = torch.stack(
@@ -126,7 +126,10 @@ def build_perturbation_dataloader(
 
         if "expressions_perturbed" in examples[0]:
             expressions_perturbeds = torch.stack(
-                [example["expressions_perturbed"] for example in examples],
+                [
+                    torch.tensor(example["expressions_perturbed"])
+                    for example in examples
+                ],
             )
         else:
             expressions_perturbeds = torch.stack(
