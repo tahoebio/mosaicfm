@@ -1,0 +1,70 @@
+run-name,dataset,data-processed-by,Model-size,Model-config,Model-input-type,Codebase,pearson_delta_val,pearson_res_val,pearson_delta_test,pearson_res_test
+scGPT-1.3B-full-finetune,Adamson,gears,1.3B,pretrain{True}_freeze{False},bin,Haotian's,0.67,,0.6,
+scGPT-1.3B-freeze-transformer,Adamson,gears,1.3B,pretrain{True}_freeze{True},bin,Haotian's,0.67,,0.62,
+scGPT-1.3B-freeze-transformer,Adamson,gears,1.3B,pretrain{True}_freeze{True},bin,Haotian's,0.66,,0.62,
+scGPT-70M-full-finetune,Adamson,gears,70M,pretrain{True}_freeze{False},bin,Haotian's,0.69,,0.63,
+scGPT-70M-freeze-transformer,Adamson,gears,70M,pretrain{True}_freeze{True},bin,Haotian's,0.7,,0.63,
+from-scratch-freeze,Adamson,gears,70M,pretrain{False}_freeze{True},bin,Haotian's,0.78,,0.71,
+from-scratch-freeze,Adamson,gears,70M,pretrain{False}_freeze{True},bin,Haotian's,0.78,,0.7,
+70m_fullseq_pretrain{True}_freeze{False}_gears,Adamson,gears,70M,pretrain{True}_freeze{False},bin,Far's,0.68,,NA,
+70m_fullseq_pretrain{True}_freeze{True}_gears,Adamson,gears,70M,pretrain{True}_freeze{True},bin,Far's,0.54,,0.34,
+70m_fullseq_pretrain{False}_freeze{True}_gears,Adamson,gears,70M,pretrain{False}_freeze{True},bin,Far's,0.74,,0.67,
+70m_fullseq_pretrain{False}_freeze{False}_gears,Adamson,gears,70M,pretrain{False}_freeze{False},bin,Far's,0.69,,0.66,
+70m_log1p_delta_adamson_gears_pretrain{True}_freeze{False},Adamson,gears,70M,pretrain{True}_freeze{False},log1p,Far's-delta,0.74,0.07,0.68,0.15
+,Adamson,gears,linear (mean of 5 seeds),linear (mean of 5 seeds),,,,,0.4,
+,Adamson,gears,gears,gears,,,,,0.8,
+,Adamson,gears,Null,Null,,,0.79,0.01,0.71,0.03
+70m_fullseq_pretrain{True}_freeze{False}_aidan,Adamson,Vevo,70M,pretrain{True}_freeze{False},bin,Far's,0.51,,0.59,
+70m_fullseq_pretrain{False}_freeze{True}_aidan,Adamson,Vevo,70M,pretrain{False}_freeze{True},bin,Far's,0.44,,0.5,
+70m_log1p_fullseq_pretrain{True}_freeze{False}_aidan,Adamson,Vevo,70M,pretrain{True}_freeze{False},log1p,Far's,0.6,,0.63,
+70m_log1p_delta_pretrain{True}_freeze{False},Adamson,Vevo,70M,pretrain{True}_freeze{False},log1p,Far's-delta,NA,0.25,NA,0.37
+70m_log1p_delta_pretrain{True}_freeze{False},Adamson,Vevo,70M,pretrain{True}_freeze{False},log1p,Far's-delta,0.43,0.16,0.63,0.3
+70m_log1p_delta_pretrain{False}_freeze{True},Adamson,Vevo,70M,pretrain{False}_freeze{True},log1p,Far's-delta,0.57,0.18,0.7,0.2
+70m_bin_delta_pretrain{True}_freeze{False},Adamson,Vevo,70M,pretrain{True}_freeze{False},bin,Far's-delta,0.43,0.19,0.66,0.26
+,Adamson,Vevo,linear (mean of 5 seeds),linear (mean of 5 seeds),,,,,0.41,-0.09
+,Adamson,Vevo,gears,gears,,,,,0.19,
+,Adamson,Vevo,Null,Null,,,0.54,0.22,0.54,0.05
+70m_fullseq_pretrain{True}_freeze{False}_gears,Norman,gears,70M,pretrain{True}_freeze{False},bin,Far's,0.6,,0.65,
+70m_fullseq_pretrain{True}_freeze{True}_gears,Norman,gears,70M,pretrain{True}_freeze{True},bin,Far's,0.6,,0.58,
+70m_fullseq_pretrain{False}_freeze{True}_gears,Norman,gears,70M,pretrain{False}_freeze{True},bin,Far's,0.56,,0.62,
+70m_fullseq_pretrain{False}_freeze{False}_gears,Norman,gears,70M,pretrain{False}_freeze{False},bin,Far's,0.58,,0.63,
+,Norman,gears,linear (mean of 5 seeds),linear (mean of 5 seeds),,,,,0.54,
+,Norman,gears,Null,Null,,,0.53,0.02,0.57,0
+70m_fullseq_pretrain{True}_freeze{False}_aidan,Norman,Vevo,70M,pretrain{True}_freeze{False},bin,Far's,0.76,,NA,
+70m_fullseq_pretrain{False}_freeze{True}_aidan,Norman,Vevo,70M,pretrain{False}_freeze{True},bin,Far's,0.68,,NA,
+70m_log1p_fullseq_pretrain{True}_freeze{False}_aidan,Norman,Vevo,70M,pretrain{True}_freeze{False},log1p,Far's,0.77,,0.83,
+70m_log1p_delta_pretrain{True}_freeze{False},Norman,Vevo,70M,pretrain{True}_freeze{False},log1p,Far's-delta,0.77,0.68,0.83,0.68
+70m_log1p_delta_pretrain{False}_freeze{True},Norman,Vevo,70M,pretrain{False}_freeze{True},log1p,Far's-delta,0.71,0.54,0.78,0.56
+,Norman,Vevo,linear (mean of 5 seeds),linear (mean of 5 seeds),,,,,0.75,0.64
+,Norman,Vevo,gears,gears,,,,,0.58,
+,Norman,Vevo,Null,Null,,,0.58,0.05,0.59,-0.03
+70m_log1p_delta_singlePert_pretrain{True}_freeze{False},Norman_single_split1,Vevo,70M,pretrain{True}_freeze{False},log1p,Far's-delta,0.35,0.07,0.24,0.03
+70m_log1p_delta_singlePert_pretrain{False}_freeze{True},Norman_single_split1,Vevo,70M,pretrain{False}_freeze{True},log1p,Far's-delta,0.41,0.11,0.25,0.07
+,Norman_single_split1,Vevo,Null,Null,,,0.48,0.04,0.38,0.1
+70m_log1p_delta_single2_pretrain{True}_freeze{False},Norman_single_split2,Vevo,70M,pretrain{True}_freeze{False},log1p,Far's-delta,0.38,-0.02,0.45,0.06
+70m_log1p_delta_single2_pretrain{False}_freeze{True},Norman_single_split2,Vevo,70M,pretrain{False}_freeze{True},log1p,Far's-delta,0.41,0.06,0.5,0.1
+,Norman_single_split2,Vevo,Null,Null,,,0.5,0.15,0.46,0.17
+70m_log1p_delta_single3_pretrain{True}_freeze{False},Norman_single_split3,Vevo,70M,pretrain{True}_freeze{False},log1p,Far's-delta,0.55,0,0.56,0.27
+70m_log1p_delta_single3_pretrain{False}_freeze{True},Norman_single_split3,Vevo,70M,pretrain{False}_freeze{True},log1p,Far's-delta,0.65,0.05,0.6,0.2
+,Norman_single_split3,Vevo,Null,Null,,,0.63,0.06,0.55,0.1
+,Norman_single,Vevo,linear (mean of 5 seeds),linear (mean of 5 seeds),,,,,0.54,
+,Norman_single,Vevo,gears,gears,,,,,0.53,
+70m_log1p_rpe1v2_pretrain{True}_freeze{False},RPE1,gears,70M,pretrain{True}_freeze{False},log1p,Far's,0.32,,0.34,
+70m_log1p_delta_rpe1v2_pretrain{True}_freeze{False},RPE1,gears,70M,pretrain{True}_freeze{False},log1p,Far's-delta,0.3,0,0.34,-0.01
+,RPE1,gears,gears,gears,,,,,0.48,
+,RPE1,gears,Null,Null,,,0.65,0.13,0.65,0.13
+70m_log1p_delta_rpe1v2flt_pretrain{True}_freeze{False},RPE1,gears - filtered,70M,pretrain{True}_freeze{False},log1p,Far's-delta,0.27,0,0.28,0.01
+70m_log1p_delta_rpe1v2flt_pretrain{False}_freeze{True},RPE1,gears - filtered,70M,pretrain{False}_freeze{True},log1p,Far's-delta,0.27,0.01,0.28,-0.01
+,RPE1,gears - filtered,Null,Null,,,0.67,-0.05,0.67,-0.05
+70m_fullseq_pretrain{True}_freeze{False}_aidan,RPE1,Vevo,70M,pretrain{True}_freeze{False},bin,Far's,0.38,,NA,
+70m_fullseq_pretrain{False}_freeze{True}_aidan,RPE1,Vevo,70M,pretrain{False}_freeze{True},bin,Far's,0.36,,0.33,
+70m_log1p_fullseq_pretrain{True}_freeze{False}_aidan,RPE1,Vevo,70M,pretrain{True}_freeze{False},log1p,Far's,0.37,,0.35,
+70m_log1p_delta_pretrain{True}_freeze{False},RPE1,Vevo,70M,pretrain{True}_freeze{False},log1p,Far's-delta,0.36,0.09,0.33,0.12
+70m_log1p_delta_pretrain{False}_freeze{True},RPE1,Vevo,70M,pretrain{False}_freeze{True},log1p,Far's-delta,0.42,0.07,0.37,0.1
+,RPE1,Vevo,linear (mean of 5 seeds),linear (mean of 5 seeds),,,,,0.3,-0.03
+,RPE1,Vevo,gears,gears,,,,,0.25,
+,RPE1,Vevo,Null,Null,,,0.44,0.02,0.42,0.03
+70m_rpev2_log1p_delta_pretrain{True}_freeze{False},RPE1,Vevo-V2,70M,pretrain{True}_freeze{False},log1p,Far's-delta,0.38,0.13,0.32,0.05
+70m_rpev2_lre-5_log1p_delta_pretrain{True}_freeze{False},RPE1,Vevo-V2,70M,pretrain{True}_freeze{False},log1p,Far's-delta,0.45,0.15,0.4,0.08
+70m_rpev2_log1p_delta_pretrain{False}_freeze{True},RPE1,Vevo-V2,70M,pretrain{False}_freeze{True},log1p,Far's-delta,0.44,0.08,0.41,0.09
+,RPE1,Vevo-V2,Null,Null,,,0.45,0.05,0.42,0.01
