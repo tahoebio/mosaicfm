@@ -21,9 +21,8 @@ huggingface:
   pad_value: -2
   gene_col: ${cellxgene.use_col}
   adata_dir: ${cellxgene.output_root}
+  num_chunks: 10
   output_root: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/cellxgene_hf_chunks"
   vocab_output_root: ${vocab.output_root}
   vocab_path: ${vocab.output_file}
-tahoe:
-  pass_filter: full
-  min_count_per_gene: 3
+

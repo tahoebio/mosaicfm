@@ -34,9 +34,18 @@ def dataset_generator(
     gene_col: str,
     cls_token: str,
     pad_value: int,
+    obs_filter: Optional[Dict[str, str]] = None,
 ) -> Dict:
     for chunk_id, file in enumerate(adata_files):
         adata = sc.read_h5ad(file)
+
+        # Apply a filter if provided
+        if obs_filter:
+            column_name = obs_filter.get("key")
+            value = obs_filter.get("value")
+            if column_name and value:
+                adata = adata[adata.obs[column_name] == value]
+
         gene_ids_in_vocab = np.array([vocab[gene] for gene in adata.var[gene_col]])
         count_matrix = (
             adata.X.toarray() if not isinstance(adata.X, np.ndarray) else adata.X
@@ -65,7 +74,9 @@ def main(cfg: DictConfig) -> None:
         os.path.join(cfg.huggingface.vocab_output_root, cfg.huggingface.vocab_path),
     )
     gene_col = cfg.huggingface.gene_col
-    chunks = np.array_split(adata_files, 10)
+    chunks = np.array_split(adata_files, cfg.huggingface.get("num_chunks", 10))
+    obs_filter = cfg.huggingface.get("obs_filter", None)
+
     for i, chunk in enumerate(chunks):
         save_path = os.path.join(cfg.huggingface.output_root, f"chunk_{i}.dataset")
         if os.path.exists(save_path):
@@ -80,6 +91,7 @@ def main(cfg: DictConfig) -> None:
                 "gene_col": gene_col,
                 "cls_token": cfg.huggingface.get("cls_token", "<cls>"),
                 "pad_value": cfg.huggingface.get("pad_value", -2),
+                "obs_filter": obs_filter,
             },
             num_proc=len(chunk),
             keep_in_memory=True,
