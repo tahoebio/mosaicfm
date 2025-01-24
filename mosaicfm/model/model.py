@@ -6,9 +6,7 @@ import torch
 import torch.nn.functional as F
 from composer.models import ComposerModel
 from composer.utils import dist
-from llmfoundry.models.utils.param_init_fns import (
-    MODEL_INIT_REGISTRY,
-)
+from llmfoundry.models.utils.param_init_fns import MODEL_INIT_REGISTRY
 from omegaconf import DictConfig
 from torch import Tensor, nn
 

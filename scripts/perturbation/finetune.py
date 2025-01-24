@@ -14,10 +14,7 @@ from llmfoundry.utils.builders import (
     build_optimizer,
     build_scheduler,
 )
-from llmfoundry.utils.config_utils import (
-    pop_config,
-    update_batch_size_info,
-)
+from llmfoundry.utils.config_utils import pop_config, update_batch_size_info
 from omegaconf import DictConfig
 from omegaconf import OmegaConf as om
 from perturb_callback import PerturbationCallback

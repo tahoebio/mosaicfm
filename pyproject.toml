@@ -37,10 +37,8 @@ exclude = [
     "build/**",
     "docs/**",
     "node_modules/**",
-]
+    "*.ipynb"]
 
-[tool.ruff]
-extend-exclude = ["*.ipynb"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
