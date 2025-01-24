@@ -7,8 +7,8 @@ from .dataloader import (
 )
 
 __all__ = [
+    "CountDataset",
     "DataCollator",
     "build_dataloader",
     "build_perturbation_dataloader",
-    "CountDataset",
 ]

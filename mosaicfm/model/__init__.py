@@ -15,14 +15,14 @@ from .model import (
 )
 
 __all__ = [
-    "SCGPTModel",
+    "CategoryValueEncoder",
     "ComposerSCGPTModel",
     "ComposerSCGPTPerturbationModel",
+    "ContinuousValueEncoder",
+    "ExprDecoder",
+    "GeneEncoder",
+    "MVCDecoder",
     "SCGPTBlock",
     "SCGPTEncoder",
-    "GeneEncoder",
-    "ContinuousValueEncoder",
-    "CategoryValueEncoder",
-    "ExprDecoder",
-    "MVCDecoder",
+    "SCGPTModel",
 ]
