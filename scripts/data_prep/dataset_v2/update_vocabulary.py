@@ -1,7 +1,6 @@
 # Copyright (C) Vevo Therapeutics 2024-2025. All rights reserved.
 import logging
 import os
-import sys
 
 import scanpy as sc
 from omegaconf import DictConfig
