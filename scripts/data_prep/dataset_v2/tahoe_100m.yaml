@@ -20,10 +20,24 @@ huggingface:
     test_size: 0.01
     seed: 42
     shuffle: True
-  num_proc: 32
+  num_proc: 8
   obs_filter:
     key: "pass_filter"
     value: "full"
   vocab_output_root: ${vocab.output_root}
   vocab_path: ${vocab.output_file}
 
+mds:
+  out_root: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/tahoe_merged_MDS"
+  root_dir: ${huggingface.merged_dataset_root}
+  splits:
+    - "train"
+    - "valid"
+  columns:
+    expressions: "pkl"
+    genes: "pkl"
+    id: "int"
+  compression: zstd
+  hashes:
+    - "sha1"
+    - "xxh64"

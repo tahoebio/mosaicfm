@@ -47,11 +47,11 @@ def main(cfg: DictConfig):
         os.makedirs(save_dir)
         log.info(f"Created directory {save_dir}")
     train_dataset.save_to_disk(
-        os.path.join(save_dir, f"{dataset_name}_train.dataset"),
+        os.path.join(save_dir, "train.dataset"),
         num_proc=cfg.huggingface.num_proc,
     )
     test_dataset.save_to_disk(
-        os.path.join(save_dir, f"{dataset_name}_test.dataset"),
+        os.path.join(save_dir, "valid.dataset"),
         num_proc=cfg.huggingface.num_proc,
     )
     log.info("Script execution completed.")

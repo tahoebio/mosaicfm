@@ -27,7 +27,7 @@ huggingface:
   output_root: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/cellxgene_hf_chunks"
   vocab_output_root: ${vocab.output_root}
   vocab_path: ${vocab.output_file}
-  num_proc: 32
+  num_proc: 8
   split_parameters:
     test_size: 0.01
     seed: 42
