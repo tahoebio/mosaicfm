@@ -19,7 +19,7 @@ cellxgene:
 huggingface:
   ignore_dir: None
   cls_token: "<cls>"
-  dataset_name: cellxgene_2025_01_21
+  dataset_name: "cellxgene_2025_01_21"
   pad_value: -2
   gene_col: ${cellxgene.use_col}
   adata_dir: ${cellxgene.output_root}
@@ -33,4 +33,18 @@ huggingface:
     seed: 42
     shuffle: True
   merged_dataset_root: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/cellxgene_merged"
-
+mds:
+  out_root: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/cellxgene_merged_MDS"
+  root_dir: ${huggingface.merged_dataset_root}
+  num_proc: 8
+  splits:
+    - "train"
+    - "valid"
+  columns:
+    expressions: "pkl"
+    genes: "pkl"
+    id: "int"
+  compression: zstd
+  hashes:
+    - "sha1"
+    - "xxh64"

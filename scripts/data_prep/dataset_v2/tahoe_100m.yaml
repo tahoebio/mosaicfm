@@ -30,6 +30,7 @@ huggingface:
 mds:
   out_root: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/tahoe_merged_MDS"
   root_dir: ${huggingface.merged_dataset_root}
+  num_proc: 8
   splits:
     - "train"
     - "valid"

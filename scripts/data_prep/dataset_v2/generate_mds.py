@@ -43,6 +43,7 @@ def process_data(
     columns: dict,
     compression: str,
     hashes: Tuple[str],
+    num_proc: int,
 ):
     check_and_create_dir(out_root)
 
@@ -53,7 +54,7 @@ def process_data(
 
     arg_tuples = each_task(out_root, dataset_path, columns, compression, hashes)
 
-    with Pool(initializer=init_worker, processes=num_files) as pool:
+    with Pool(initializer=init_worker, processes=num_proc) as pool:
         for _ in pool.imap(convert_to_mds, arg_tuples):
             pass
 
@@ -103,13 +104,14 @@ def main(cfg: DictConfig):
     columns = cfg.columns
     compression = cfg.compression
     hashes = tuple(cfg.hashes)
+    num_proc = cfg.get("num_proc", 1)  # Default to 1 if not specified
 
     # Process each split (train, val, test, etc.)
     for split in splits:
         dataset_path = os.path.join(root_dir, f"{split}.dataset")
         out_root_split = os.path.join(out_root, split)
         log.info(f"Starting processing of {split.capitalize()} Data...")
-        process_data(out_root_split, dataset_path, columns, compression, hashes)
+        process_data(out_root_split, dataset_path, columns, compression, hashes, num_proc)
         log.info(f"Finished writing MDS files for {split.capitalize()}.")
 
     # Copy metadata.json if it exists

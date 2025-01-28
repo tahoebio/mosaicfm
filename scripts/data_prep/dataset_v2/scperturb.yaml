@@ -29,4 +29,4 @@ huggingface:
     test_size: 0.01
     seed: 42
     shuffle: True
-  num_proc: 32
+  num_proc: 8
