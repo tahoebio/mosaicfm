@@ -36,14 +36,14 @@ huggingface:
 mds:
   out_root: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/cellxgene_merged_MDS"
   root_dir: ${huggingface.merged_dataset_root}
-  num_proc: 8
+  num_proc: 128
   splits:
     - "train"
     - "valid"
   columns:
     expressions: "pkl"
     genes: "pkl"
-    id: "int"
+    id: "int64"
   compression: zstd
   hashes:
     - "sha1"

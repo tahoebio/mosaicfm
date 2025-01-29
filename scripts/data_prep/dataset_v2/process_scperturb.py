@@ -74,10 +74,11 @@ def save_processed_data(
     output_dir: str,
     vocab: Dict[str, int],
 ) -> str:
-    mask = [id in vocab for id in feature_IDs]
-    adata_subset = adata[:, mask].to_memory().copy()
-    adata_subset.var["feature_id"] = np.array(feature_IDs)[mask]
     output_file = os.path.join(output_dir, os.path.basename(file_path))
+    mask = [id in vocab for id in feature_IDs]
+    adata_subset = adata[:, mask].to_memory()
+    adata_subset.var["feature_id"] = np.array(feature_IDs)[mask]
+    adata_subset = adata_subset[:,~adata_subset.var["feature_id"].duplicated()]
     adata_subset.write_h5ad(output_file)
     return output_file
 

@@ -1,7 +1,7 @@
 integrations:
 - integration_type: git_repo
   git_repo: vevotx/mosaicfm
-  git_branch: dev-temp
+  git_branch: main
   # git_commit:  # OR use your commit hash
   pip_install: -e . --no-deps
   ssh_clone: true  # Should be true if using a private repo
@@ -20,7 +20,7 @@ name: scgpt-dev-70m
 
 compute:
   gpus: 16 # Number of GPUs to use
-  cluster: r14z3
+  cluster: r15z1p1
 scheduling:
   max_duration: 12 # Maximum duration of the run in hours
 
@@ -39,7 +39,7 @@ parameters:
   device_eval_batch_size: 400
   device_train_microbatch_size: "auto"
   vocabulary:
-    remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/cellxgene_primary_2024-04-29_MDS/cellxgene_primary_2024-04-29_vocab.json"
+    remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/vevo_v2_vocab.json"
     local: "vocab.json"
   model:
     name: vevo_scgpt
@@ -91,10 +91,10 @@ parameters:
     data_style: "both"
     num_bins: 51
     right_binning: False
-    use_junk_tokens: True
+    use_junk_tokens: False
   train_loader:
     dataset:
-      remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/cellxgene_primary_2024-04-29_MDS/train/"
+      remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/tahoe_100m_MDS_v1/train/"
       local: "mds-data-folder/train"
       download_timeout: 300
       allow_unsafe_types: True
@@ -108,7 +108,7 @@ parameters:
     persistent_workers: True
   valid_loader:
     dataset:
-      remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/cellxgene_primary_2024-04-29_MDS/val/"
+      remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/tahoe_100m_MDS_v1/valid/"
       local: "mds-data-folder/val"
       download_timeout: 300
       allow_unsafe_types: True
@@ -162,4 +162,3 @@ parameters:
   save_folder: "s3://vevo-ml-datasets/vevo-scgpt/models/{run_name}"
   save_interval: "2000ba"
   autoresume: True
-  run_name: "scgpt-70m-1024-fix-norm-apr24-data"

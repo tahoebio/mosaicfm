@@ -18,6 +18,7 @@ logging.basicConfig(
     format="%(asctime)s: [%(process)d][%(threadName)s]: %(levelname)s: %(name)s: %(message)s",
 )
 logging.getLogger(__name__).setLevel("INFO")
+os.environ["HF_HOME"] = "/vevo/cache"
 
 
 def init_worker():
@@ -55,8 +56,9 @@ def process_data(
     arg_tuples = each_task(out_root, dataset_path, columns, compression, hashes)
 
     with Pool(initializer=init_worker, processes=num_proc) as pool:
-        for _ in pool.imap(convert_to_mds, arg_tuples):
-            pass
+        pool.imap_unordered(convert_to_mds, arg_tuples)
+        pool.close()
+        pool.join()
 
     merge_index(out_root, keep_local=True)
     log.info(f"Merging Index Complete at {out_root}.")
@@ -79,19 +81,16 @@ def each_task(
 def convert_to_mds(args: Tuple[str, str, dict, str, Tuple[str]]) -> None:
     sub_out_root, dataset_path, columns, compression, hashes = args
     check_and_create_dir(sub_out_root)
-    log.info(f"Processing file {dataset_path} into {sub_out_root}.")
-
     dataset = datasets.Dataset.from_file(dataset_path)
+    dataset = dataset.with_format("torch")
     with MDSWriter(
         out=sub_out_root,
         columns=columns,
         compression=compression,
         hashes=hashes,
     ) as out:
-        for sample in dataset:
+        for sample in dataset.iter(1):
             out.write(sample)
-
-    log.info(f"Finished processing {dataset_path}.")
 
 
 def main(cfg: DictConfig):
