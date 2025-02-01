@@ -19,6 +19,7 @@ in Tahoe (which is almost all of them when keyed using gene-IDs).
 ```bash
 python download_cellxgene.py cellxgene_2025_01_21.yaml
 ```
+The January 21 update of the CellXGene dataset contains 59.8M cells across 3 datasets.
 
 ## Step 2.2: Download and process scPerturb Data
 
