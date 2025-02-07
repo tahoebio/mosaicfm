@@ -7,3 +7,5 @@ runai submit train-mosaicfm -i docker.io/vevotx/ml-scgpt:shreshth -g 4 --git-syn
 ## On MCLI:
 
 mcli run -f scgpt-1_3b-train.yaml --follow
+
+runai training submit train-mosaicfm-2 -i docker.io/vevotx/ml-scgpt:shreshth -g 2 --large-shm --git-sync repository=https://github.com/vevotx/mosaicfm/tree/14-jan-2025-training-dataset-update,path=/src --command -- /src/mosaicfm/mcli/runai_submit.sh

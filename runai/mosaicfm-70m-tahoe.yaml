@@ -1,7 +1,7 @@
 global_seed: 777
 seed: ${global_seed}
 device_train_batch_size: 400
-global_train_batch_size: 1600
+global_train_batch_size: 4800
 device_eval_batch_size: 400
 device_train_microbatch_size: "auto"
 vocabulary:
@@ -128,3 +128,4 @@ loggers:
 save_folder: "s3://vevo-ml-datasets/vevo-scgpt/models/{run_name}"
 save_interval: "2000ba"
 save_num_checkpoints_to_keep: 0
+run_name: "mosaicfm-70m-tahoe"

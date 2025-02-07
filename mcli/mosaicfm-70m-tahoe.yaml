@@ -8,7 +8,7 @@ integrations:
 
 # We are fetching, converting, and training on the 'val' split
 # as it is small and quick to get going for this demo.
-# For real training runs, follow the instructions in `llm-foundry/scripts/train/README.md`
+# For real training runs, follow the instructions in `llm-foundry/scripts/train/provisioning-request.yaml`
 # to convert and host the full 'train' dataset.
 command: |
   cd mosaicfm/scripts
