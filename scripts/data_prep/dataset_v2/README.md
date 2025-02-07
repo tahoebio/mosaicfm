@@ -72,4 +72,10 @@ dataset to compressed MDS shards.
 ## Step 2.5: Convert datasets to MDS format
 
 ```bash
+python generate_mds.py <PATH TO DATASET YAML>
 ```
+> [!NOTE]
+> Sometimes inside Docker multiprocessing doesn't work correctly. In that case, copy over the 
+script to a jupyter notebook and try again.
+
+After this step the MDS file can be uploaded to S3. 
