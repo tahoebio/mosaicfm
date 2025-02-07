@@ -19,11 +19,11 @@ template:
         command: ["/bin/sh"]
         resources:
           limits:
-            cpu: "700m"
-            nvidia.com/gpu: 1
+            cpu: "16000m"
+            nvidia.com/gpu: 8
           requests:
-            cpu: "700m"
-            nvidia.com/gpu: 1
+            cpu: "16000m"
+            nvidia.com/gpu: 8
     restartPolicy: Never
 ---
 apiVersion: autoscaling.x-k8s.io/v1beta1
@@ -36,6 +36,6 @@ spec:
   parameters:
     maxRunDurationSeconds: "600"
   podSets:
-  - count: 8
+  - count: 1
     podTemplateRef:
       name: gpu-pod-template

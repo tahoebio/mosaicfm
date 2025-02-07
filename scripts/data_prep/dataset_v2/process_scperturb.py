@@ -78,7 +78,7 @@ def save_processed_data(
     mask = [id in vocab for id in feature_IDs]
     adata_subset = adata[:, mask].to_memory()
     adata_subset.var["feature_id"] = np.array(feature_IDs)[mask]
-    adata_subset = adata_subset[:,~adata_subset.var["feature_id"].duplicated()]
+    adata_subset = adata_subset[:, ~adata_subset.var["feature_id"].duplicated()]
     adata_subset.write_h5ad(output_file)
     return output_file
 

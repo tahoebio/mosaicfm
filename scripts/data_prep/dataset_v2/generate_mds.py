@@ -110,7 +110,14 @@ def main(cfg: DictConfig):
         dataset_path = os.path.join(root_dir, f"{split}.dataset")
         out_root_split = os.path.join(out_root, split)
         log.info(f"Starting processing of {split.capitalize()} Data...")
-        process_data(out_root_split, dataset_path, columns, compression, hashes, num_proc)
+        process_data(
+            out_root_split,
+            dataset_path,
+            columns,
+            compression,
+            hashes,
+            num_proc,
+        )
         log.info(f"Finished writing MDS files for {split.capitalize()}.")
 
     # Copy metadata.json if it exists
