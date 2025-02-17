@@ -518,7 +518,7 @@ for select_gene in select_gene_list:
     # Use a random gene from the list
     select_gene_ = select_gene
     select_gene = condition_names_gene_match.pop(0)
-    select_gene_id = genes.index(select_gene)
+    select_gene_id = genes.index(select_gene)+1
     print(select_gene_id)
     all_counts = (
         adata_t.layers[input_layer_key].A

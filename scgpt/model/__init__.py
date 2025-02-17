@@ -1,4 +1,4 @@
-from .model_pcpt import (
+from .model import (
     TransformerModel,
     FlashTransformerEncoderLayer,
     GeneEncoder,

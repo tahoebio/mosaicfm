@@ -504,7 +504,7 @@ select_gene_list = condition_names_gene
 for select_gene in select_gene_list:
     adata_t = adata[adata.obs['condition'].isin([select_gene+'+ctrl', 'ctrl'])].copy()
     print(adata_t.obs['condition'])
-    select_gene_id = genes.index(select_gene)
+    select_gene_id = genes.index(select_gene)+1
     print(select_gene_id)
     all_counts = (
         adata_t.layers[input_layer_key].A
