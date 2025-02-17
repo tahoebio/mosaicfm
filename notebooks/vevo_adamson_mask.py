@@ -197,7 +197,7 @@ condition_names_gene
 preprocessor = Preprocessor(
     use_key="X",  # the key in adata.layers to use as raw data
     filter_gene_by_counts=3,  # step 1
-    filter_cell_by_counts=False,  # step 2
+    filter_cell_by_counts=None,  # step 2
     normalize_total=None,  # 3. whether to normalize the raw data and to what sum
     result_normed_key="X_normed",  # the key in adata.layers to store the normalized data
     log1p=False,  # 4. whether to log1p the normalized data
@@ -239,7 +239,7 @@ len(condition_names_gene)
 preprocessor = Preprocessor(
     use_key="X",  # the key in adata.layers to use as raw data
     filter_gene_by_counts=0,  # step 1
-    filter_cell_by_counts=False,  # step 2
+    filter_cell_by_counts=None,  # step 2
     normalize_total=None,  # 3. whether to normalize the raw data and to what sum
     result_normed_key="X_normed",  # the key in adata.layers to store the normalized data
     log1p=False,  # 4. whether to log1p the normalized data
