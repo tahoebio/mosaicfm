@@ -155,4 +155,6 @@ scripts/modality_pred/data
 figures/
 .micromamba/
 scripts/perturbation/debug/
-runai/config_perts/*adamson*
+runai/config_perts/
+runai/mosaicfm-70m-merged-*
+vocab.json
