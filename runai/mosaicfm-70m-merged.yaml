@@ -2,7 +2,7 @@ global_seed: 777
 seed: ${global_seed}
 device_train_batch_size: 400
 global_train_batch_size: 3200
-device_eval_batch_size: 400
+device_eval_batch_size: 1000
 device_train_microbatch_size: "auto"
 vocabulary:
   remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/vevo_v2_vocab.json"
@@ -115,7 +115,7 @@ algorithms:
     clipping_threshold: 1.0
   low_precision_layernorm: {}
 precision: amp_bf16
-eval_interval: "1000ba"
+eval_interval: "3000ba"
 max_duration: "25000ba" #equivalent to 0.5ep #"1ep" #"100000ba"
 fsdp_config:
   sharding_strategy: FULL_SHARD
@@ -136,5 +136,5 @@ loggers:
     project: vevo-MFM-v2
     log_artifacts: False
 save_folder: "s3://vevo-ml-datasets/vevo-scgpt/models/{run_name}"
-save_interval: "2000ba"
+save_interval: "3000ba"
 save_num_checkpoints_to_keep: 0

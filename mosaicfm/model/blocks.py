@@ -496,10 +496,12 @@ class MVCDecoder(nn.Module):
 
     def __init__(
         self,
+        mvc_config: dict,
         d_model: int,
         arch_style: str = "inner product",
         query_activation: str = "sigmoid",
         scaled_dot_product: bool = False,
+        loss_type: str = "MSE",
     ) -> None:
         """
         Args:
@@ -522,6 +524,11 @@ class MVCDecoder(nn.Module):
             raise ValueError(f"Unknown arch_style: {arch_style}")
 
         self.arch_style = arch_style
+        self.loss_type = loss_type
+
+        # if loss is Cross Entropy we need an extra linear layer to output bin probabilities
+        if self.loss_type == "CE":
+            self.out_proj = nn.Linear(1, mvc_config.get("n_outputs", 50))
 
     def forward(
         self,
@@ -546,6 +553,10 @@ class MVCDecoder(nn.Module):
                 pred_value = pred_value / torch.sqrt(
                     torch.tensor(inner_product_dimension, dtype=pred_value.dtype),
                 )
+
+            if self.loss_type == "CE":
+                pred_value = self.out_proj(pred_value.unsqueeze(-1))
+
             return {"pred": pred_value}
         else:
             raise ValueError(f"Unknown arch_style: {self.arch_style}")

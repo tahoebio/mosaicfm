@@ -10,7 +10,13 @@ from llmfoundry.models.utils.param_init_fns import MODEL_INIT_REGISTRY
 from omegaconf import DictConfig
 from torch import Tensor, nn
 
-from mosaicfm.loss import MaskedMseMetric, MaskedSpearmanMetric, masked_mse_loss
+from mosaicfm.loss import (
+    MaskedCEMetric,
+    MaskedMseMetric,
+    MaskedSpearmanMetric,
+    masked_cross_entropy_loss,
+    masked_mse_loss,
+)
 from mosaicfm.model.blocks import (
     AffineExprDecoder,
     CategoryValueEncoder,
@@ -41,6 +47,7 @@ class SCGPTModel(nn.Module):
         self.n_layers = model_config.n_layers
         self.n_heads = model_config.n_heads
         self.d_model = model_config.d_model
+        self.loss_type = model_config.get("loss_type", "MSE")
         self.expansion_ratio = model_config.expansion_ratio
         self.norm_scheme = model_config.get("norm_scheme", "pre")
         self.transformer_activation = model_config.get("transformer_activation", "gelu")
@@ -132,10 +139,12 @@ class SCGPTModel(nn.Module):
         if model_config.mvc is not None:
             mvc_config = model_config.mvc
             self.mvc_decoder = MVCDecoder(
+                mvc_config,
                 d_model=self.d_model,
                 arch_style=mvc_config.arch_style,
                 query_activation=mvc_config.query_activation,
                 scaled_dot_product=mvc_config.get("scaled_dot_product", False),
+                loss_type=self.loss_type,
             )
 
         if self.init_device != "meta":
@@ -384,7 +393,11 @@ class SCGPTModel(nn.Module):
 class ComposerSCGPTModel(ComposerModel):
     def __init__(self, model_config, collator_config, device=None):
         super().__init__()
-        self.criterion = masked_mse_loss
+        self.loss_type = model_config.get("loss_type", "MSE")
+        assert self.loss_type in {"CE", "MSE"}
+        self.criterion = (
+            masked_mse_loss if self.loss_type == "MSE" else masked_cross_entropy_loss
+        )
         self.pad_token_id = collator_config.pad_token_id
         self.use_cell_conditioned_generation = model_config.get(
             "use_cell_conditioned_generation",
@@ -396,18 +409,31 @@ class ComposerSCGPTModel(ComposerModel):
             device=device,
         )
         self.n_active_params = sum(p.numel() for p in self.model.parameters())
-        self.train_metrics = {
-            "MSE": MaskedMseMetric(name="MSE"),
-            "MVC": MaskedMseMetric(name="MVC"),
-        }
+        if self.loss_type == "MSE":
+            self.train_metrics = {
+                "MSE": MaskedMseMetric(name="MSE"),
+                "MVC": MaskedMseMetric(name="MVC"),
+            }
+        elif self.loss_type == "CE":
+            self.train_metrics = {
+                "CE": MaskedCEMetric(name="CE"),
+                "MVC": MaskedCEMetric(name="MVC"),
+            }
         self.standard_scale_outputs = model_config.get("standard_scale_outputs", False)
         self.collator_config = collator_config
 
-        self.val_metrics = {
-            "MSE": MaskedMseMetric(name="MSE"),
-            "MVC": MaskedMseMetric(name="MVC"),
-            "Spearman": MaskedSpearmanMetric(name="Spearman"),
-        }
+        if self.loss_type == "MSE":
+            self.val_metrics = {
+                "MSE": MaskedMseMetric(name="MSE"),
+                "MVC": MaskedMseMetric(name="MVC"),
+                "Spearman": MaskedSpearmanMetric(name="Spearman"),
+            }
+        elif self.loss_type == "CE":
+            self.val_metrics = {
+                "CE": MaskedCEMetric(name="CE"),
+                "MVC": MaskedCEMetric(name="MVC"),
+                "Spearman": MaskedSpearmanMetric(name="Spearman"),
+            }
         if self.use_cell_conditioned_generation:
             self.train_gen = MaskedMseMetric(name="GEN")
             self.train_metrics.update({"GEN": self.train_gen})
@@ -481,7 +507,7 @@ class ComposerSCGPTModel(ComposerModel):
         target = batch["gen_expr_target"]
         if self.standard_scale_outputs:
             target = self.scale_outputs(target)
-        if metric.name == "MSE":
+        if metric.name in {"MSE", "CE"}:
             preds = outputs["gen_preds"]
         elif metric.name == "MVC":
             preds = outputs["mvc_output"][:, pcpt_gene.shape[1] :]
@@ -489,7 +515,9 @@ class ComposerSCGPTModel(ComposerModel):
             assert self.use_cell_conditioned_generation
             preds = outputs["cell_conditioned_gen_preds"]
         elif metric.name == "Spearman":
-            preds = outputs["gen_preds"]
+            # spearman correlation of raw counts and predicted binned values
+            # bin indices should be 1 to num_bins
+            preds = torch.argmax(outputs["gen_preds"], dim=-1).float() + 1
             target = gen_expr_raw
         else:
             raise ValueError(f"metric {metric.name} not recognized")
