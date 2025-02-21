@@ -1,4 +1,4 @@
-#!/bin/bash
+# Copyright (C) Vevo Therapeutics 2025. All rights reserved.
 
 # Update system and install mdadm
 sudo apt update && sudo apt install mdadm --no-install-recommends
