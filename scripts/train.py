@@ -490,6 +490,17 @@ def main(cfg: DictConfig) -> composer.Trainer:
 
     if should_log_config:
         log.info("Logging config")
+        print(composer.utils.parse_uri(save_folder))
+        resolved_run_name = trainer.state.run_name
+        logged_cfg.update(
+            {
+                "run_name": resolved_run_name,
+                "save_folder": composer.utils.partial_format(
+                    save_folder,
+                    run_name=resolved_run_name,
+                ),
+            },
+        )
         log_config(logged_cfg)
     torch.cuda.empty_cache()
     gc.collect()
