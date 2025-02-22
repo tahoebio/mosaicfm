@@ -454,6 +454,7 @@ class ComposerSCGPTModel(ComposerModel):
             self.val_metrics = {
                 "ORD": MaskedOrdinalMetric(name="ORD"),
                 "MVC": MaskedOrdinalMetric(name="MVC"),
+                "Spearman": MaskedSpearmanMetric(name="Spearman"),
             }
 
         if self.use_cell_conditioned_generation:
@@ -539,7 +540,8 @@ class ComposerSCGPTModel(ComposerModel):
             preds = outputs["cell_conditioned_gen_preds"]
         elif metric.name == "Spearman":
             # spearman correlation of raw counts and predicted binned values
-            preds = outputs["gen_preds"]
+            # bin indices should be 1 to num_bins
+            preds = torch.argmax(outputs["gen_preds"], dim=-1).float() + 1
             target = gen_expr_raw
         else:
             raise ValueError(f"metric {metric.name} not recognized")
