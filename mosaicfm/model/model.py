@@ -13,9 +13,11 @@ from torch import Tensor, nn
 from mosaicfm.loss import (
     MaskedCEMetric,
     MaskedMseMetric,
+    MaskedOrdinalMetric,
     MaskedSpearmanMetric,
     masked_cross_entropy_loss,
     masked_mse_loss,
+    masked_ordinal_loss,
 )
 from mosaicfm.model.blocks import (
     AffineExprDecoder,
@@ -394,10 +396,18 @@ class ComposerSCGPTModel(ComposerModel):
     def __init__(self, model_config, collator_config, device=None):
         super().__init__()
         self.loss_type = model_config.get("loss_type", "MSE")
-        assert self.loss_type in {"CE", "MSE"}
-        self.criterion = (
-            masked_mse_loss if self.loss_type == "MSE" else masked_cross_entropy_loss
-        )
+        assert self.loss_type in {"CE", "MSE", "ORD"}
+        self.target_sum = collator_config.get("target_sum", 10000)
+        self.do_binning = collator_config.get("do_binning", True)
+        if self.loss_type == "MSE":
+            self.criterion = masked_mse_loss
+        elif self.loss_type == "CE":
+            self.criterion = masked_cross_entropy_loss
+        elif self.loss_type == "ORD":
+            self.criterion = masked_ordinal_loss
+        else:
+            raise ValueError(f"Loss {self.loss_type} is not implemented.")
+
         self.pad_token_id = collator_config.pad_token_id
         self.use_cell_conditioned_generation = model_config.get(
             "use_cell_conditioned_generation",
@@ -419,6 +429,12 @@ class ComposerSCGPTModel(ComposerModel):
                 "CE": MaskedCEMetric(name="CE"),
                 "MVC": MaskedCEMetric(name="MVC"),
             }
+        elif self.loss_type == "ORD":
+            self.train_metrics = {
+                "ORD": MaskedOrdinalMetric(name="ORD"),
+                "MVC": MaskedOrdinalMetric(name="MVC"),
+            }
+
         self.standard_scale_outputs = model_config.get("standard_scale_outputs", False)
         self.collator_config = collator_config
 
@@ -434,6 +450,12 @@ class ComposerSCGPTModel(ComposerModel):
                 "MVC": MaskedCEMetric(name="MVC"),
                 "Spearman": MaskedSpearmanMetric(name="Spearman"),
             }
+        elif self.loss_type == "ORD":
+            self.val_metrics = {
+                "ORD": MaskedOrdinalMetric(name="ORD"),
+                "MVC": MaskedOrdinalMetric(name="MVC"),
+            }
+
         if self.use_cell_conditioned_generation:
             self.train_gen = MaskedMseMetric(name="GEN")
             self.train_metrics.update({"GEN": self.train_gen})
@@ -482,6 +504,7 @@ class ComposerSCGPTModel(ComposerModel):
         gen_key_padding_mask = ~gen_gene.eq(self.pad_token_id)
         positions_to_match = gen_key_padding_mask
         gen_expr_preds = outputs["gen_preds"]
+
         loss_mse = self.criterion(gen_expr_preds, gen_expr_target, positions_to_match)
         loss_mvc = self.criterion(
             outputs["mvc_output"][:, pcpt_gene.shape[1] :],
@@ -507,7 +530,7 @@ class ComposerSCGPTModel(ComposerModel):
         target = batch["gen_expr_target"]
         if self.standard_scale_outputs:
             target = self.scale_outputs(target)
-        if metric.name in {"MSE", "CE"}:
+        if metric.name in {"MSE", "CE", "ORD"}:
             preds = outputs["gen_preds"]
         elif metric.name == "MVC":
             preds = outputs["mvc_output"][:, pcpt_gene.shape[1] :]
@@ -516,8 +539,7 @@ class ComposerSCGPTModel(ComposerModel):
             preds = outputs["cell_conditioned_gen_preds"]
         elif metric.name == "Spearman":
             # spearman correlation of raw counts and predicted binned values
-            # bin indices should be 1 to num_bins
-            preds = torch.argmax(outputs["gen_preds"], dim=-1).float() + 1
+            preds = outputs["gen_preds"]
             target = gen_expr_raw
         else:
             raise ValueError(f"metric {metric.name} not recognized")

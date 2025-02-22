@@ -16,6 +16,34 @@ def masked_mse_loss(
     return loss / mask.sum()
 
 
+def masked_ordinal_loss(
+    logits: torch.Tensor,
+    targets: torch.Tensor,
+    mask: torch.Tensor,
+) -> torch.Tensor:
+
+    B, N, num_bins = logits.shape
+    mask = mask.bool()
+
+    logits_masked = logits[mask]
+    targets_masked = targets[mask]
+
+    # Construct ordinal labels on the masked subset
+    thresholds = torch.arange(num_bins, device=logits.device).unsqueeze(
+        0,
+    )  # shape: _, num_bins
+    expanded_targets = targets_masked.unsqueeze(-1)  # shape: _, 1
+    ordinal_labels = (expanded_targets > thresholds).float()  #: _, num_bins
+
+    # Each threshold is treated as a separate binary classification
+    loss_bce = F.binary_cross_entropy_with_logits(
+        logits_masked,
+        ordinal_labels,
+        reduction="mean",
+    )
+    return loss_bce
+
+
 def masked_cross_entropy_loss(
     logits: torch.Tensor,  # (B, N, #bins) expression decoder output - Raw
     targets: torch.Tensor,  # (B, N) bin indices
@@ -23,7 +51,7 @@ def masked_cross_entropy_loss(
 ) -> torch.Tensor:
     """Compute cross-entropy loss between input and output on non-masked
     locations."""
-    # Ensure mask is boolean
+
     mask = mask.bool()
 
     # Flatten everything
@@ -36,12 +64,17 @@ def masked_cross_entropy_loss(
     # PyTorch's F.cross_entropy expects shape [N, C] for logits, and [N] for targets.
     # target range should be from 0 to C-1.
     # bin indices range is: [1, ...,  num_bins] plus one bin for masked values equal to -2
-    # target Values range from 1 to num_bins, change back to 0-based
+    # target values range from 1 to num_bins, change back to 0-based
+
+    assert (targets_flatten[mask_flatten] >= 0).all() and (
+        targets_flatten[mask_flatten] < num_bins
+    ).all()
     loss = F.cross_entropy(
         logits_flatten[mask_flatten],
         targets_flatten[mask_flatten] - 1,
         reduction="sum",
     )
+
     return loss
 
 
@@ -66,6 +99,53 @@ def masked_relative_error(
     assert mask.any()
     loss = torch.abs(input[mask] - target[mask]) / (target[mask] + 1e-6)
     return loss.mean()
+
+
+class MaskedOrdinalMetric(Metric):
+    def __init__(self, name: str, **kwargs):
+        super().__init__(**kwargs)
+        self.name = name
+        self.add_state(
+            "sum_ord",
+            default=torch.tensor(0.0, dtype=torch.float32),
+            dist_reduce_fx="sum",
+        )
+        self.add_state(
+            "sum_mask",
+            default=torch.tensor(0.0, dtype=torch.float32),
+            dist_reduce_fx="sum",
+        )
+
+    def update(
+        self,
+        preds: torch.Tensor,
+        target: torch.Tensor,
+        mask: torch.Tensor,
+    ) -> None:
+
+        B, N, num_bins = preds.shape
+        mask = mask.bool()
+        preds_masked = preds[mask]
+        targets_masked = target[mask]
+
+        # Construct ordinal labels on the masked subset
+        thresholds = torch.arange(num_bins, device=preds.device).unsqueeze(
+            0,
+        )  # shape: _, num_bins
+        expanded_targets = targets_masked.unsqueeze(-1)  # shape: _, 1
+        ordinal_labels = (expanded_targets > thresholds).float()  #: _, num_bins
+
+        # Each threshold is treated as a separate binary classification
+        self.sum_ord += F.binary_cross_entropy_with_logits(
+            preds_masked,
+            ordinal_labels,
+            reduction="sum",
+        )
+
+        self.sum_mask += mask.sum()
+
+    def compute(self) -> torch.Tensor:
+        return self.sum_ord / self.sum_mask
 
 
 class MaskedCEMetric(Metric):

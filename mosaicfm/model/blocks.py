@@ -527,7 +527,7 @@ class MVCDecoder(nn.Module):
         self.loss_type = loss_type
 
         # if loss is Cross Entropy we need an extra linear layer to output bin probabilities
-        if self.loss_type == "CE":
+        if self.loss_type in {"CE", "ORD"}:
             self.out_proj = nn.Linear(1, mvc_config.get("n_outputs", 50))
 
     def forward(
@@ -554,7 +554,7 @@ class MVCDecoder(nn.Module):
                     torch.tensor(inner_product_dimension, dtype=pred_value.dtype),
                 )
 
-            if self.loss_type == "CE":
+            if self.loss_type in {"CE", "ORD"}:
                 pred_value = self.out_proj(pred_value.unsqueeze(-1))
 
             return {"pred": pred_value}
