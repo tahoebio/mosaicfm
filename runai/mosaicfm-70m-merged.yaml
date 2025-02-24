@@ -22,7 +22,7 @@ model:
   use_glu: False
   cell_emb_style: cls
   attn_config:
-    attn_impl: triton
+    attn_impl: flash
     attn_type: "grouped_query_attention"
     kv_nheads: 8
     attn_pdrop: 0.0

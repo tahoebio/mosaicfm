@@ -6,7 +6,7 @@ import torch
 import torch.nn.functional as F
 from composer.models import ComposerModel
 from composer.utils import dist
-from llmfoundry.models.utils.param_init_fns import MODEL_INIT_REGISTRY
+from llmfoundry.layers_registry import param_init_fns
 from omegaconf import DictConfig
 from torch import Tensor, nn
 
@@ -146,7 +146,7 @@ class SCGPTModel(nn.Module):
 
     def param_init_fn(self, module: nn.Module):
         init_fn_name = self.init_config["name"]
-        MODEL_INIT_REGISTRY[init_fn_name](
+        param_init_fns.get(init_fn_name)(
             module=module,
             n_layers=self.n_layers,
             d_model=self.d_model,

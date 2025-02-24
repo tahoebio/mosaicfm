@@ -3,12 +3,11 @@ from functools import lru_cache
 from typing import Any, Dict, Optional, Tuple, Union
 
 import torch
-from llmfoundry.models.layers.attention import ATTN_CLASS_REGISTRY
+from llmfoundry.layers_registry import attention_classes, norms
 from llmfoundry.models.layers.ffn import (
     resolve_ffn_act_fn,
     resolve_ffn_hidden_size,
 )
-from llmfoundry.models.layers.norm import NORM_CLASS_REGISTRY
 from torch import Tensor, nn
 from torch.nn.modules.transformer import _get_clones
 
@@ -91,7 +90,7 @@ class SCGPTBlock(nn.Module):
         del kwargs  # unused, just to capture any extra args from the config
         super().__init__()
         factory_kwargs = {"device": device, "dtype": dtype}
-        attn_class = ATTN_CLASS_REGISTRY[attn_config["attn_type"]]
+        attn_class = attention_classes.get(attn_config["attn_type"])
         self.d_model = d_model
         self.n_heads = n_heads
         self.device = device
@@ -111,7 +110,7 @@ class SCGPTBlock(nn.Module):
             self.gate_proj = nn.Linear(d_model, dim_feedforward, **factory_kwargs)
 
         # Norms
-        norm_class = NORM_CLASS_REGISTRY[norm_config["norm_type"].lower()]
+        norm_class = norms.get(norm_config["norm_type"].lower())
         self.norm1 = norm_class(
             d_model,
             device=device,
@@ -204,7 +203,7 @@ class SCGPTEncoder(nn.Module):
         if self.use_norm:
             if norm_config is None:
                 norm_config = norm_config_defaults
-            norm_class = NORM_CLASS_REGISTRY[norm_config["norm_type"].lower()]
+            norm_class = norms.get(norm_config["norm_type"].lower())
             self.norm = norm_class(
                 encoder_layer.d_model,
                 device=encoder_layer.device,

@@ -470,8 +470,7 @@ def main(cfg: DictConfig) -> composer.Trainer:
         precision=precision,
         algorithms=algorithms,
         device_train_microbatch_size=device_train_microbatch_size,
-        fsdp_config=fsdp_config,
-        deepspeed_config=deepspeed_config,
+        parallelism_config={"fsdp":fsdp_config},
         save_folder=save_folder,
         save_filename=save_filename,
         save_latest_filename=save_latest_filename,
@@ -490,7 +489,8 @@ def main(cfg: DictConfig) -> composer.Trainer:
 
     if should_log_config:
         log.info("Logging config")
-        log_config(logged_cfg)
+        for logger in loggers:
+            log_config(logger, om.to_container(logged_cfg, resolve=True))
     torch.cuda.empty_cache()
     gc.collect()
 
