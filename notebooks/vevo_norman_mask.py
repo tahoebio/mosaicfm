@@ -539,6 +539,6 @@ for select_gene in select_gene_list:
     df_deg = df_gene_emb_dist.sort_values(by='cos_dist', ascending=False)
     rank_celltype_0 = np.where(df_deg.index==celltype_0.split('+')[0])[0][0]
     print(celltype_0, rank_celltype_0) 
-    np.savez(str(save_dir)+"mean_gene_emb_{}_{}.npz".format(select_gene, rank_celltype_0), **dict_sum_condition_mean)
-    print(f'Saved:\n{str(save_dir)+"mean_gene_emb_{}_{}.npz".format(select_gene, rank_celltype_0)}')
+    np.savez(str(save_dir)+"/mean_gene_emb_{}_{}.npz".format(select_gene, rank_celltype_0), **dict_sum_condition_mean)
+    print(f'Saved:\n{str(save_dir)+"/mean_gene_emb_{}_{}.npz".format(select_gene, rank_celltype_0)}')
 
