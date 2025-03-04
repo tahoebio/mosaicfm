@@ -617,6 +617,8 @@ def log_transform(
             The row to be log-1p-transformed.
         target_sum (int, optional):
             The target sum of the normalized row before log-1p transformation. Default to 10000.
+        eps (float, optional):
+            The epsilon value used for normalization.
     Returns:
         Union[np.ndarray, torch.Tensor]:
             The log-1p-transformed row.
