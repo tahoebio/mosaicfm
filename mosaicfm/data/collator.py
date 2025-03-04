@@ -608,6 +608,7 @@ class DataCollator(DefaultDataCollator):
 def log_transform(
     row: Union[np.ndarray, torch.Tensor],
     target_sum: int,
+    eps: float = 1e-9,
 ) -> Union[np.ndarray, torch.Tensor]:
     """Log transform the row.
 
@@ -624,7 +625,7 @@ def log_transform(
     is_tensor = isinstance(row, torch.Tensor)
     if not is_tensor:
         row = torch.as_tensor(row)
-    row = (row / (row.sum(axis=-1, keepdims=True) + 1e-9)) * target_sum
+    row = (row / (row.sum(axis=-1, keepdims=True) + eps)) * target_sum
     row = torch.log1p(row)
     if not is_tensor:
         return row.numpy().astype(dtype)
