@@ -1,0 +1,42 @@
+mvc:
+  n_outputs: 50
+  arch_style: inner product
+  query_activation: sigmoid
+  scaled_dot_product: true
+name: vevo_scgpt
+d_model: 512
+n_heads: 8
+use_glu: false
+n_layers: 12
+loss_type: CE
+attn_config:
+  attn_impl: triton
+  attn_type: grouped_query_attention
+  kv_nheads: 8
+  attn_pdrop: 0
+init_device: cpu
+norm_config:
+  eps: 1.0e-05
+  norm_type: layernorm
+norm_scheme: pre
+gene_encoder:
+  use_norm: true
+cell_emb_style: cls
+expansion_ratio: 4
+expression_decoder:
+  n_layers: 1
+  n_outputs: 50
+  activation: leaky_relu
+expression_encoder:
+  dropout: 0.1
+  use_norm: true
+  max_value: 512
+  activation: relu
+  input_emb_style: continuous
+standard_scale_outputs: false
+transformer_activation: relu
+use_generative_training: false
+use_cell_conditioned_generation: false
+vocab_size: 62720
+precision: amp_bf16
+wandb_id: vevotx/vevo-scgpt/rz0zxmii

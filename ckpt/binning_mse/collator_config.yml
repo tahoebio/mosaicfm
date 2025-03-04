@@ -1,0 +1,13 @@
+do_mlm: true
+num_bins: 51
+sampling: true
+pad_value: -2
+data_style: both
+do_binning: true
+do_padding: true
+mask_value: -1
+max_length: 1024
+right_binning: false
+mlm_probability: 0.5
+use_junk_tokens: false
+pad_token_id: 0
