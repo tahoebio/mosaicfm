@@ -69,6 +69,18 @@ def main(cfg: DictConfig) -> composer.Trainer:
 
     # Mandatory model training configs
     model_config: DictConfig = pop_config(cfg, "model", must_exist=True)
+    attn_backend: str = model_config["attn_config"]["attn_impl"]
+    if attn_backend == "triton":
+        raise ValueError(
+            "Support for the triton backend has been removed in llm-foundry v0.8, please use torch or flash instead",
+        )
+    elif (attn_backend == "flash") and model_config["attn_config"].get(
+        "use_attn_mask",
+        True,
+    ):
+        raise ValueError(
+            "Attention mask/bias is not supported with the flash-backend, to enable use_attn_mask switch to the torch-backend",
+        )
     optimizer_config: Dict[str, Any] = pop_config(
         cfg,
         "optimizer",
@@ -85,14 +97,7 @@ def main(cfg: DictConfig) -> composer.Trainer:
     valid_loader_config: DictConfig = pop_config(cfg, "valid_loader", must_exist=True)
     collator_config: DictConfig = pop_config(cfg, "collator", must_exist=True)
     vocab_config: DictConfig = pop_config(cfg, "vocabulary", must_exist=True)
-    # Optional deepspeed, FSDP, and torch-compile config
-    deepspeed_config: Optional[Dict[str, Any]] = pop_config(
-        cfg,
-        "deepspeed_config",
-        must_exist=False,
-        default_value=None,
-        convert=True,
-    )
+    # Optional FSDP, and torch-compile config
     compile_config: Optional[Dict[str, Any]] = pop_config(
         cfg,
         "compile_config",
@@ -106,8 +111,6 @@ def main(cfg: DictConfig) -> composer.Trainer:
         default_value=None,
         convert=True,
     )
-    if (fsdp_config is not None) and (deepspeed_config is not None):
-        raise ValueError("FSDP and DeepSpeed cannot be used together.")
 
     # Optional logging, evaluation and callback configs
     logger_configs: Optional[DictConfig] = pop_config(
@@ -247,6 +250,10 @@ def main(cfg: DictConfig) -> composer.Trainer:
         must_exist=False,
         default_value="auto",
     )
+    if (compile_config is not None) and (device_train_microbatch_size == "auto"):
+        raise ValueError(
+            "Automatic micro-batching is not supported when using torch-compile",
+        )
 
     load_path: str = pop_config(cfg, "load_path", must_exist=False, default_value=None)
     load_weights_only: bool = pop_config(
