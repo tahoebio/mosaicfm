@@ -22,9 +22,8 @@ model:
   use_glu: False
   cell_emb_style: cls
   attn_config:
-    attn_impl: flash
+    attn_impl: triton
     attn_type: "grouped_query_attention"
-    use_attn_mask: False
     kv_nheads: 8
     attn_pdrop: 0.0
   norm_config:
@@ -139,4 +138,3 @@ loggers:
 save_folder: "s3://vevo-ml-datasets/vevo-scgpt/models/{run_name}"
 save_interval: "2000ba"
 save_num_checkpoints_to_keep: 0
-compile_config: {}

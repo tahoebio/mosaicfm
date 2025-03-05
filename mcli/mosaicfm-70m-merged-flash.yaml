@@ -1,7 +1,7 @@
 integrations:
 - integration_type: git_repo
   git_repo: vevotx/mosaicfm
-  git_branch: main
+  git_branch: 46-update-code-to-support-latest-versions-of-supporting-packages
   # git_commit:  # OR use your commit hash
   pip_install: -e . --no-deps
   ssh_clone: true  # Should be true if using a private repo
@@ -13,7 +13,7 @@ integrations:
 command: |
   cd mosaicfm/scripts
   composer train.py /mnt/config/parameters.yaml
-image: vevotx/ml-scgpt:shreshth
+image: vevotx/mosaicfm:1.0.0
 env_variables:
   MOSAICML_PLATFORM: False #Logging metadata to MosaicML platform is disabled, since it seems to timeout
 name: mosaicfm-70m
@@ -22,7 +22,7 @@ compute:
   gpus: 16 # Number of GPUs to use
   cluster: r15z1p1
 scheduling:
-  max_duration: 12 # Maximum duration of the run in hours
+  max_duration: 0.1 # Maximum duration of the run in hours
 
   ## These configurations are optional
   # cluster:
@@ -37,7 +37,7 @@ parameters:
   device_train_batch_size: 400
   global_train_batch_size: 4800
   device_eval_batch_size: 400
-  device_train_microbatch_size: "auto"
+  device_train_microbatch_size: 400
   vocabulary:
     remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/vevo_v2_vocab.json"
     local: "vocab.json"
@@ -56,7 +56,7 @@ parameters:
     use_glu: False
     cell_emb_style: cls
     attn_config:
-      attn_impl: triton
+      attn_impl: flash
       attn_type: "grouped_query_attention"
       kv_nheads: 8
       attn_pdrop: 0.0
@@ -172,3 +172,4 @@ parameters:
   save_folder: "s3://vevo-ml-datasets/vevo-scgpt/models/{run_name}"
   save_interval: "2000ba"
   autoresume: True
+  compile_config: {}
