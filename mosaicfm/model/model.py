@@ -541,7 +541,12 @@ class ComposerSCGPTModel(ComposerModel):
         elif metric.name == "Spearman":
             # spearman correlation of raw counts and predicted binned values
             # bin indices should be 1 to num_bins
-            preds = torch.argmax(outputs["gen_preds"], dim=-1).float() + 1
+            if self.loss_type == "MSE":
+                preds = outputs["gen_preds"]
+            elif self.loss_type in {"CE", "ORD"}:
+                preds = torch.argmax(outputs["gen_preds"], dim=-1).float() + 1
+            else:
+                raise ValueError(f"Loss {self.loss_type} not implemented")
             target = gen_expr_raw
         else:
             raise ValueError(f"metric {metric.name} not recognized")
