@@ -156,6 +156,7 @@ figures/
 .micromamba/
 scripts/perturbation/debug/
 runai/config_perts/
+runai/different_loss_configs/
 vocab.json
 debug_notebooks/
 ckpt/
