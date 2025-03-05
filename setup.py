@@ -40,8 +40,6 @@ extra_deps["dev"] = [
 ]
 
 extra_deps["gpu"] = [
-    # "triton-pre-mlir@git+https://github.com/vchiley/triton.git@triton_pre_mlir_sm90#subdirectory=python",
-    # "flash-attn>=2.5.6,<3",
     "transformer-engine@git+https://github.com/NVIDIA/TransformerEngine.git@stable",
 ]
 

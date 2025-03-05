@@ -470,7 +470,7 @@ def main(cfg: DictConfig) -> composer.Trainer:
         precision=precision,
         algorithms=algorithms,
         device_train_microbatch_size=device_train_microbatch_size,
-        parallelism_config={"fsdp":fsdp_config},
+        parallelism_config={"fsdp": fsdp_config},
         save_folder=save_folder,
         save_filename=save_filename,
         save_latest_filename=save_latest_filename,

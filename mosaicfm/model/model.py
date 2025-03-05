@@ -119,6 +119,7 @@ class SCGPTModel(nn.Module):
             self.n_layers,
             use_norm=self.norm_scheme == "pre",
             norm_config=self.norm_config,
+            attn_config=self.attn_config,
         )
 
         expression_decoder_config = model_config.expression_decoder
