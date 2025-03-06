@@ -278,6 +278,7 @@ class SCGPTEncoder(nn.Module):
             bsz=total_embs.shape[0],
             S=total_len,
             past_key_len=0,
+            attention_mask=key_padding_mask,
             device=total_embs.device,
         )
         attn_bias = None
