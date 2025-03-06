@@ -152,6 +152,12 @@ def main(cfg: DictConfig) -> composer.Trainer:
         default_value="500ba",
         must_exist=False,
     )
+    eval_subset_num_batches: Optional[int] = pop_config(
+        cfg,
+        "eval_subset_num_batches",
+        must_exist=False,
+        default_value=None,
+    )
     precision: str = pop_config(cfg, "precision", must_exist=True)
 
     # Optional parameters will be set to default values if not specified.
@@ -469,6 +475,7 @@ def main(cfg: DictConfig) -> composer.Trainer:
         schedulers=scheduler,
         max_duration=max_duration,
         eval_interval=eval_interval,
+        eval_subset_num_batches=eval_subset_num_batches,
         progress_bar=progress_bar,
         log_to_console=log_to_console,
         console_log_interval=console_log_interval,

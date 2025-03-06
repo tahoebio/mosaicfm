@@ -447,6 +447,14 @@ class ComposerSCGPTModel(ComposerModel):
             output_dict["cell_conditioned_gen_preds"] = preds
         return output_dict
 
+    def eval_forward(self, batch, outputs: Optional = None):
+        if outputs:
+            return outputs
+
+        self.model.zero_grad(set_to_none=True)
+
+        return outputs if outputs is not None else self.forward(batch)
+
     def loss(self, outputs, batch):
         # pass batches and `forward` outputs to the loss
         pcpt_gene = batch["pcpt_gene"]
