@@ -24,6 +24,7 @@ def build_streams(streams: dict[str, Any]) -> List[Stream]:
 
 
 def build_dataloader(
+    non_special_gene_ids: torch.Tensor,
     loader_cfg: DictConfig,
     collator_cfg: DictConfig,
     device_batch_size: int,
@@ -55,7 +56,9 @@ def build_dataloader(
     else:
         mlm_probability = collator_cfg.mlm_probability
     collate_fn = DataCollator(
+        non_special_gene_ids=non_special_gene_ids,
         do_padding=collator_cfg.get("do_padding", True),
+        unexp_padding=collator_cfg.get("unexp_padding", False),
         pad_token_id=collator_cfg.pad_token_id,
         pad_value=collator_cfg.pad_value,
         do_mlm=collator_cfg.get("do_mlm", True),

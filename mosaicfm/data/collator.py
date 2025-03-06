@@ -45,7 +45,9 @@ class DataCollator(DefaultDataCollator):
 
     def __init__(
         self,
+        non_special_gene_ids,
         do_padding: bool = True,
+        unexp_padding: bool = False,
         pad_token_id: Optional[int] = None,
         pad_value: int = 0,
         do_mlm: bool = True,
@@ -64,7 +66,9 @@ class DataCollator(DefaultDataCollator):
         return_tensors: str = "pt",
     ):
         super().__init__(return_tensors=return_tensors)
+        self.non_special_gene_ids = non_special_gene_ids
         self.do_padding = do_padding
+        self.unexp_padding = unexp_padding
         self.pad_token_id = pad_token_id
         self.pad_value = pad_value
         self.do_mlm = do_mlm
@@ -551,7 +555,10 @@ class DataCollator(DefaultDataCollator):
                 return self._sample(*arrays, max_length=max_length)
             else:
                 return tuple(array[:max_length] for array in arrays)
-        else:  # pad
+        # We either pad by pad_token or pad by unexpressed genes
+        elif self.unexp_padding:
+            return self._pad_unexp_genes(*arrays, max_length=max_length)
+        else:  # pad with pad token
             return self._pad(*arrays, max_length=max_length)
 
     def _sample(
@@ -597,6 +604,41 @@ class DataCollator(DefaultDataCollator):
                         self.pad_token_id if i == 0 else self.pad_value,
                         dtype=array.dtype,
                         device=device,
+                    ),
+                ],
+            )
+            for i, array in enumerate(arrays)
+        )
+
+    def _pad_unexp_genes(
+        self,
+        *arrays: torch.Tensor,  # First tensor is genes, rest are  expressions respectively processed expressions, raw expressions (optional)
+        max_length: int,
+    ):
+        device = arrays[0].device
+
+        num_to_pad = max_length - len(arrays[0])
+
+        # get list of all valid gene ids
+        non_special_gene_ids = self.non_special_gene_ids.to(device)
+
+        # filter out the expressed gene ids
+        mask = ~torch.isin(non_special_gene_ids, arrays[0])
+        unexp_genes = non_special_gene_ids[mask]
+
+        # randomly sample from unexpressed gene ids
+        idx = torch.randperm(unexp_genes.shape[0])[:num_to_pad]
+        random_unexp_genes = unexp_genes[idx]
+
+        # Pad the first tensor(gene_ids) with random unexpressed gene ids and the rest (expressions) with zeros.
+        return tuple(
+            torch.cat(
+                [
+                    array,
+                    (
+                        random_unexp_genes
+                        if i == 0
+                        else torch.zeros(num_to_pad, dtype=array.dtype, device=device)
                     ),
                 ],
             )
