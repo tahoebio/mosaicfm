@@ -5,13 +5,17 @@ import numpy as np
 import torch
 from transformers import DefaultDataCollator
 
+from mosaicfm.tokenizer import GeneVocab
+
 
 class DataCollator(DefaultDataCollator):
     """Data collator for the mask value learning task. It pads the sequences to
     the maximum length in the batch and masks the gene expression values.
 
     Args:
+        vocab (:obj: GeneVocab): The vocabulary that includes the gene ids, name, special tokens, etc.
         do_padding (:obj:`bool`): whether to pad the sequences to the max length.
+        unexp_padding (:obj:`bool`): whether to pad the sequences with unexpressed genes. If False it pads with pad token.
         pad_token_id (:obj:`int`, optional): the token id to use for padding.
             This is required if do_padding is True.
         pad_value (:obj:`int`): the value to use for padding the expression
@@ -45,7 +49,7 @@ class DataCollator(DefaultDataCollator):
 
     def __init__(
         self,
-        non_special_gene_ids,
+        vocab: GeneVocab,
         do_padding: bool = True,
         unexp_padding: bool = False,
         pad_token_id: Optional[int] = None,
@@ -53,7 +57,7 @@ class DataCollator(DefaultDataCollator):
         do_mlm: bool = True,
         do_binning: bool = True,
         log_transform: bool = False,
-        target_sum: int = 10000,
+        target_sum: int = 10000,  # 10000 is the default value for Tahoe+cxg
         mlm_probability: float = 0.15,
         mask_value: int = -1,
         max_length: Optional[int] = None,
@@ -66,7 +70,6 @@ class DataCollator(DefaultDataCollator):
         return_tensors: str = "pt",
     ):
         super().__init__(return_tensors=return_tensors)
-        self.non_special_gene_ids = non_special_gene_ids
         self.do_padding = do_padding
         self.unexp_padding = unexp_padding
         self.pad_token_id = pad_token_id
@@ -85,6 +88,16 @@ class DataCollator(DefaultDataCollator):
         self.num_bins = num_bins
         self.right_binning = right_binning
 
+        # filter non_special gene_ids
+        gene_to_id = vocab.get_stoi()
+        self.non_special_gene_ids = torch.tensor(
+            [
+                gene_id
+                for gene_name, gene_id in gene_to_id.items()
+                if not gene_name.startswith("<")
+            ],
+        )
+
     def __post_init__(self):
         if self.do_padding:
             if self.pad_token_id is None:
@@ -95,6 +108,8 @@ class DataCollator(DefaultDataCollator):
             raise ValueError(
                 "Only one of `do_binning` and `log_transform` can be True.",
             )
+        if self.unexp_padding and not self.do_padding:
+            raise ValueError("`do_padding` should be be True if `unexp_padding`.")
         if isinstance(self.mlm_probability, float):
             if self.mlm_probability <= 0 or self.mlm_probability >= 1:
                 raise ValueError("`mlm_probability` must be between 0 and 1.")

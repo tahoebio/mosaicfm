@@ -57,16 +57,6 @@ def get_batch_embeddings(
     if max_length is None:
         max_length = len(gene_ids)
 
-    # filter non_special gene_ids for collate
-    gene_to_id = vocab.get_stoi()
-    non_special_gene_ids = torch.tensor(
-        [
-            gene_id
-            for gene_name, gene_id in gene_to_id.items()
-            if not gene_name.startswith("<")
-        ],
-    )
-
     dataset = CountDataset(
         count_matrix,
         gene_ids,
@@ -74,9 +64,9 @@ def get_batch_embeddings(
         pad_value=collator_cfg["pad_value"],
     )
     collate_fn = DataCollator(
-        non_special_gene_ids=non_special_gene_ids,
+        vocab=vocab,
         do_padding=collator_cfg.get("do_padding", True),
-        unexp_padding=collator_cfg.get("unexp_padding", False),
+        unexp_padding=False,  # Disable padding with random unexpressed genes for inference
         pad_token_id=collator_cfg.pad_token_id,
         pad_value=collator_cfg.pad_value,
         do_mlm=False,  # Disable masking for inference

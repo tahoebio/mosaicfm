@@ -361,16 +361,6 @@ def main(cfg: DictConfig) -> composer.Trainer:
                 junk_token = f"<junk{i}>"
                 vocab.append_token(junk_token)
 
-    # filter non_special gene_ids for collate
-    gene_to_id = vocab.get_stoi()
-    non_special_gene_ids = torch.tensor(
-        [
-            gene_id
-            for gene_name, gene_id in gene_to_id.items()
-            if not gene_name.startswith("<")
-        ],
-    )
-
     ## Update PAD token ID
     collator_config.pad_token_id = vocab["<pad>"]
     ## Update model config with Vocab Size
@@ -416,14 +406,14 @@ def main(cfg: DictConfig) -> composer.Trainer:
     log.info("Building DataLoaders...")
     clean_stale_shared_memory()
     train_loader = build_dataloader(
-        non_special_gene_ids=non_special_gene_ids,
+        vocab=vocab,
         loader_cfg=train_loader_config,
         collator_cfg=collator_config,
         device_batch_size=device_train_batch_size,
     )
     log.info(f"train set number of samples: {(train_loader.dataloader.dataset.size)}")
     valid_loader = build_dataloader(
-        non_special_gene_ids=non_special_gene_ids,
+        vocab=vocab,
         loader_cfg=valid_loader_config,
         collator_cfg=collator_config,
         device_batch_size=device_eval_batch_size,
