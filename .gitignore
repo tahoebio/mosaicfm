@@ -157,6 +157,8 @@ figures/
 scripts/perturbation/debug/
 runai/config_perts/
 runai/different_loss_configs/
+runai/padding_configs/
+runai/swa_configs/
 vocab.json
 debug_notebooks/
 ckpt/
