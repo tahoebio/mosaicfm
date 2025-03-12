@@ -57,7 +57,7 @@ class DataCollator(DefaultDataCollator):
         do_mlm: bool = True,
         do_binning: bool = True,
         log_transform: bool = False,
-        target_sum: int = 10000,  # 10000 is the default value for Tahoe+cxg
+        target_sum: int = 10000,
         mlm_probability: float = 0.15,
         mask_value: int = -1,
         max_length: Optional[int] = None,
