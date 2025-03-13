@@ -11,6 +11,7 @@ import composer
 import torch
 from composer.core.callback import Callback
 from composer.utils import dist, get_device, reproducibility
+import mosaicfm.algorithms
 from llmfoundry.utils.builders import (
     build_algorithm,
     build_callback,
