@@ -2,7 +2,6 @@
 import composer
 import torch
 from composer.core import State
-from llmfoundry.registry import algorithms
 from torch.optim.swa_utils import SWALR, AveragedModel
 
 
@@ -37,6 +36,3 @@ class SWA_modified(composer.algorithms.SWA):
 
             # Now load the modified state_dict (with the 'module.' prefix) into swa_model
             self.swa_model.load_state_dict(current_state_dict, strict=False)
-
-
-algorithms.register("swa", func=SWA_modified)
