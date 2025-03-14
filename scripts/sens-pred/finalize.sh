@@ -1,0 +1,2 @@
+python rf.py --base-path /vevo/umair/data/sens-pred --dataset prism-sec --emb ${1} --problem regression --n-jobs 24 --n-permutations 3
+python rf.py --base-path /vevo/umair/data/sens-pred --dataset prism-sec --emb ${1} --problem classification --n-jobs 24 --n-permutations 3
