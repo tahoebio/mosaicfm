@@ -1,0 +1,36 @@
+global_seed: 777
+seed: ${global_seed}
+device_train_batch_size: 256
+global_train_batch_size: 256
+device_test_batch_size: 256
+device_train_microbatch_size: "auto"
+max_duration: "50ep"
+precision: amp_bf16
+model:
+  cfg_path: "/vevo/umair/data/scgpt-models/scgpt-70m-1024-fix-norm-apr24-data/model_config.yml"
+  collator_cfg_path: "/vevo/umair/data/scgpt-models/scgpt-70m-1024-fix-norm-apr24-data/collator_config.yml"
+  checkpoint_path: "/vevo/umair/data/scgpt-models/scgpt-70m-1024-fix-norm-apr24-data/best-model.pt"
+  freeze: False
+  pretrained: False
+optimizer:
+  name: decoupled_adamw
+  lr: 3.0e-5
+  betas:
+    - 0.9
+    - 0.95
+  eps: 1.0e-08
+  weight_decay: 1.0e-06
+callbacks:
+  speed_monitor:
+    window_size: 20
+  lr_monitor: {}
+  memory_monitor: {}
+  runtime_estimator: {}
+loggers:
+  wandb:
+    project: adapt-mosaicfm
+    log_artifacts: False
+    tags: ['rif']
+run_name: mosaicfm-adapt-rif-no-load
+save_folder: "/vevo/umair/data/scgpt-models/mosaicfm-adapt-rif-no-load"
+save_overwrite: True
