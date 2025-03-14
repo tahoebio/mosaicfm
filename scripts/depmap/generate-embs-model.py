@@ -10,14 +10,14 @@ import os
 import pickle
 
 import anndata as ad
-import geneformer.perturber_utils as pu
+# import geneformer.perturber_utils as pu
 import numpy as np
 import pandas as pd
 import scanpy as sc
 import torch
 import utils
-from geneformer import EmbExtractor
-from geneformer.tokenizer import TOKEN_DICTIONARY_FILE
+# from geneformer import EmbExtractor
+# from geneformer.tokenizer import TOKEN_DICTIONARY_FILE
 from omegaconf import OmegaConf as om
 from tqdm import tqdm, trange
 
@@ -104,7 +104,8 @@ def run_scgpt(base_path, model_path, model_name):
     adata = sc.read_h5ad(input_path)
     log.info(f"loaded CCLE AnnData from {input_path} for mean gene embeddings")
     adata.var["id_in_vocab"] = [
-        vocab.get(gene, -1) for gene in adata.var["feature_name"]
+        vocab[gene] if gene in vocab else -1 for gene in adata.var["feature_name"]
+        # vocab[gene] if gene in vocab else -1 for gene in adata.var["feature_id"]
     ]
     adata = adata[:, adata.var["id_in_vocab"] >= 0]
     gene_ids_in_vocab = np.array(adata.var["id_in_vocab"])
@@ -114,6 +115,7 @@ def run_scgpt(base_path, model_path, model_name):
 
     # make sure all remaining genes are in vocabulary
     genes = adata.var["feature_name"].tolist()
+    # genes = adata.var["feature_id"].tolist()
     gene_ids = np.array(vocab(genes), dtype=int)
     assert np.all(gene_ids == np.array(adata.var["id_in_vocab"]))
 
@@ -162,7 +164,7 @@ def run_scgpt(base_path, model_path, model_name):
     log.info(f"saved gene embeddings to {outpath}")
 
     # load genes and scores for marginal essentiality task
-    genes, scores = utils.get_marginal_genes_scores(base_path)
+    genes, scores = utils.get_marginal_genes_scores(base_path, log)
 
     # reload embeddings
     embs_npz = np.load(
@@ -170,6 +172,15 @@ def run_scgpt(base_path, model_path, model_name):
     )
     mean_embs_all = embs_npz["gene_embeddings"]
     gene_names = embs_npz["gene_names"]
+    #### CONVERT IDs FOR NEW VOCABULARY ###
+    # gene_info_df = pd.read_csv(os.path.join(base_path, "raw/scgpt-genes.csv"))
+    # scgpt_gene_mapping = dict(zip(gene_info_df["feature_id"], gene_info_df["feature_name"]))
+    # valid_gene_ids = scgpt_gene_mapping.keys()
+    # gene_names = np.array([scgpt_gene_mapping[gene_id] if gene_id in valid_gene_ids else gene_id for gene_id in gene_names])
+    # invalid_indices = [i for i, g in enumerate(genes) if g not in gene_names]
+    # genes = [g for i, g in enumerate(genes) if i not in invalid_indices]
+    # scores = [s for i, s in enumerate(scores) if i not in invalid_indices]
+    #######################################
     log.info("loaded mean gene embeddings for processing")
 
     # get mean embeddings for each gene
@@ -212,7 +223,8 @@ def run_scgpt(base_path, model_path, model_name):
 
     # subset to available genes
     adata.var["id_in_vocab"] = [
-        vocab.get(gene, -1) for gene in adata.var["gene_name_scgpt"]
+        vocab[gene] if gene in vocab else -1 for gene in adata.var["gene_name_scgpt"]
+        # vocab[gene] if gene in vocab else -1 for gene in adata.var["feature_id"]
     ]
     gene_ids_in_vocab = np.array(adata.var["id_in_vocab"])
     adata = adata[:, adata.var["id_in_vocab"] >= 0]
@@ -222,6 +234,7 @@ def run_scgpt(base_path, model_path, model_name):
 
     # get gene IDs
     genes = adata.var["gene_name_scgpt"].tolist()
+    # genes = adata.var["feature_id"].tolist()
     gene_ids = np.array(vocab(genes), dtype=int)
 
     # get count matrix
@@ -316,9 +329,12 @@ def run_scgpt(base_path, model_path, model_name):
                     input_id = cell_line_inputs[j]
                     if input_id in (60694, 60695, 60696):
                         continue
+                    # if genes[input_id] not in valid_gene_ids:
+                    #     continue
 
                     # fill embedding and label
                     labels.append(f"{cell_line} | {genes[input_id]}")
+                    # labels.append(f"{cell_line} | {scgpt_gene_mapping[genes[input_id]]}")
                     embeddings.append(cell_line_embs[j])
 
                 # increment cell line
