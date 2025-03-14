@@ -15,6 +15,15 @@ def masked_mse_loss(
     loss = F.mse_loss(input * mask, target * mask, reduction="sum")
     return loss / mask.sum()
 
+def masked_l1_loss(
+    input: torch.Tensor,
+    target: torch.Tensor,
+    mask: torch.Tensor,
+) -> torch.Tensor:
+    """Compute the masked L1 loss between input and target."""
+    mask = mask.float()
+    loss = F.l1_loss(input * mask, target * mask, reduction="sum")
+    return loss / mask.sum()
 
 def criterion_neg_log_bernoulli(
     input: torch.Tensor,
@@ -72,7 +81,41 @@ class MaskedMseMetric(Metric):
 
     def compute(self) -> torch.Tensor:
         return self.sum_mse / self.sum_mask
+    
+class MaskedL1Metric(Metric):
+    def __init__(self, name: str, **kwargs):
+        super().__init__(**kwargs)
+        self.name = name
+        self.add_state(
+            "sum_l1",
+            default=torch.tensor(0.0, dtype=torch.float32),
+            dist_reduce_fx="sum",
+        )
+        self.add_state(
+            "sum_mask",
+            default=torch.tensor(0.0, dtype=torch.float32),
+            dist_reduce_fx="sum",
+        )
 
+    def update(
+        self,
+        preds: torch.Tensor,
+        target: torch.Tensor,
+        mask: torch.Tensor,
+    ) -> None:
+
+        if preds.shape != target.shape:
+            raise ValueError("preds and target must have the same shape")
+        mask = mask.float()
+        self.sum_l1 += torch.nn.functional.l1_loss(
+            preds * mask,
+            target * mask,
+            reduction="sum",
+        )
+        self.sum_mask += mask.sum()
+
+    def compute(self) -> torch.Tensor:
+        return self.sum_l1 / self.sum_mask
 
 class MaskedSpearmanMetric(Metric):
     def __init__(self, name: str, **kwargs):

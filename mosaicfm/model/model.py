@@ -10,7 +10,7 @@ from llmfoundry.layers_registry import param_init_fns
 from omegaconf import DictConfig
 from torch import Tensor, nn
 
-from mosaicfm.loss import MaskedMseMetric, MaskedSpearmanMetric, masked_mse_loss
+from mosaicfm.loss import MaskedMseMetric, MaskedL1Metric, MaskedSpearmanMetric, masked_mse_loss, masked_l1_loss
 from mosaicfm.model.blocks import (
     AffineExprDecoder,
     CategoryValueEncoder,
@@ -385,7 +385,10 @@ class SCGPTModel(nn.Module):
 class ComposerSCGPTModel(ComposerModel):
     def __init__(self, model_config, collator_config, device=None):
         super().__init__()
-        self.criterion = masked_mse_loss
+        self.loss_type = model_config.get("loss_type", "MSE")
+        assert self.loss_type in {"l1", "MSE"}, f"{self.loss_type} is not implemented!"
+
+        self.criterion = masked_mse_loss if self.loss_type == "MSE" else masked_l1_loss
         self.pad_token_id = collator_config.pad_token_id
         self.use_cell_conditioned_generation = model_config.get(
             "use_cell_conditioned_generation",
@@ -397,18 +400,31 @@ class ComposerSCGPTModel(ComposerModel):
             device=device,
         )
         self.n_active_params = sum(p.numel() for p in self.model.parameters())
-        self.train_metrics = {
-            "MSE": MaskedMseMetric(name="MSE"),
-            "MVC": MaskedMseMetric(name="MVC"),
-        }
+        if self.loss_type == 'MSE':
+            self.train_metrics = {
+                "MSE": MaskedMseMetric(name="MSE"),
+                "MVC": MaskedMseMetric(name="MVC"),
+            }
+        elif self.loss_type == 'l1':
+            self.train_metrics = {
+                "l1": MaskedL1Metric(name="MSE"),
+                "MVC": MaskedMseMetric(name="MVC"),
+            }
         self.standard_scale_outputs = model_config.get("standard_scale_outputs", False)
         self.collator_config = collator_config
 
-        self.val_metrics = {
-            "MSE": MaskedMseMetric(name="MSE"),
-            "MVC": MaskedMseMetric(name="MVC"),
-            "Spearman": MaskedSpearmanMetric(name="Spearman"),
-        }
+        if self.loss_type=='MSE':
+            self.val_metrics = {
+                "MSE": MaskedMseMetric(name="MSE"),
+                "MVC": MaskedMseMetric(name="MVC"),
+                "Spearman": MaskedSpearmanMetric(name="Spearman"),
+            }
+        elif self.loss_type=='l1':
+            self.val_metrics = {
+                "l1": MaskedL1Metric(name="MSE"),
+                "MVC": MaskedMseMetric(name="MVC"),
+                "Spearman": MaskedSpearmanMetric(name="Spearman"),
+            }
         if self.use_cell_conditioned_generation:
             self.train_gen = MaskedMseMetric(name="GEN")
             self.train_metrics.update({"GEN": self.train_gen})
