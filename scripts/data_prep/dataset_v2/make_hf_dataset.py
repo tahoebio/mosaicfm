@@ -1,4 +1,5 @@
 # Copyright (C) Vevo Therapeutics 2025. All rights reserved.
+import gc
 import logging
 import os
 from typing import Any, Dict, Generator, List, Optional
@@ -9,6 +10,7 @@ import pandas as pd
 import scanpy as sc
 from omegaconf import DictConfig
 from omegaconf import OmegaConf as om
+from scipy.sparse import csr_matrix
 
 from mosaicfm.data import CountDataset
 from mosaicfm.tokenizer import GeneVocab
@@ -48,33 +50,30 @@ def dataset_generator(
     obs_metadata_columns: Optional[List[str]] = None,
     additional_metadata_info: Optional[List[Dict[str, Any]]] = None,
 ) -> Generator[Dict, None, None]:
-    """Generator function that yields dictionary items from AnnData files.
-
-    Modifications to adata.obs are done in place where possible.
-    """
+    """Generator function that yields dictionary items from AnnData files."""
     if obs_metadata_columns is None:
         obs_metadata_columns = []
 
     for file in adata_files:
-        adata = sc.read_h5ad(file)
+        adata = sc.read_h5ad(file, backed="r")
 
         if obs_filter:
             filter_key = obs_filter.get("key")
             filter_value = obs_filter.get("value")
             if filter_key and filter_value:
-                # Filter in place without copying the entire obs DataFrame.
                 adata = adata[adata.obs[filter_key] == filter_value]
 
-        base_obs = adata.obs
-        # Use a default index key if missing.
+        base_obs = adata.obs.copy()
         index_key = base_obs.index.name if base_obs.index.name is not None else "index"
+        base_obs.reset_index(inplace=True)
+        if index_key not in obs_metadata_columns:
+            obs_metadata_columns.append(index_key)
 
         if additional_metadata_info:
             for meta_source in additional_metadata_info:
                 metadata_df = pd.read_csv(meta_source["path"])
                 left_key = meta_source["merge_keys"]["adata_key"]
                 right_key = meta_source["merge_keys"]["metadata_key"]
-                # Modify in place without making an extra copy.
                 base_obs.loc[:, left_key] = (
                     base_obs.loc[:, left_key].astype(str).str.strip()
                 )
@@ -97,10 +96,9 @@ def dataset_generator(
                 base_obs.loc[:, obs_metadata_columns].fillna("").astype(str)
             )
         gene_ids_in_vocab = np.array([vocab[gene] for gene in adata.var[gene_col]])
-        count_matrix = (
-            adata.X.toarray() if not isinstance(adata.X, np.ndarray) else adata.X
-        )
-
+        count_matrix = adata.X
+        if isinstance(count_matrix, np.ndarray):
+            count_matrix = csr_matrix(count_matrix)
         count_dataset = CountDataset(
             count_matrix,
             gene_ids_in_vocab,
@@ -112,9 +110,12 @@ def dataset_generator(
             final_metadata = {
                 col: base_obs.iloc[idx][col] for col in obs_metadata_columns
             }
-            final_metadata[index_key] = base_obs.index[idx]
             item.update(final_metadata)
             yield item
+
+        # Explicitly free memory after processing each file
+        del adata, count_matrix
+        gc.collect()
 
 
 def main(cfg: DictConfig) -> None:
@@ -160,7 +161,7 @@ def main(cfg: DictConfig) -> None:
                 "additional_metadata_info": additional_metadata_info,
             },
             num_proc=min(len(chunk), cfg.huggingface.get("num_proc", 1)),
-            keep_in_memory=True,
+            keep_in_memory=False,
         )
         chunk_dataset.save_to_disk(
             save_path,
@@ -169,6 +170,7 @@ def main(cfg: DictConfig) -> None:
         log.info(f"Chunk {i} dataset saved to disk with length: {len(chunk_dataset)}")
         chunk_dataset.cleanup_cache_files()
         del chunk_dataset
+        gc.collect()
     log.info("Script execution completed.")
 
 

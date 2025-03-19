@@ -1,12 +1,13 @@
 # Copyright (C) Vevo Therapeutics 2024-2025. All rights reserved.
 from collections.abc import MutableSequence
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union
 
 import numpy as np
 import torch
 from composer.core.data_spec import DataSpec
 from datasets import Dataset
 from omegaconf import DictConfig
+from scipy.sparse import csr_matrix
 from streaming import Stream, StreamingDataLoader, StreamingDataset
 
 from mosaicfm.data import DataCollator
@@ -148,39 +149,47 @@ def build_perturbation_dataloader(
 class CountDataset(torch.utils.data.Dataset):
     def __init__(
         self,
-        count_matrix: np.ndarray,
+        count_matrix: Union[np.ndarray, csr_matrix],
         gene_ids: np.ndarray,
         cls_token_id: int,
         pad_value: float,
     ):
         """
         Args:
-            count_matrix (np.ndarray): A 2D expression count array of shape (n_cells, n_genes)
-            gene_ids (np.ndarray): Integer Gene IDs corresponding to gene names in the count matrix (n_genes,)
-            cls_token_id (int): The id of the <cls> token
-            pad_value (float): The expression value used for PAD tokens
+            count_matrix (np.ndarray or csr_matrix): A 2D expression count matrix of shape (n_cells, n_genes).
+                If given as a dense NumPy array, it will be automatically converted to sparse CSR format.
+            gene_ids (np.ndarray): Integer Gene IDs corresponding to gene names in the count matrix (n_genes,).
+            cls_token_id (int): The id of the <cls> token.
+            pad_value (float): The expression value used for PAD tokens.
         """
-        self.count_matrix = count_matrix
+        if isinstance(count_matrix, np.ndarray):
+            # Convert dense matrix to sparse CSR format for efficiency
+            count_matrix = csr_matrix(count_matrix)
+
+        if not isinstance(count_matrix, csr_matrix):
+            raise ValueError(
+                "count_matrix must be either a numpy ndarray (dense counts) or a scipy.sparse csr_matrix.",
+            )
+        self.count_matrix = count_matrix  # Always stored in sparse format
         self.gene_ids = gene_ids
         self.cls_token_id = cls_token_id
         self.pad_value = pad_value
 
     def __len__(self) -> int:
-        return len(self.count_matrix)
+        return self.count_matrix.shape[0]
 
     def __getitem__(self, idx) -> Dict[str, torch.Tensor]:  # type: ignore
-        row = self.count_matrix[idx]
-        nonzero_idx = np.nonzero(row)[0]
-        values = row[nonzero_idx]
-        genes = self.gene_ids[nonzero_idx]
-        # append <cls> token at the beginning
+        row = self.count_matrix.getrow(idx)  # Efficiently fetch sparse row
+        nonzero_idx = row.indices  # Get nonzero indices
+        values = row.data  # Get nonzero values
+        genes = self.gene_ids[nonzero_idx]  # Map indices to gene IDs
+
+        # Append <cls> token at the beginning
         genes = np.insert(genes, 0, self.cls_token_id)
         values = np.insert(values, 0, self.pad_value)
-        genes = torch.from_numpy(genes).long()
-        values = torch.from_numpy(values).float()
-        output = {
+
+        return {
             "id": idx,
-            "genes": genes,
-            "expressions": values,
+            "genes": torch.tensor(genes, dtype=torch.long),
+            "expressions": torch.tensor(values, dtype=torch.float),
         }
-        return output
