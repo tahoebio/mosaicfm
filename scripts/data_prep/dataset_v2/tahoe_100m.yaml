@@ -59,6 +59,10 @@ mds:
     expressions: "pkl"
     genes: "pkl"
     id: "int64"
+    drug: "str"
+    Cell_ID_Cellosaur: "str"
+    canonical_smiles: "str"
+    pubchem_cid: "str"
   compression: zstd
   hashes:
     - "sha1"

@@ -89,7 +89,7 @@ def convert_to_mds(args: Tuple[str, str, dict, str, Tuple[str]]) -> None:
         compression=compression,
         hashes=hashes,
     ) as out:
-        for sample in dataset.iter(1):
+        for sample in dataset:
             out.write(sample)
 
 

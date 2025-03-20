@@ -1,4 +1,5 @@
 # Copyright (C) Vevo Therapeutics 2025. All rights reserved.
+# python
 import gc
 import logging
 import os
@@ -10,8 +11,7 @@ import pandas as pd
 import scanpy as sc
 from omegaconf import DictConfig
 from omegaconf import OmegaConf as om
-from scipy.sparse import csr_matrix
-
+from scipy.sparse import csc_matrix, csr_matrix
 from mosaicfm.data import CountDataset
 from mosaicfm.tokenizer import GeneVocab
 
@@ -20,22 +20,24 @@ def find_h5ad_files(
     directory: str,
     ignore_subdirs: Optional[List[str]] = None,
 ) -> List[str]:
-    """Recursively search for .h5ad files in a directory, optionally ignoring
-    specified subdirectories.
+    """Recursively search for all '.h5ad' files in a given directory while
+    ignoring specified subdirectories.
 
     Args:
-        directory (str): The root directory to search.
-        ignore_subdirs (Optional[List[str]]): List of subdirectory names to ignore.
+        directory (str): The root directory to search for .h5ad files.
+        ignore_subdirs (Optional[List[str]]): A list of subdirectory names to exclude from the search.
+            Defaults to an empty list if not provided.
 
     Returns:
-        List[str]: List of full paths to .h5ad files.
+        List[str]: A list of full paths to files with the '.h5ad' extension.
     """
     h5ad_files = []
     ignore_subdirs = ignore_subdirs or []
     for root, dirs, files in os.walk(directory):
+        # Filter out directories that should be ignored
         dirs[:] = [d for d in dirs if d not in ignore_subdirs]
         for file in files:
-            if file.endswith(".h5ad"):
+            if file.endswith(".h5ad") or file.endswith(".h5ad.gz"):
                 h5ad_files.append(os.path.join(root, file))
     return h5ad_files
 
@@ -49,8 +51,31 @@ def dataset_generator(
     obs_filter: Optional[Dict[str, str]] = None,
     obs_metadata_columns: Optional[List[str]] = None,
     additional_metadata_info: Optional[List[Dict[str, Any]]] = None,
+    add_obs_index: bool = True,
 ) -> Generator[Dict, None, None]:
-    """Generator function that yields dictionary items from AnnData files."""
+    """Generator that processes AnnData files and yields dictionary items for
+    the dataset.
+
+    The function reads each AnnData file, applies optional filters, merges additional
+    metadata if provided, and constructs a CountDataset for each file. It can optionally
+    add the dataframe index as an observation metadata column.
+
+    Args:
+        adata_files (List[str]): List of AnnData file paths.
+        vocab (GeneVocab): A GeneVocab object used to encode gene IDs.
+        gene_col (str): Column name within observation variables corresponding to genes.
+        cls_token (str): Special token representing the class token.
+        pad_value (int): Value used for padding in the dataset.
+        obs_filter (Optional[Dict[str, str]]): Dictionary for filtering observations.
+        obs_metadata_columns (Optional[List[str]]): Columns to include in observation metadata.
+        additional_metadata_info (Optional[List[Dict[str, Any]]]):
+            List of dictionaries containing paths and merge keys for additional metadata.
+        add_obs_index (bool): If True, resets the index of the observations and adds it
+            as a metadata key.
+
+    Yields:
+        Dict: A dictionary representing an item in the dataset, including count data and metadata.
+    """
     if obs_metadata_columns is None:
         obs_metadata_columns = []
 
@@ -64,10 +89,13 @@ def dataset_generator(
                 adata = adata[adata.obs[filter_key] == filter_value]
 
         base_obs = adata.obs.copy()
-        index_key = base_obs.index.name if base_obs.index.name is not None else "index"
-        base_obs.reset_index(inplace=True)
-        if index_key not in obs_metadata_columns:
-            obs_metadata_columns.append(index_key)
+        if add_obs_index:
+            index_key = (
+                base_obs.index.name if base_obs.index.name is not None else "index"
+            )
+            base_obs.reset_index(inplace=True)
+            if index_key not in obs_metadata_columns:
+                obs_metadata_columns.append(index_key)
 
         if additional_metadata_info:
             for meta_source in additional_metadata_info:
@@ -80,7 +108,6 @@ def dataset_generator(
                 metadata_df.loc[:, right_key] = (
                     metadata_df.loc[:, right_key].astype(str).str.strip()
                 )
-                # Merge returns a new DataFrame; assign it back to base_obs.
                 base_obs = base_obs.merge(
                     metadata_df[[right_key, *meta_source["columns"]]],
                     left_on=left_key,
@@ -90,15 +117,23 @@ def dataset_generator(
                 for col in meta_source["columns"]:
                     if col not in obs_metadata_columns:
                         obs_metadata_columns.append(col)
-        # Fill NaN values with empty strings and convert metadata columns to str.
         if obs_metadata_columns:
             base_obs.loc[:, obs_metadata_columns] = (
                 base_obs.loc[:, obs_metadata_columns].fillna("").astype(str)
             )
-        gene_ids_in_vocab = np.array([vocab[gene] for gene in adata.var[gene_col]])
+        base_var = adata.var.copy()
+        base_var.reset_index(inplace=True)
+        gene_ids_in_vocab = np.array([vocab[gene] for gene in base_var[gene_col]])
         count_matrix = adata.X
         if isinstance(count_matrix, np.ndarray):
             count_matrix = csr_matrix(count_matrix)
+        elif isinstance(count_matrix, csc_matrix):
+            count_matrix = count_matrix.tocsr()
+        elif hasattr(count_matrix, "to_memory"):
+            count_matrix = count_matrix.to_memory().tocsr()
+        else:
+            raise ValueError(f"count_matrix must be a numpy ndarray or csr_matrix, found {type(count_matrix)}")
+
         count_dataset = CountDataset(
             count_matrix,
             gene_ids_in_vocab,
@@ -113,23 +148,19 @@ def dataset_generator(
             item.update(final_metadata)
             yield item
 
-        # Explicitly free memory after processing each file
         del adata, count_matrix
         gc.collect()
 
 
 def main(cfg: DictConfig) -> None:
-    """Main function to process AnnData files and generate dataset chunks.
-
-    Args:
-        cfg (DictConfig): Configuration object containing parameters for processing.
-    """
     log = logging.getLogger(__name__)
     logging.basicConfig(
-        format="%(asctime)s: [%(process)d][%(threadName)s]: %(levelname)s: %(name)s: %(message)s",
+        format=r"%(asctime)s: [%(process)d][%(threadName)s]: %(levelname)s: %(name)s: %(message)s",
         level=logging.INFO,
     )
     adata_files = find_h5ad_files(cfg.huggingface.adata_dir, cfg.huggingface.ignore_dir)
+    if len(adata_files) == 0:
+        raise ValueError("Found no .h5ad files in the specified directory.")
     vocab_file = os.path.join(
         cfg.huggingface.vocab_output_root,
         cfg.huggingface.vocab_path,
@@ -141,6 +172,7 @@ def main(cfg: DictConfig) -> None:
     obs_filter = cfg.huggingface.get("obs_filter", None)
     obs_metadata_columns = cfg.huggingface.get("obs_metadata_columns", None)
     additional_metadata_info = cfg.huggingface.get("additional_metadata_info", None)
+    add_obs_index = cfg.huggingface.get("add_obs_index", True)
 
     for i, chunk in enumerate(chunks):
         save_path = os.path.join(cfg.huggingface.output_root, f"chunk_{i}.dataset")
@@ -159,6 +191,7 @@ def main(cfg: DictConfig) -> None:
                 "obs_filter": obs_filter,
                 "obs_metadata_columns": obs_metadata_columns,
                 "additional_metadata_info": additional_metadata_info,
+                "add_obs_index": add_obs_index,
             },
             num_proc=min(len(chunk), cfg.huggingface.get("num_proc", 1)),
             keep_in_memory=False,
