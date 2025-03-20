@@ -6,6 +6,7 @@ import torch
 from anndata import AnnData
 from omegaconf import DictConfig
 from tqdm.auto import tqdm
+from scipy.sparse import csr_matrix, csc_matrix
 
 from mosaicfm.data import CountDataset, DataCollator
 from mosaicfm.model import SCGPTModel
@@ -44,9 +45,12 @@ def get_batch_embeddings(
     """
 
     count_matrix = adata.X
-    count_matrix = (
-        count_matrix if isinstance(count_matrix, np.ndarray) else count_matrix.A
-    )
+    if isinstance(count_matrix, np.ndarray):
+        count_matrix = csr_matrix(count_matrix)
+    elif isinstance(count_matrix, csc_matrix):
+        count_matrix = count_matrix.tocsr()
+    elif hasattr(count_matrix, "to_memory"):
+        count_matrix = count_matrix.to_memory().tocsr()
 
     # gene vocabulary ids
     if gene_ids is None:

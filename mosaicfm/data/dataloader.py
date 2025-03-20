@@ -168,7 +168,7 @@ class CountDataset(torch.utils.data.Dataset):
 
         if not isinstance(count_matrix, csr_matrix):
             raise ValueError(
-                "count_matrix must be either a numpy ndarray (dense counts) or a scipy.sparse csr_matrix.",
+                f"count_matrix must be either a numpy ndarray (dense counts) or a scipy.sparse csr_matrix. found {type(count_matrix)}",
             )
         self.count_matrix = count_matrix  # Always stored in sparse format
         self.gene_ids = gene_ids
