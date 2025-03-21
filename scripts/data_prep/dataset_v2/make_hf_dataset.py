@@ -108,8 +108,10 @@ def dataset_generator(
                 metadata_df.loc[:, right_key] = (
                     metadata_df.loc[:, right_key].astype(str).str.strip()
                 )
+                metadata_df = metadata_df.drop_duplicates(subset=right_key)
+                columns = [right_key] + [col for col in meta_source["columns"] if col != right_key]
                 base_obs = base_obs.merge(
-                    metadata_df[[right_key, *meta_source["columns"]]],
+                    metadata_df[columns],
                     left_on=left_key,
                     right_on=right_key,
                     how="left",
@@ -121,6 +123,8 @@ def dataset_generator(
             base_obs.loc[:, obs_metadata_columns] = (
                 base_obs.loc[:, obs_metadata_columns].fillna("").astype(str)
             )
+        assert base_obs.shape[0] == adata.obs.shape[0]
+        assert base_obs[index_key].is_unique
         base_var = adata.var.copy()
         base_var.reset_index(inplace=True)
         gene_ids_in_vocab = np.array([vocab[gene] for gene in base_var[gene_col]])
