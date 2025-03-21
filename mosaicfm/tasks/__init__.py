@@ -1,4 +1,5 @@
 # Copyright (C) Vevo Therapeutics 2024-2025. All rights reserved.
+from .cell_classification import CellClassification
 from .emb_extractor import get_batch_embeddings
 
-__all__ = ["get_batch_embeddings"]
+__all__ = ["CellClassification", "get_batch_embeddings"]
