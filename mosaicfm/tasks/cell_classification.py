@@ -9,7 +9,6 @@ from composer.loggers import Logger
 from sklearn.linear_model import LogisticRegression
 
 from mosaicfm.model import ComposerSCGPTModel
-from mosaicfm.tasks import get_batch_embeddings
 from mosaicfm.tokenizer import GeneVocab
 
 
@@ -72,6 +71,7 @@ class CellClassification(Callback):
         )
 
         # step 2: extract mosaicfm embeddings
+        from mosaicfm.tasks import get_batch_embeddings
 
         cell_embeddings_train = get_batch_embeddings(
             adata=adata_train,
@@ -80,7 +80,7 @@ class CellClassification(Callback):
             gene_ids=gene_ids_train,
             model_cfg=self.model_config,
             collator_cfg=self.collator_config,
-            batch_size=256,
+            batch_size=100,
             max_length=2048,
             return_gene_embeddings=False,
         )
@@ -91,7 +91,7 @@ class CellClassification(Callback):
             gene_ids=gene_ids_test,
             model_cfg=self.model_config,
             collator_cfg=self.collator_config,
-            batch_size=256,
+            batch_size=100,
             max_length=2048,
             return_gene_embeddings=False,
         )
@@ -137,7 +137,9 @@ class CellClassification(Callback):
         # filter the cell with NaN values in the cell_type_key
         adata = adata[~adata.obs[cell_type_key].isna(), :]
 
-        adata.var["id_in_vocab"] = [vocab.get(gene, -1) for gene in adata.var[gene_col]]
+        adata.var["id_in_vocab"] = [
+            vocab[gene] if gene in vocab else -1 for gene in adata.var[gene_col]
+        ]
         gene_ids_in_vocab = np.array(adata.var["id_in_vocab"])
         print(
             f"match {np.sum(gene_ids_in_vocab >= 0)}/{len(gene_ids_in_vocab)} genes "
