@@ -58,6 +58,8 @@ class DataCollator(DefaultDataCollator):
         do_binning: bool = True,
         log_transform: bool = False,
         target_sum: int = 10000,
+        id_masking: bool = False,
+        gim_probability: float = 0.333,
         mlm_probability: float = 0.15,
         mask_value: int = -1,
         max_length: Optional[int] = None,
@@ -78,6 +80,9 @@ class DataCollator(DefaultDataCollator):
         self.do_binning = do_binning
         self.log_transform = log_transform
         self.target_sum = target_sum
+        self.id_masking = id_masking
+        self.gim_probability = gim_probability
+        self.mask_token_id = vocab["<mask>"]
         self.mlm_probability = mlm_probability
         self.mask_value = mask_value
         self.max_length = max_length
@@ -219,7 +224,8 @@ class DataCollator(DefaultDataCollator):
                     row=expressions[self.keep_first_n_tokens :],
                     target_sum=self.target_sum,
                 )
-            genes, expressions = self._sample_or_truncate_plus_pad(
+            _, genes, expressions = self._sample_or_truncate_plus_pad(
+                genes,
                 genes,
                 expressions,
                 max_length=_max_length,
@@ -300,7 +306,8 @@ class DataCollator(DefaultDataCollator):
                     row=expressions[self.keep_first_n_tokens :],
                     target_sum=self.target_sum,
                 )
-            genes, expressions = self._sample_or_truncate_plus_pad(
+            _, genes, expressions = self._sample_or_truncate_plus_pad(
+                genes,
                 genes,
                 expressions,
                 max_length=_max_length,
@@ -376,6 +383,7 @@ class DataCollator(DefaultDataCollator):
         pcpt_length = _max_length - gen_length  # perception part length
 
         # pad and truncate
+        padded_pcpt_genes_orig = []
         padded_pcpt_genes = []
         padded_pcpt_expressions = []
         padded_pcpt_original_exp = []
@@ -414,6 +422,16 @@ class DataCollator(DefaultDataCollator):
                 original_expressions[self.keep_first_n_tokens :],
                 ratio=gen_prob,
             )
+
+            pcpt_genes_orig = pcpt_genes
+            if self.id_masking:
+                # if id_masking is False pcpt_genes and pcpt_genes_orig are equal
+                pcpt_genes = self._mask_gene_ids(pcpt_genes, ratio=self.gim_probability)
+
+            pcpt_genes_orig = torch.cat(
+                (genes[: self.keep_first_n_tokens], pcpt_genes_orig),
+                dim=0,
+            )
             pcpt_genes = torch.cat(
                 (genes[: self.keep_first_n_tokens], pcpt_genes),
                 dim=0,
@@ -428,20 +446,23 @@ class DataCollator(DefaultDataCollator):
                 dim=0,
             )
 
-            pcpt_genes, pcpt_expressions, pcpt_original_exp = (
+            pcpt_genes_orig, pcpt_genes, pcpt_expressions, pcpt_original_exp = (
                 self._sample_or_truncate_plus_pad(
+                    pcpt_genes_orig,
                     pcpt_genes,
                     pcpt_expressions,
                     pcpt_original_exp,
                     max_length=pcpt_length,
                 )
             )  # torch tensors of length pcpt_length
+            padded_pcpt_genes_orig.append(pcpt_genes_orig)
             padded_pcpt_genes.append(pcpt_genes)
             padded_pcpt_expressions.append(pcpt_expressions)
             padded_pcpt_original_exp.append(pcpt_original_exp)
 
-            gen_genes, gen_expressions, gen_original_exp = (
+            _, gen_genes, gen_expressions, gen_original_exp = (
                 self._sample_or_truncate_plus_pad(
+                    gen_genes,
                     gen_genes,
                     gen_expressions,
                     gen_original_exp,
@@ -452,6 +473,7 @@ class DataCollator(DefaultDataCollator):
             padded_gen_expressions.append(gen_expressions)
             padded_gen_original_exp.append(gen_original_exp)
 
+        padded_pcpt_genes_orig = torch.stack(padded_pcpt_genes_orig, dim=0)
         padded_pcpt_genes = torch.stack(padded_pcpt_genes, dim=0)
         padded_pcpt_expressions = torch.stack(padded_pcpt_expressions, dim=0)
         padded_pcpt_original_exp = torch.stack(padded_pcpt_original_exp, dim=0)
@@ -460,6 +482,7 @@ class DataCollator(DefaultDataCollator):
         padded_gen_original_exp = torch.stack(padded_gen_original_exp, dim=0)
 
         data_dict = {
+            "pcpt_gene_orig": padded_pcpt_genes_orig,
             "pcpt_gene": padded_pcpt_genes,
             "pcpt_expr": padded_pcpt_expressions,
             "pcpt_expr_raw": padded_pcpt_original_exp,  # "raw" means "not binned"
@@ -551,6 +574,19 @@ class DataCollator(DefaultDataCollator):
         masked_expressions = expressions.masked_fill(mask, self.mask_value)
         return masked_expressions
 
+    def _mask_gene_ids(
+        self,
+        pcpt_genes: torch.Tensor,  # shape = #len_genes
+        ratio: float,
+    ):
+        n = pcpt_genes.shape[0]
+        k = int(ratio * n)
+
+        idx = torch.randperm(n)[:k]
+        pcpt_genes[idx] = self.mask_token_id
+
+        return pcpt_genes
+
     def _sample_or_truncate_plus_pad(
         self,
         *arrays: torch.Tensor,
@@ -616,7 +652,7 @@ class DataCollator(DefaultDataCollator):
                     array,
                     torch.full(
                         (max_length - len(array),),
-                        self.pad_token_id if i == 0 else self.pad_value,
+                        self.pad_token_id if (i in {0, 1}) else self.pad_value,
                         dtype=array.dtype,
                         device=device,
                     ),
@@ -652,7 +688,7 @@ class DataCollator(DefaultDataCollator):
                     array,
                     (
                         random_unexp_genes
-                        if i == 0
+                        if (i in {0, 1})
                         else torch.zeros(num_to_pad, dtype=array.dtype, device=device)
                     ),
                 ],

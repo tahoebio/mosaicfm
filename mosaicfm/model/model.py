@@ -20,6 +20,7 @@ from mosaicfm.model.blocks import (
     MVCDecoder,
     SCGPTBlock,
     SCGPTEncoder,
+    TokenDecoder,
     gene_encoder_defaults,
     init_config_defaults,
 )
@@ -55,6 +56,8 @@ class SCGPTModel(nn.Module):
         self.pad_token_id = collator_config.pad_token_id
         self.pad_value = collator_config.pad_value
         self.n_input_bins = collator_config.num_bins
+        self.id_masking = collator_config.get("id_masking", None)
+        self.mask_token_id = collator_config.mask_token_id
         self.attn_config = model_config.get("attn_config", None)
         self.norm_config = model_config.get("norm_config", None)
         self.init_config = model_config.get("init_config", None)
@@ -129,6 +132,15 @@ class SCGPTModel(nn.Module):
             n_layers=expression_decoder_config.get("n_layers", 2),
             activation=expression_decoder_config.get("activation", "leaky_relu"),
         )
+
+        if self.id_masking:
+            token_decoder_config = model_config.token_decoder
+            self.token_decoder = TokenDecoder(
+                d_model=self.d_model,
+                n_outputs=model_config.vocab_size,
+                n_layers=token_decoder_config.get("n_layers", 2),
+                activation=token_decoder_config.get("activation", "leaky_relu"),
+            )
 
         if model_config.mvc is not None:
             mvc_config = model_config.mvc
@@ -329,6 +341,10 @@ class SCGPTModel(nn.Module):
         output["pcpt_preds"] = full_preds[:, : pcpt_genes.shape[1]]
         output["gen_preds"] = full_preds[:, pcpt_genes.shape[1] :]
 
+        if self.id_masking:
+            token_decoder_output = self.token_decoder(pcpt_output)
+            output["pcpt_token_logits"] = token_decoder_output["pred"]
+
         output = self._extend_output(
             output,
             transformer_output,
@@ -387,6 +403,9 @@ class ComposerSCGPTModel(ComposerModel):
         super().__init__()
         self.criterion = masked_mse_loss
         self.pad_token_id = collator_config.pad_token_id
+        self.id_masking = collator_config.id_masking
+        self.w_ce = model_config.get("w_ce", 0.01)
+        self.mask_token_id = collator_config.mask_token_id
         self.use_cell_conditioned_generation = model_config.get(
             "use_cell_conditioned_generation",
             False,
@@ -457,6 +476,7 @@ class ComposerSCGPTModel(ComposerModel):
 
     def loss(self, outputs, batch):
         # pass batches and `forward` outputs to the loss
+        pcpt_gene_orig = batch["pcpt_gene_orig"]
         pcpt_gene = batch["pcpt_gene"]
         gen_gene = batch["gen_gene"]
         gen_expr_target = batch["gen_expr_target"]
@@ -471,6 +491,17 @@ class ComposerSCGPTModel(ComposerModel):
             gen_expr_target,
             positions_to_match,
         )
+
+        loss_ce = 0
+        if self.id_masking:
+            pcpt_token_logits = outputs["pcpt_token_logits"]  # B, n_genes, vocba_size
+            masked_tokens = pcpt_gene.eq(int(self.mask_token_id))  # B, n_genes
+            loss_ce = nn.functional.cross_entropy(
+                pcpt_token_logits[masked_tokens],
+                pcpt_gene_orig[masked_tokens],
+                reduction="sum",
+            )
+
         if self.use_cell_conditioned_generation:
             loss_gen = self.criterion(
                 outputs["cell_conditioned_gen_preds"],
@@ -479,7 +510,7 @@ class ComposerSCGPTModel(ComposerModel):
             )
             loss = (loss_mse + loss_mvc + loss_gen) / 3
         else:
-            loss = (loss_mse + loss_mvc) / 2
+            loss = (loss_mse + loss_mvc + self.w_ce * loss_ce) / 3
         return loss
 
     def update_metric(self, batch, outputs, metric):

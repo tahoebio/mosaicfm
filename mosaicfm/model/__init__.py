@@ -7,6 +7,7 @@ from .blocks import (
     MVCDecoder,
     SCGPTBlock,
     SCGPTEncoder,
+    TokenDecoder,
 )
 from .model import (
     ComposerSCGPTModel,
@@ -25,4 +26,5 @@ __all__ = [
     "SCGPTBlock",
     "SCGPTEncoder",
     "SCGPTModel",
+    "TokenDecoder",
 ]

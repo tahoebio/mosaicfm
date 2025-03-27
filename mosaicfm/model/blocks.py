@@ -440,6 +440,35 @@ class CategoryValueEncoder(nn.Module):
         return x
 
 
+class TokenDecoder(nn.Module):
+    """Consists of linear functions and leaky-relu as an activation function,
+    and softmax on top."""
+
+    def __init__(
+        self,
+        d_model: int,
+        n_outputs: int,  # should be of vocab size! minus special tokens or not??
+        n_layers: int = 2,
+        activation: str = "leaky_relu",
+    ):
+        super().__init__()
+        d_in = d_model
+        self.activation = resolve_ffn_act_fn({"name": activation})
+        self.linear_layers = nn.ModuleList(
+            [nn.Linear(d_in, d_model) for _ in range(n_layers)],
+        )
+        self.out_proj = nn.Linear(d_model, n_outputs)
+
+    def forward(self, x: Tensor) -> Dict[str, Tensor]:
+        """X is the output of the transformer, (batch, seq_len, d_model)"""
+        for layer in self.linear_layers:
+            x = self.activation(layer(x))
+        pred_value = self.out_proj(x)  # (batch, seq_len, n_outputs)
+        pred_logits = nn.functional.softmax(pred_value, dim=-1)
+
+        return {"pred": pred_logits}
+
+
 class ExprDecoder(nn.Module):
     """Consists of three linear functions and leaky-relu as an activation
     function."""

@@ -68,6 +68,8 @@ def build_dataloader(
         do_binning=collator_cfg.get("do_binning", True),
         log_transform=collator_cfg.get("log_transform", False),
         target_sum=collator_cfg.get("target_sum", 10000),
+        id_masking=collator_cfg.get("id_masking", False),
+        gim_probability=collator_cfg.get("gim_probability", 0.333),
         mlm_probability=mlm_probability,
         mask_value=collator_cfg.mask_value,
         max_length=collator_cfg.max_length,

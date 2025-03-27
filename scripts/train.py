@@ -358,7 +358,7 @@ def main(cfg: DictConfig) -> composer.Trainer:
 
     # Build vocab
     vocab = GeneVocab.from_file(vocab_config["local"])
-    special_tokens = ["<pad>", "<cls>", "<eoc>"]
+    special_tokens = ["<pad>", "<cls>", "<eoc>", "<mask>"]
 
     for s in special_tokens:
         if s not in vocab:
@@ -376,6 +376,8 @@ def main(cfg: DictConfig) -> composer.Trainer:
 
     ## Update PAD token ID
     collator_config.pad_token_id = vocab["<pad>"]
+    ## Update MASK token ID
+    collator_config.mask_token_id = vocab["<mask>"]
     ## Update model config with Vocab Size
     model_config.vocab_size = len(vocab)
     log.info(f"Setting vocab size to: {len(vocab)}")
