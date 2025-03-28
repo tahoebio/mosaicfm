@@ -124,7 +124,6 @@ def dataset_generator(
                 base_obs.loc[:, obs_metadata_columns].fillna("").astype(str)
             )
         assert base_obs.shape[0] == adata.obs.shape[0]
-        assert base_obs[index_key].is_unique
         base_var = adata.var.copy()
         base_var.reset_index(inplace=True)
         gene_ids_in_vocab = np.array([vocab[gene] for gene in base_var[gene_col]])
@@ -135,8 +134,6 @@ def dataset_generator(
             count_matrix = count_matrix.tocsr()
         elif hasattr(count_matrix, "to_memory"):
             count_matrix = count_matrix.to_memory().tocsr()
-        else:
-            raise ValueError(f"count_matrix must be a numpy ndarray or csr_matrix, found {type(count_matrix)}")
 
         count_dataset = CountDataset(
             count_matrix,

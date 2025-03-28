@@ -26,15 +26,13 @@ huggingface:
     value: "full"
   obs_metadata_columns:
     - drug
+    - sample
   additional_metadata_info:
     - merge_keys:
         metadata_key: "Cell_ID_Vevo"
         adata_key: "cell_line"
       columns:
         - "Cell_ID_Cellosaur"
-        - "Organ"
-        - "Driver_Gene_Symbol"
-        - "Driver_Mech_InferDM"
       path: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/cell_gen_dr_a97.csv"
     - merge_keys:
         metadata_key: "drug"
@@ -45,11 +43,17 @@ huggingface:
         - "pubchem_cid"
         - "targets"
       path: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/tahoe_drug_smiles.csv"
+    - merge_keys:
+        metadata_key: sample
+        adata_key: sample
+      columns:
+        - "plate"
+      path: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025//arc-virtual-cell-metadata/sample_metadata.csv"
   vocab_output_root: ${vocab.output_root}
   vocab_path: ${vocab.output_file}
 
 mds:
-  out_root: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/tahoe_merged_MDS"
+  out_root: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/tahoe_merged_MDS_v2"
   root_dir: ${huggingface.merged_dataset_root}
   num_proc: 128
   splits:
