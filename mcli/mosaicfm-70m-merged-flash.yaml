@@ -1,7 +1,7 @@
 integrations:
 - integration_type: git_repo
   git_repo: vevotx/mosaicfm
-  git_branch: 46-update-code-to-support-latest-versions-of-supporting-packages
+  git_branch: fix_spearman
   # git_commit:  # OR use your commit hash
   pip_install: -e . --no-deps
   ssh_clone: true  # Should be true if using a private repo
@@ -22,7 +22,7 @@ compute:
   gpus: 16 # Number of GPUs to use
   cluster: r15z1p1
 scheduling:
-  max_duration: 0.1 # Maximum duration of the run in hours
+  max_duration: 0.5 # Maximum duration of the run in hours
 
   ## These configurations are optional
   # cluster:
@@ -58,6 +58,7 @@ parameters:
     attn_config:
       attn_impl: flash
       attn_type: "grouped_query_attention"
+      use_attn_mask: False
       kv_nheads: 8
       attn_pdrop: 0.0
     norm_config:
@@ -96,11 +97,11 @@ parameters:
     dataset:
       streams:
         tahoe:
-          remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/tahoe_100m_MDS_v1/train/"
+          remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/tahoe_100m_MDS_v2/train/"
           local: "mds-data-folder/tahoe/train"
-        cellxgene:
-          remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/cellxgene_2025_01_21_merged_MDS/train/"
-          local: "mds-data-folder/cellxgene/train"
+        scbasecamp:
+          remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/scbasecamp_2025_02_25_MDS_v2/train/"
+          local: "mds-data-folder/scbasecamp/train"
       download_timeout: 300
       allow_unsafe_types: True
       shuffle: True
@@ -115,11 +116,11 @@ parameters:
     dataset:
       streams:
         tahoe:
-          remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/tahoe_100m_MDS_v1/valid/"
+          remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/tahoe_100m_MDS_v2/valid/"
           local: "mds-data-folder/tahoe/val"
-        cellxgene:
-          remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/cellxgene_2025_01_21_merged_MDS/valid/"
-          local: "mds-data-folder/cellxgene/val"
+        scbasecamp:
+          remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/scbasecamp_2025_02_25_MDS_v2/valid/"
+          local: "mds-data-folder/scbasecamp/val"
       download_timeout: 300
       allow_unsafe_types: True
       shuffle: False
@@ -149,7 +150,8 @@ parameters:
       clipping_threshold: 1.0
     low_precision_layernorm: {}
   precision: amp_bf16
-  eval_interval: "1000ba"
+  eval_interval: "100ba"
+  eval_subset_num_batches: 100
   max_duration: "6ep"
   fsdp_config:
     sharding_strategy: FULL_SHARD

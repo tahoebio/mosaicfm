@@ -100,6 +100,8 @@ class MaskedSpearmanMetric(Metric):
         for pred_i, target_i, mask_i in zip(preds, target, mask):
             non_mask_preds = pred_i[mask_i].to("cpu")
             non_mask_targets = target_i[mask_i].to("cpu")
+            if len(non_mask_preds) == 0 :
+                continue
             self.sum_spearman += spearman_corrcoef(non_mask_preds, non_mask_targets)
             self.num_examples += 1
 

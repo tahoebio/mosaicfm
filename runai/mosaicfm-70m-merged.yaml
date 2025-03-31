@@ -22,8 +22,9 @@ model:
   use_glu: False
   cell_emb_style: cls
   attn_config:
-    attn_impl: triton
+    attn_impl: flash
     attn_type: "grouped_query_attention"
+    use_attn_mask: false
     kv_nheads: 8
     attn_pdrop: 0.0
   norm_config:
@@ -64,9 +65,9 @@ train_loader:
       tahoe:
         remote: None
         local: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/tahoe_merged_MDS/train"
-      cellxgene:
+      scbasecamp:
         remote: None
-        local: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/cellxgene_merged_MDS/train"
+        local: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/scbasecamp_merged_MDS/train"
     download_timeout: 300
     allow_unsafe_types: True
     shuffle: True
@@ -83,9 +84,9 @@ valid_loader:
       tahoe:
         remote: None
         local: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/tahoe_merged_MDS/valid"
-      cellxgene:
+      scbasecamp:
         remote: None
-        local: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/cellxgene_merged_MDS/valid"
+        local: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/scbasecamp_merged_MDS/valid"
     download_timeout: 300
     allow_unsafe_types: True
     shuffle: False
