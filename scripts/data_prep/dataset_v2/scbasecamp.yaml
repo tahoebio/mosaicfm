@@ -38,7 +38,7 @@ huggingface:
   vocab_path: ${vocab.output_file}
 
 mds:
-  out_root: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/scbasecamp_merged_MDS"
+  out_root: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/scbasecamp_merged_MDS_v2"
   root_dir: ${huggingface.merged_dataset_root}
   num_proc: 128
   splits:
@@ -50,6 +50,7 @@ mds:
     genes: "pkl"
     id: "int64"
   compression: zstd
+  min_length: 4
   hashes:
     - "sha1"
     - "xxh64"
