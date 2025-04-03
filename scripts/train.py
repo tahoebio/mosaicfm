@@ -7,6 +7,9 @@ import sys
 import warnings
 from typing import Any, Dict, List, Optional, Union
 
+import torch._dynamo
+torch._dynamo.config.suppress_errors = True
+
 import composer
 import torch
 from composer.core.callback import Callback
@@ -39,7 +42,6 @@ from mosaicfm.tokenizer import GeneVocab
 from mosaicfm.utils import download_file_from_s3_url
 
 log = logging.getLogger(__name__)
-
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
