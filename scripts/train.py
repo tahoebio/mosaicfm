@@ -29,11 +29,12 @@ from omegaconf import OmegaConf as om
 from rich.traceback import install
 from streaming.base.util import clean_stale_shared_memory
 
+from mosaicfm.tasks import CellClassification
+
 install()
 
 from mosaicfm.data import build_dataloader
 from mosaicfm.model import ComposerSCGPTModel
-from mosaicfm.tasks import CellClassification
 from mosaicfm.tokenizer import GeneVocab
 from mosaicfm.utils import download_file_from_s3_url
 
@@ -396,16 +397,6 @@ def main(cfg: DictConfig) -> composer.Trainer:
         else []
     )
 
-    # Callbacks
-    callbacks: List[Callback] = (
-        [
-            build_callback(str(name), callback_cfg, om.to_container(logged_cfg))
-            for name, callback_cfg in callback_configs.items()
-        ]
-        if callback_configs
-        else []
-    )
-
     # Algorithms
     algorithms = (
         [
@@ -448,15 +439,26 @@ def main(cfg: DictConfig) -> composer.Trainer:
             collator_config=collator_config,
         )
 
-    # Cell classification benchmark
-    cell_classification_callback = CellClassification(
-        ensemble_to_gene_path="/vevo/data/datasets/vevo_v2_ensembl_to_gene_name.json",
-        model=model,
-        vocab=vocab,
-        model_config=model_config,
-        collator_config=collator_config,
+    # Callbacks
+    callbacks: List[Callback] = (
+        [
+            (
+                build_callback(str(name), callback_cfg, om.to_container(logged_cfg))
+                if str(name) != "cell-classification"
+                else CellClassification(
+                    cfg=DictConfig(callback_cfg),
+                    model=model,
+                    vocab=vocab,
+                    model_config=model_config,
+                    collator_config=collator_config,
+                    run_name=run_name,
+                )
+            )
+            for name, callback_cfg in callback_configs.items()
+        ]
+        if callback_configs
+        else []
     )
-    callbacks.append(cell_classification_callback)
 
     # Log number of parameters
     n_params = sum(p.numel() for p in model.parameters())

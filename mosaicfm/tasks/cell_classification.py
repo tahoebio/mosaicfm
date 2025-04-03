@@ -1,100 +1,115 @@
 # Copyright (C) Vevo Therapeutics 2025. All rights reserved.
+import io
 import json
 
+import matplotlib.pyplot as plt
 import numpy as np
 import scanpy as sc
 from composer import State
 from composer.core.callback import Callback
 from composer.loggers import Logger
 from sklearn.linear_model import LogisticRegression
+from sklearn.neighbors import kneighbors_graph
+from torch.distributed.fsdp.fully_sharded_data_parallel import \
+    FullyShardedDataParallel as FSDP
 
 from mosaicfm.model import ComposerSCGPTModel
 from mosaicfm.tokenizer import GeneVocab
+from mosaicfm.utils import download_file_from_s3_url
 
 
 # Custom Callback to run the cell classification after training
 class CellClassification(Callback):
     def __init__(
         self,
-        ensemble_to_gene_path: str,
+        cfg,
         model: ComposerSCGPTModel,
         vocab: GeneVocab,
         model_config,
         collator_config,
+        run_name,
     ):
 
         super().__init__()
-
-        # load gene_to_id mapping
-        with open(ensemble_to_gene_path) as f:
-            id_to_gene = json.load(f)
-        self.gene_to_id = dict(zip(id_to_gene.values(), id_to_gene.keys()))
 
         model.eval()
         self.model = model
         self.vocab = vocab
         model_config["precision"] = "amp_bf16"
         self.model_config = model_config
-
         self.collator_config = collator_config
-        self.dataset_registry = {
-            "zheng": {
-                "train": "/vevo/gits/mosaicfm/debug_notebooks/data/zheng/zheng_train.h5ad",
-                "test": "/vevo/gits/mosaicfm/debug_notebooks/data/zheng/zheng_test.h5ad",
-                "class_names": "/vevo/gits/mosaicfm/debug_notebooks/data/zheng/zheng-str_label.npy",
-            },
-            "Segerstolpe": {
-                "train": "/vevo/gits/mosaicfm/debug_notebooks/data/Segerstolpe/Segerstolpe_train.h5ad",
-                "test": "/vevo/gits/mosaicfm/debug_notebooks/data/Segerstolpe/Segerstolpe_test.h5ad",
-                "class_names": "/vevo/gits/mosaicfm/debug_notebooks/data/Segerstolpe/Segerstolpe-str_label.npy",
-            },
-        }
+        self.run_name = run_name
+        self.dataset_registry = cfg.get("datasets")
+        self.logistic_cfg = cfg.get("logistic")
+        self.batch_size = cfg.get("batch_size", 50)
+        self.seq_len = cfg.get("seq_len", 2048)
+
+        # load gene_to_id mapping
+        ensemble_to_gene_path = cfg.get("ensemble_to_gene_path")
+        download_file_from_s3_url(
+            s3_url=ensemble_to_gene_path["remote"],
+            local_file_path=ensemble_to_gene_path["local"],
+        )
+        with open(ensemble_to_gene_path["local"]) as f:
+            id_to_gene = json.load(f)
+        self.gene_to_id = dict(zip(id_to_gene.values(), id_to_gene.keys()))
 
     def fit_end(self, state: State, logger: Logger):
 
         # cell classification both for zheng and Segerstolpe datasets
-        for dataset in ["zheng", "Segerstolpe"]:
-            self.cell_classfication(dataset, logger)
+        for datast_name, dataset_cfg in self.dataset_registry.items():
+
+            # download dataset splits
+            for split in dataset_cfg:
+                download_file_from_s3_url(
+                    s3_url=dataset_cfg[split]["remote"],
+                    local_file_path=dataset_cfg[split]["local"],
+                )
+
+            self.cell_classfication(datast_name, logger)
 
     def cell_classfication(self, dataset: str, logger: Logger):
         # step 1: load data train, test
-        class_idx_to_name = np.load(self.dataset_registry[dataset]["class_names"])
+        class_idx_to_name = np.load(
+            self.dataset_registry[dataset]["class_names"]["local"],
+        )
         adata_train, gene_ids_train, labels_train, _ = (
             self.prepare_cell_annotation_data(
-                self.dataset_registry[dataset]["train"],
+                self.dataset_registry[dataset]["train"]["local"],
                 class_idx_to_name,
             )
         )
         adata_test, gene_ids_test, labels_test, _ = self.prepare_cell_annotation_data(
-            self.dataset_registry[dataset]["test"],
+            self.dataset_registry[dataset]["test"]["local"],
             class_idx_to_name,
         )
 
         # step 2: extract mosaicfm embeddings
         from mosaicfm.tasks import get_batch_embeddings
 
-        cell_embeddings_train = get_batch_embeddings(
-            adata=adata_train,
-            model=self.model.model,
-            vocab=self.vocab,
-            gene_ids=gene_ids_train,
-            model_cfg=self.model_config,
-            collator_cfg=self.collator_config,
-            batch_size=100,
-            max_length=2048,
-            return_gene_embeddings=False,
-        )
-        cell_embeddings_test = get_batch_embeddings(
-            adata=adata_test,
-            model=self.model.model,
-            vocab=self.vocab,
-            gene_ids=gene_ids_test,
-            model_cfg=self.model_config,
-            collator_cfg=self.collator_config,
-            batch_size=100,
-            max_length=2048,
-            return_gene_embeddings=False,
-        )
+        with FSDP.summon_full_params(self.model.model):
+            cell_embeddings_train = get_batch_embeddings(
+                adata=adata_train,
+                model=self.model.model.module,
+                vocab=self.vocab,
+                gene_ids=gene_ids_train,
+                model_cfg=self.model_config,
+                collator_cfg=self.collator_config,
+                batch_size=self.batch_size,
+                max_length=self.seq_len,
+                return_gene_embeddings=False,
+            )
+            cell_embeddings_test = get_batch_embeddings(
+                adata=adata_test,
+                model=self.model.model,
+                vocab=self.vocab,
+                gene_ids=gene_ids_test,
+                model_cfg=self.model_config,
+                collator_cfg=self.collator_config,
+                batch_size=self.batch_size,
+                max_length=self.seq_len,
+                return_gene_embeddings=False,
+            )
 
         # step 3: train classifier
         clf = LogisticRegression(
@@ -110,18 +125,50 @@ class CellClassification(Callback):
 
         labels_pred = clf.predict(cell_embeddings_test)
         f1 = f1_score(labels_test, labels_pred, average="macro")
-
         logger.log_metrics({f"macro_f1_{dataset}": f1})
+
+        # step 5: compute lisi
+        lisi_score = self.compute_lisi_scores(
+            cell_embeddings_train,
+            adata_train.obs["cell_type_label"].values,
+            20,
+        )
+        logger.log_metrics({f"LISI {dataset}": lisi_score})
+
+        # step 6: UMAP visualization and logging
+        adata_train.obsm[dataset] = cell_embeddings_train
+        sc.pp.neighbors(adata_train, use_rep=dataset)
+        sc.tl.umap(adata_train)
+        fig = sc.pl.umap(
+            adata_train,
+            color=["cell_type_names"],
+            frameon=False,
+            title=[f"{self.run_name} LISI:{lisi_score:.2f} \n {dataset} Dataset"],
+            return_fig=True,
+        )
+
+        # convert fig to ndarray
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png")
+        buf.seek(0)
+        img = np.array(plt.imread(buf))
+        logger.log_images(img, name=f"clustering_{dataset}", channels_last=True)
+
+    def compute_lisi_scores(self, emb: np.ndarray, labels: np.ndarray, k: int):
+        nng = kneighbors_graph(emb, n_neighbors=k).tocoo()
+        labels = np.unique(labels, return_inverse=True)[1]
+        self_id = labels[nng.row]
+        ne_id = labels[nng.col]
+
+        _, c = np.unique(labels, return_counts=True)
+        theoretic_score = ((c / c.sum()) ** 2).sum()
+        return (self_id == ne_id).mean() / theoretic_score
 
     def prepare_cell_annotation_data(
         self,
         data_path: str,
         class_idx_to_name: np.ndarray,
     ):
-
-        assert (
-            "zheng" in data_path or "Segerstolpe" in data_path
-        ), "We currently only supprt Zheng and Segerstolpe datasets!"
 
         vocab = self.vocab
         adata = sc.read_h5ad(data_path)
@@ -136,6 +183,9 @@ class CellClassification(Callback):
 
         # filter the cell with NaN values in the cell_type_key
         adata = adata[~adata.obs[cell_type_key].isna(), :]
+        adata.obs["cell_type_names"] = [
+            class_idx_to_name[int(id)] for id in adata.obs[cell_type_key]
+        ]
 
         adata.var["id_in_vocab"] = [
             vocab[gene] if gene in vocab else -1 for gene in adata.var[gene_col]
