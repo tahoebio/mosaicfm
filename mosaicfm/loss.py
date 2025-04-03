@@ -16,6 +16,16 @@ def masked_mse_loss(
     return loss / mask.sum()
 
 
+def masked_ce_loss(
+    input: torch.Tensor,
+    target: torch.Tensor,
+    mask: torch.Tensor,
+) -> torch.Tensor:
+    """Compute the masked CE loss between input and target."""
+    loss = F.cross_entropy(input[mask], target[mask], reduction="sum")
+    return loss / mask.sum()
+
+
 def criterion_neg_log_bernoulli(
     input: torch.Tensor,
     target: torch.Tensor,

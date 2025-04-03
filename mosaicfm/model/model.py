@@ -14,6 +14,7 @@ from mosaicfm.loss import (
     MaskedCEMetric,
     MaskedMseMetric,
     MaskedSpearmanMetric,
+    masked_ce_loss,
     masked_mse_loss,
 )
 from mosaicfm.model.blocks import (
@@ -407,9 +408,10 @@ class ComposerSCGPTModel(ComposerModel):
     def __init__(self, model_config, collator_config, device=None):
         super().__init__()
         self.criterion = masked_mse_loss
+        self.ce_criterion = masked_ce_loss
         self.pad_token_id = collator_config.pad_token_id
         self.id_masking = collator_config.id_masking
-        self.w_ce = model_config.get("w_ce", 0.01)
+        self.w_ce = model_config.get("w_ce", 20)
         self.mask_token_id = collator_config.mask_token_id
         self.use_cell_conditioned_generation = model_config.get(
             "use_cell_conditioned_generation",
@@ -518,15 +520,12 @@ class ComposerSCGPTModel(ComposerModel):
             positions_to_match,
         )
 
-        loss_ce = 0
         if self.id_masking:
-            pcpt_token_logits = outputs["pcpt_token_logits"]  # B, n_genes, vocba_size
-            pcpt_gene_orig = batch["pcpt_gene_orig"]
             masked_tokens = pcpt_gene.eq(int(self.mask_token_id))  # B, n_genes
-            loss_ce = nn.functional.cross_entropy(
-                pcpt_token_logits[masked_tokens],
-                pcpt_gene_orig[masked_tokens],
-                reduction="sum",
+            loss_ce = self.ce_criterion(
+                outputs["pcpt_token_logits"],
+                batch["pcpt_gene_orig"],
+                masked_tokens,
             )
 
         if self.use_cell_conditioned_generation:
@@ -536,8 +535,10 @@ class ComposerSCGPTModel(ComposerModel):
                 positions_to_match,
             )
             loss = (loss_mse + loss_mvc + loss_gen) / 3
+        elif self.id_masking:
+            loss = loss_mse + loss_mvc + self.w_ce * loss_ce
         else:
-            loss = (loss_mse + loss_mvc + self.w_ce * loss_ce) / 3
+            loss = loss_mse + loss_mvc
         return loss
 
     def update_metric(self, batch, outputs, metric):
