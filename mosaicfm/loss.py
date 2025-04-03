@@ -74,6 +74,40 @@ class MaskedMseMetric(Metric):
         return self.sum_mse / self.sum_mask
 
 
+class MaskedCEMetric(Metric):
+    def __init__(self, name: str, **kwargs):
+        super().__init__(**kwargs)
+        self.name = name
+        self.add_state(
+            "sum_ce",
+            default=torch.tensor(0.0, dtype=torch.float32),
+            dist_reduce_fx="sum",
+        )
+        self.add_state(
+            "sum_mask",
+            default=torch.tensor(0.0, dtype=torch.float32),
+            dist_reduce_fx="sum",
+        )
+
+    def update(
+        self,
+        preds: torch.Tensor,
+        target: torch.Tensor,
+        mask: torch.Tensor,
+    ) -> None:
+        if preds.shape[0] != target.shape[0]:
+            raise ValueError("preds and target must have the same shape")
+        self.sum_ce += torch.nn.functional.cross_entropy(
+            preds[mask],
+            target[mask],
+            reduction="sum",
+        )
+        self.sum_mask += mask.sum()
+
+    def compute(self) -> torch.Tensor:
+        return self.sum_ce / self.sum_mask
+
+
 class MaskedSpearmanMetric(Metric):
     def __init__(self, name: str, **kwargs):
         super().__init__(**kwargs)

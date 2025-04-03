@@ -10,7 +10,12 @@ from llmfoundry.layers_registry import param_init_fns
 from omegaconf import DictConfig
 from torch import Tensor, nn
 
-from mosaicfm.loss import MaskedMseMetric, MaskedSpearmanMetric, masked_mse_loss
+from mosaicfm.loss import (
+    MaskedCEMetric,
+    MaskedMseMetric,
+    MaskedSpearmanMetric,
+    masked_mse_loss,
+)
 from mosaicfm.model.blocks import (
     AffineExprDecoder,
     CategoryValueEncoder,
@@ -56,7 +61,7 @@ class SCGPTModel(nn.Module):
         self.pad_token_id = collator_config.pad_token_id
         self.pad_value = collator_config.pad_value
         self.n_input_bins = collator_config.num_bins
-        self.id_masking = collator_config.get("id_masking", None)
+        self.id_masking = collator_config.get("id_masking", False)
         self.mask_token_id = collator_config.mask_token_id
         self.attn_config = model_config.get("attn_config", None)
         self.norm_config = model_config.get("norm_config", None)
@@ -416,10 +421,18 @@ class ComposerSCGPTModel(ComposerModel):
             device=device,
         )
         self.n_active_params = sum(p.numel() for p in self.model.parameters())
-        self.train_metrics = {
-            "MSE": MaskedMseMetric(name="MSE"),
-            "MVC": MaskedMseMetric(name="MVC"),
-        }
+        if self.id_masking:
+            self.train_metrics = {
+                "MSE": MaskedMseMetric(name="MSE"),
+                "MVC": MaskedMseMetric(name="MVC"),
+                "CE": MaskedCEMetric(name="CE"),
+            }
+        else:
+            self.train_metrics = {
+                "MSE": MaskedMseMetric(name="MSE"),
+                "MVC": MaskedMseMetric(name="MVC"),
+            }
+
         self.standard_scale_outputs = model_config.get("standard_scale_outputs", False)
         self.collator_config = collator_config
 
@@ -428,6 +441,20 @@ class ComposerSCGPTModel(ComposerModel):
             "MVC": MaskedMseMetric(name="MVC"),
             "Spearman": MaskedSpearmanMetric(name="Spearman"),
         }
+        if self.id_masking:
+            self.val_metrics = {
+                "MSE": MaskedMseMetric(name="MSE"),
+                "MVC": MaskedMseMetric(name="MVC"),
+                "Spearman": MaskedSpearmanMetric(name="Spearman"),
+                "CE": MaskedCEMetric(name="CE"),
+            }
+        else:
+            self.val_metrics = {
+                "MSE": MaskedMseMetric(name="MSE"),
+                "MVC": MaskedMseMetric(name="MVC"),
+                "Spearman": MaskedSpearmanMetric(name="Spearman"),
+            }
+
         if self.use_cell_conditioned_generation:
             self.train_gen = MaskedMseMetric(name="GEN")
             self.train_metrics.update({"GEN": self.train_gen})
@@ -476,7 +503,6 @@ class ComposerSCGPTModel(ComposerModel):
 
     def loss(self, outputs, batch):
         # pass batches and `forward` outputs to the loss
-        pcpt_gene_orig = batch["pcpt_gene_orig"]
         pcpt_gene = batch["pcpt_gene"]
         gen_gene = batch["gen_gene"]
         gen_expr_target = batch["gen_expr_target"]
@@ -495,6 +521,7 @@ class ComposerSCGPTModel(ComposerModel):
         loss_ce = 0
         if self.id_masking:
             pcpt_token_logits = outputs["pcpt_token_logits"]  # B, n_genes, vocba_size
+            pcpt_gene_orig = batch["pcpt_gene_orig"]
             masked_tokens = pcpt_gene.eq(int(self.mask_token_id))  # B, n_genes
             loss_ce = nn.functional.cross_entropy(
                 pcpt_token_logits[masked_tokens],
@@ -525,6 +552,10 @@ class ComposerSCGPTModel(ComposerModel):
             preds = outputs["gen_preds"]
         elif metric.name == "MVC":
             preds = outputs["mvc_output"][:, pcpt_gene.shape[1] :]
+        elif metric.name == "CE":
+            preds = outputs["pcpt_token_logits"]  # B, n_genes, vocba_size
+            target = batch["pcpt_gene_orig"]
+            mask = pcpt_gene.eq(int(self.mask_token_id))  # B, n_genes
         elif metric.name == "GEN":
             assert self.use_cell_conditioned_generation
             preds = outputs["cell_conditioned_gen_preds"]
