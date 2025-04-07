@@ -8,6 +8,7 @@ import scanpy as sc
 from composer import State
 from composer.core.callback import Callback
 from composer.loggers import Logger
+from composer.utils import dist
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import kneighbors_graph
 from torch.distributed.fsdp.fully_sharded_data_parallel import \
@@ -46,10 +47,15 @@ class CellClassification(Callback):
 
         # load gene_to_id mapping
         ensemble_to_gene_path = cfg.get("ensemble_to_gene_path")
-        download_file_from_s3_url(
-            s3_url=ensemble_to_gene_path["remote"],
-            local_file_path=ensemble_to_gene_path["local"],
-        )
+
+        if dist.get_local_rank() == 0:
+            download_file_from_s3_url(
+                s3_url=ensemble_to_gene_path["remote"],
+                local_file_path=ensemble_to_gene_path["local"],
+            )
+        with dist.local_rank_zero_download_and_wait(ensemble_to_gene_path["local"]):
+            dist.barrier()
+
         with open(ensemble_to_gene_path["local"]) as f:
             id_to_gene = json.load(f)
         self.gene_to_id = dict(zip(id_to_gene.values(), id_to_gene.keys()))
