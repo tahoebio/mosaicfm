@@ -113,7 +113,7 @@ protein_embeddings_esmc_600m.h5
 ### PyTorch Files
 
 #### `esmc_pretrained_data.pt`
-Complete package with the following structure:
+Has the following structure:
 ```
 esmc_pretrained_data.pt
 ├── embedding_matrix         # torch.Tensor [62720 × 1152]
