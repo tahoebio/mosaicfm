@@ -22,6 +22,7 @@ data in the adata format from multiple sources into the MDS format used by our t
 | Norman  (HF dataset)                | Norman dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test                | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/norman.dataset/ |
 | Replogle RPE1 (HF dataset)          | Replogle RPE1 dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test         | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/replogle_rpe1.dataset/ |
 | Replogle K562 (HF dataset)          | Replogle K562 dataset mapped using MosaicFM 1.3B vocab in the Huggingface datasets format. Not split into train/test         | s3://vevo-ml-datasets/perturbseq/vevo-processed/aidan_filtered/replogle_k562.dataset/ |
+| ESM-C Protein Embeddings            | Protein embeddings generated using ESM-C 600M model and mixed with MosaicFM gene embeddings (62,720 tokens, 30.59% replaced) | s3://vevo-ml-datasets/esm-embeddings/       |
 
 The MDS folders also contain
  - `metadata.json` : Contains the splits and median_library_size for each dataset.
@@ -222,7 +223,7 @@ The Replogle K562 dataset has a median count of *11306* before any filtering is 
 PerturbSeq datasets with a total of around 7M cells (~1.4M unique). This dataset includes a mix of both essential and inessential genes.
 The magnitude of the effect (e-distance) is larger for the essential genes. For training the perturbations are not filtered.
 
-# Splits and MDS Generation
+## Splits and MDS Generation
 
 To split the HF dataset according to a column, modify the Dataset splits section in the yaml. 
 The following parameters are used for example in the Adamson dataset:
@@ -275,3 +276,65 @@ python generate_mds_perturbseq.py yamls/perturbseq_adamson.yml
 ```
 
 
+## ESM-C Protein Embeddings
+
+This project generates protein embeddings using ESM-C models and incorporates them into MosaicFM's gene representations. The embeddings are used to help the initialization of the gene encoder with biologically relevant representations (for protein coding genes) rather than random initialization.
+
+### Processing Pipeline
+
+1. **Preprocess UniProt data**:
+   ```shell
+   python scripts/data_prep/esm_embedding/scripts/preprocess_uniprot.py
+   ```
+   This extracts relevant protein information from UniProt and prepares it for embedding generation.
+
+2. **Generate ESM-C embeddings**:
+   ```shell
+   python scripts/data_prep/esm_embedding/scripts/generate_embeddings.py --model esmc_600m
+   ```
+   This generates mean-pooled embeddings (1,152-dimensional) for 19,329 proteins using the ESM-C 600M model.
+
+3. **Mix ESM-C embeddings with MosaicFM**:
+   ```shell
+   python scripts/data_prep/esm_embedding/scripts/mix_embedding.py
+   ```
+   This replaces MosaicFM's gene embeddings with normalized ESM-C embeddings, maintaining consistent statistical properties.
+
+### Output Files
+
+The following files are generated and stored in S3:
+```
+s3://vevo-ml-datasets/esm-embeddings/
+├── human_proteins_processed.tsv       # Processed UniProt data
+├── protein_embeddings_esmc_600m.h5    # Raw ESM-C embeddings (19,329 × 1,152)
+├── esmc_pretrained_data.pt            # Complete embedding data with metadata
+└── esmc_pretrained_gene_encoder.pt    # Ready-to-use gene encoder state dict
+```
+
+The mixed embeddings successfully replace 19,183 out of 62,720 vocabulary tokens (30.59%), focusing on genes with protein sequence annotations.
+
+### Using the Embeddings
+
+```python
+import torch
+import boto3
+import mosaicfm as mfm
+
+# Create a GeneEncoder with the correct dimensions
+encoder = mfm.model.blocks.GeneEncoder(
+    vocab_size=62720,
+    embedding_dim=1152,
+    padding_idx=0,
+    use_norm=True,
+)
+
+# Download and load the encoder weights
+s3 = boto3.client('s3')
+s3.download_file('vevo-ml-datasets', 'esm-embeddings/esmc_pretrained_gene_encoder.pt', 'local_gene_encoder.pt')
+encoder.load_state_dict(torch.load('local_gene_encoder.pt'))
+
+# Use in your model
+model.gene_encoder = encoder
+```
+
+For more details and exploratory analysis, see the [ESM Embedding README](scripts/data_prep/esm_embedding/README.md).
