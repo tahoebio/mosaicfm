@@ -2,7 +2,9 @@
 from functools import lru_cache
 from typing import Any, Dict, Optional, Tuple, Union
 
+import numpy as np
 import torch
+from composer.utils import dist
 from llmfoundry.layers_registry import attention_classes, norms
 from llmfoundry.models.layers.ffn import (
     resolve_ffn_act_fn,
@@ -11,6 +13,8 @@ from llmfoundry.models.layers.ffn import (
 from llmfoundry.models.mpt.modeling_mpt import gen_flash_attn_padding_info
 from torch import Tensor, nn
 from torch.nn.modules.transformer import _get_clones
+
+from mosaicfm.utils import download_file_from_s3_url
 
 attn_config_defaults: Dict = {
     "attn_type": "grouped_query_attention",
@@ -374,6 +378,40 @@ class GeneEncoder(nn.Module):
             x = self.enc_norm(
                 x,
             )  # Norm for embedding is not used when using pre-norm transformer.
+        return x
+
+
+class ChemEncoder(nn.Module):
+    def __init__(
+        self,
+        drug_fps_path: dict,
+        d_out: int,
+        padding_idx: int = 0,
+        activation: str = "leaky_relu",
+    ):
+        super().__init__()
+
+        # download pretrained drug embeddings - morgan fingerprints
+        if dist.get_local_rank() == 0:
+            download_file_from_s3_url(
+                s3_url=drug_fps_path["remote"],
+                local_file_path=drug_fps_path["local"],
+            )
+        with dist.local_rank_zero_download_and_wait(drug_fps_path["local"]):
+            dist.barrier()
+
+        drug_fps = torch.as_tensor(np.load(drug_fps_path["local"]), dtype=torch.float32)
+        embedding_dim = drug_fps.shape[1]
+
+        self.embedding = nn.Embedding.from_pretrained(drug_fps, padding_idx=padding_idx)
+        self.fc = nn.Linear(embedding_dim, d_out)
+        self.activation = resolve_ffn_act_fn({"name": activation})
+
+    def forward(self, x: Tensor) -> Tensor:
+        x = self.embedding(
+            x,
+        )  # (batch, d_out), the embedding weights will be casted to bf16 during trainin so you might not see the original pre-trained weights
+        x = self.activation(self.fc(x))
         return x
 
 
