@@ -14,6 +14,7 @@ from mosaicfm.loss import MaskedMseMetric, MaskedSpearmanMetric, masked_mse_loss
 from mosaicfm.model.blocks import (
     AffineExprDecoder,
     CategoryValueEncoder,
+    ChemEncoder,
     ContinuousValueEncoder,
     ExprDecoder,
     GeneEncoder,
@@ -103,6 +104,14 @@ class SCGPTModel(nn.Module):
         else:
             raise ValueError(f"Unknown input_emb_style: {self.input_emb_style}")
 
+        chem_encoder_config = model_config.chemical_encoder
+        self.chem_encoder = ChemEncoder(
+            drug_fps_path=chem_encoder_config.get("drug_fps_path"),
+            d_out=self.d_model,
+            padding_idx=chem_encoder_config.get("padding_idx", 0),
+            activation=chem_encoder_config.get("activate", "leaky_relu"),
+        )
+
         encoder_layers = SCGPTBlock(
             d_model=self.d_model,
             n_heads=self.n_heads,
@@ -177,13 +186,20 @@ class SCGPTModel(nn.Module):
         pcpt_genes: Tensor,
         pcpt_values: Tensor,
         pcpt_key_padding_mask: Tensor,
+        drug_ids: Tensor,
         gen_genes: Tensor,
         gen_key_padding_mask: Tensor,
         input_cell_emb: Optional[Tensor] = None,  # (batch, seq_len, embsize)
     ) -> Tuple[Tensor, Tensor]:
+
         pcpt_token_embs = self.gene_encoder(pcpt_genes)  # (batch, pcpt_len, embsize)
         pcpt_values = self.expression_encoder(pcpt_values)  # (batch, pcpt_len, embsize)
-        pcpt_total_embs = pcpt_token_embs + pcpt_values
+        pcpt_total_embs = pcpt_token_embs + pcpt_values  # (batch, pcpt_len, embsize)
+
+        # calculate chemical embedding and append it to the end of pcpt tokens
+        drug_embs = self.chem_encoder(drug_ids)  # (batch, embsize)
+        pcpt_total_embs[:, 1, :] = drug_embs  # (batch, pcpt_len, embsize)
+
         if gen_genes is not None:
             gen_token_embs = self.gene_encoder(gen_genes)  # (batch, gen_len, embsize)
             self.cur_gene_token_embs = torch.cat(
@@ -282,6 +298,7 @@ class SCGPTModel(nn.Module):
         pcpt_genes: Tensor,
         pcpt_values: Tensor,
         pcpt_key_padding_mask: Tensor,
+        drug_ids: Tensor,
         gen_genes: Tensor,
         gen_key_padding_mask: Tensor,
         CLS: bool = False,
@@ -296,6 +313,8 @@ class SCGPTModel(nn.Module):
                 [batch_size, seq_len]
             pcpt_key_padding_mask (:obj:`Tensor`): mask for pcpt_genes, shape
                 [batch_size, seq_len]
+            drug_ids (:obj:`Tensor`): drug ids corresponding to chem_encoder embedding layer, shape
+                [batch_size]
             gen_genes (:obj:`Tensor`): token ids of the generative part, shape
                 [batch_size, seq_len]
             gen_key_padding_mask (:obj:`Tensor`): mask for gen_genes, shape
@@ -314,6 +333,7 @@ class SCGPTModel(nn.Module):
             pcpt_genes,
             pcpt_values,
             pcpt_key_padding_mask,
+            drug_ids,
             gen_genes,
             gen_key_padding_mask,
             input_cell_emb=input_cell_emb,
@@ -422,12 +442,14 @@ class ComposerSCGPTModel(ComposerModel):
         pcpt_gene = batch["pcpt_gene"]
         pcpt_expr = batch["pcpt_expr"]
         pcpt_key_padding_mask = ~pcpt_gene.eq(self.pad_token_id)
+        drug_ids = batch["drug_ids"]
         gen_gene = batch["gen_gene"]
         gen_key_padding_mask = ~gen_gene.eq(self.pad_token_id)
         output_dict = self.model(
             pcpt_gene,
             pcpt_expr,
             pcpt_key_padding_mask,
+            drug_ids,
             gen_gene,
             gen_key_padding_mask,
             MVC=True,
@@ -439,6 +461,7 @@ class ComposerSCGPTModel(ComposerModel):
                 pcpt_gene,
                 pcpt_expr,
                 pcpt_key_padding_mask,
+                drug_ids,
                 gen_gene,
                 gen_key_padding_mask,
                 MVC=False,

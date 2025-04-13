@@ -61,6 +61,7 @@ def build_dataloader(
 
     collate_fn = DataCollator(
         vocab=vocab,
+        drug_to_id_path=collator_cfg["drug_to_id_path"],
         do_padding=collator_cfg.get("do_padding", True),
         unexp_padding=loader_cfg.get("unexp_padding", False),
         pad_token_id=collator_cfg.pad_token_id,
@@ -76,6 +77,7 @@ def build_dataloader(
         data_style=collator_cfg.data_style,
         num_bins=collator_cfg.get("num_bins", 51),
         right_binning=collator_cfg.get("right_binning", False),
+        keep_first_n_tokens=collator_cfg.get("keep_first_n_tokens", 1),
     )
 
     data_loader = StreamingDataLoader(
