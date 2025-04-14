@@ -48,7 +48,7 @@ huggingface:
         adata_key: sample
       columns:
         - "plate"
-      path: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025//arc-virtual-cell-metadata/sample_metadata.csv"
+      path: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/arc-virtual-cell-metadata/sample_metadata.csv"
   vocab_output_root: ${vocab.output_root}
   vocab_path: ${vocab.output_file}
 

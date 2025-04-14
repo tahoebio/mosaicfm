@@ -46,33 +46,28 @@ def main(cfg: DictConfig):
     dataset_name = cfg.huggingface.dataset_name
     save_dir = cfg.huggingface.merged_dataset_root
     test_size = cfg.huggingface.split_parameters.test_size
+    shuffle = cfg.huggingface.split_parameters.shuffle
+    seed = cfg.huggingface.split_parameters.seed
 
     log.info(f"Merging dataset chunks from {dataset_root}...")
-
-    # Concatenate datasets efficiently using a generator
-    merged_dataset = datasets.concatenate_datasets(list(get_datasets(get_files(dataset_root))))
-
+    merged_dataset = datasets.concatenate_datasets(
+        get_datasets(get_files(dataset_root)),
+    )
     log.info(f"Total {dataset_name} size: {len(merged_dataset)} samples")
 
-    # Index-based train-test split (faster and avoids duplication)
-    split_idx = int(len(merged_dataset) * (1 - test_size))
-    train_dataset = merged_dataset.select(range(split_idx))
-    test_dataset = merged_dataset.select(range(split_idx, len(merged_dataset)))
+    merged_dataset = merged_dataset.train_test_split(
+        test_size=test_size,
+        shuffle=shuffle,
+        seed=seed,
+    )
+    train_dataset = merged_dataset["train"]
+    valid_dataset = merged_dataset["test"]
 
-    log.info(f"Train set: {len(train_dataset)} samples")
-    log.info(f"Test set: {len(test_dataset)} samples")
+    print(f"train set number of samples: {len(train_dataset)}")
+    print(f"valid set number of samples: {len(valid_dataset)}")
 
-    # Ensure the save directory exists
-    os.makedirs(save_dir, exist_ok=True)
-    log.info(f"Saving datasets to {save_dir}...")
-
-    # Save train and test datasets in parallel
-    train_process = save_dataset_parallel(train_dataset, os.path.join(save_dir, "train.dataset"))
-    test_process = save_dataset_parallel(test_dataset, os.path.join(save_dir, "valid.dataset"))
-
-    train_process.join()
-    test_process.join()
-
+    valid_dataset.save_to_disk( os.path.join(save_dir, f"{dataset_name}_valid.dataset"))
+    train_dataset.save_to_disk(os.path.join(save_dir, f"{dataset_name}_train.dataset"))
     log.info("Dataset merging and saving completed successfully.")
 
 

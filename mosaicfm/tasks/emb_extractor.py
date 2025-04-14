@@ -5,8 +5,8 @@ import numpy as np
 import torch
 from anndata import AnnData
 from omegaconf import DictConfig
+from scipy.sparse import csc_matrix, csr_matrix
 from tqdm.auto import tqdm
-from scipy.sparse import csr_matrix, csc_matrix
 
 from mosaicfm.data import CountDataset, DataCollator
 from mosaicfm.model import SCGPTModel
@@ -25,25 +25,30 @@ def get_batch_embeddings(
     max_length: Optional[int] = None,
     return_gene_embeddings: bool = False,
 ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
-    """Get the cell embeddings for a batch of cells.
+    """Extracts cell embeddings from an AnnData object using a pre-trained SCGPT
+    model.
 
     Args:
-        adata (AnnData): The AnnData object.
-        model (SCGPTModel): The model.
-        vocab (GeneVocab): The gene-to-ID vocabulary
-        model_cfg (DictConfig, optional): The model configuration dictionary.
-        collator_cfg (DictConfig, optional): The collator configuration dictionary.
-        gene_ids (np.ndarray, optional): The gene vocabulary ids.
-            Defaults to None, in which case the gene IDs are taken from adata.var["id_in_vocab"].
-        batch_size (int): The batch size for inference. Defaults to 8.
-        num_workers (int): The number of workers for the data loader. Defaults to 8.
-        max_length (int, optional): The maximum context length. Defaults to number of genes in the adata.
-        return_gene_embeddings (bool): Whether to return the mean gene embeddings as well. Defaults to False.
+        adata (AnnData): The AnnData object containing the count matrix and gene metadata.
+        model (SCGPTModel): The pre-trained SCGPT model used for embedding extraction.
+        vocab (GeneVocab): The vocabulary mapping for gene tokens.
+        model_cfg (DictConfig): Configuration for the SCGPT model.
+        collator_cfg (DictConfig): Configuration for the data collator.
+        gene_ids (Optional[np.ndarray]): Array of gene IDs to use for embedding. If None,
+            it defaults to the "id_in_vocab" column in `adata.var`.
+        batch_size (int): The batch size for data loading. Defaults to 8.
+        num_workers (int): Number of workers for the DataLoader. Defaults to 8.
+        max_length (Optional[int]): Maximum sequence length for the model. If None,
+            it defaults to the number of genes.
+        return_gene_embeddings (bool): Whether to return gene embeddings in addition
+            to cell embeddings. Defaults to False.
 
     Returns:
-        np.ndarray: The cell embeddings.
+        Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
+            - If `return_gene_embeddings` is False, returns a NumPy array of cell embeddings.
+            - If `return_gene_embeddings` is True, returns a tuple of cell embeddings and
+              gene embeddings as NumPy arrays.
     """
-
     count_matrix = adata.X
     if isinstance(count_matrix, np.ndarray):
         count_matrix = csr_matrix(count_matrix)
@@ -52,12 +57,10 @@ def get_batch_embeddings(
     elif hasattr(count_matrix, "to_memory"):
         count_matrix = count_matrix.to_memory().tocsr()
 
-    # gene vocabulary ids
     if gene_ids is None:
         gene_ids = np.array(adata.var["id_in_vocab"])
         assert np.all(gene_ids >= 0)
 
-    # Max context length is set to the number of genes unless provided
     if max_length is None:
         max_length = len(gene_ids)
 
@@ -70,18 +73,18 @@ def get_batch_embeddings(
     collate_fn = DataCollator(
         vocab=vocab,
         do_padding=collator_cfg.get("do_padding", True),
-        unexp_padding=False,  # Disable padding with random unexpressed genes for inference
+        unexp_padding=False,
         pad_token_id=collator_cfg.pad_token_id,
         pad_value=collator_cfg.pad_value,
-        do_mlm=False,  # Disable masking for inference
+        do_mlm=False,
         do_binning=collator_cfg.get("do_binning", True),
         log_transform=collator_cfg.get("log_transform", False),
         target_sum=collator_cfg.get("target_sum"),
-        mlm_probability=collator_cfg.mlm_probability,  # Not used
+        mlm_probability=collator_cfg.mlm_probability,
         mask_value=collator_cfg.mask_value,
         max_length=max_length,
-        sampling=collator_cfg.sampling,  # Turned on since max-length can be less than the number of genes
-        data_style="pcpt",  # Disable splitting of genes into pcpt and gen for inference
+        sampling=collator_cfg.sampling,
+        data_style="pcpt",
         num_bins=collator_cfg.get("num_bins", 51),
         right_binning=collator_cfg.get("right_binning", False),
     )
@@ -97,10 +100,19 @@ def get_batch_embeddings(
 
     device = next(model.parameters()).device
     cell_embeddings = np.zeros((len(dataset), model_cfg["d_model"]), dtype=np.float32)
+
     if return_gene_embeddings:
-        # Instantiate empty gene embeddings
-        gene_embeddings = np.zeros((len(vocab), model_cfg["d_model"]), dtype=np.float32)
-        gene_embedding_counts = np.zeros((len(vocab)), dtype=np.float32)
+        gene_embeddings = torch.zeros(
+            len(vocab),
+            model_cfg["d_model"],
+            dtype=torch.float32,
+            device=device,
+        )
+        gene_embedding_counts = torch.zeros(
+            len(vocab),
+            dtype=torch.float32,
+            device=device,
+        )
 
     dtype_from_string = {
         "fp32": torch.float32,
@@ -118,25 +130,30 @@ def get_batch_embeddings(
         pbar = tqdm(total=len(dataset), desc="Embedding cells")
         for data_dict in data_loader:
             input_gene_ids = data_dict["gene"].to(device)
-            src_key_padding_mask = ~input_gene_ids.eq(
-                collator_cfg["pad_token_id"],
-            )  # Note the negation here compared to the public scGPT implementation!
+            src_key_padding_mask = ~input_gene_ids.eq(collator_cfg["pad_token_id"])
+
             embeddings = model._encode(
                 src=input_gene_ids,
                 values=data_dict["expr"].to(device),
                 src_key_padding_mask=src_key_padding_mask,
             )
+
             if return_gene_embeddings:
-                input_gene_ids = input_gene_ids.to("cpu").numpy()
-                embeddings = embeddings.to(torch.float32).to("cpu").numpy()
-                for emb, genes in zip(embeddings, input_gene_ids):
-                    gene_embeddings[genes] += emb
-                    gene_embedding_counts[genes] += 1
+                flat_gene_ids = input_gene_ids.view(-1)
+                flat_embeddings = embeddings.view(-1, embeddings.shape[-1])
 
-            cls_embeddings = embeddings[:, 0, :]  # get the <cls> position embedding
+                valid = flat_gene_ids != collator_cfg["pad_token_id"]
+                flat_gene_ids = flat_gene_ids[valid]
+                flat_embeddings = flat_embeddings[valid]
 
-            # Casting to float 32 avoids issues with bfloat16 -> numpy conversion for some models
-            # https://github.com/pytorch/pytorch/issues/110285
+                gene_embeddings.index_add_(0, flat_gene_ids, flat_embeddings)
+                gene_embedding_counts.index_add_(
+                    0,
+                    flat_gene_ids,
+                    torch.ones_like(flat_gene_ids, dtype=torch.float32),
+                )
+
+            cls_embeddings = embeddings[:, 0, :]
             if not isinstance(cls_embeddings, np.ndarray):
                 cls_embeddings = cls_embeddings.to("cpu").to(torch.float32).numpy()
             cell_embeddings[count : count + len(embeddings)] = cls_embeddings
@@ -148,13 +165,17 @@ def get_batch_embeddings(
         keepdims=True,
     )
     if return_gene_embeddings:
+        gene_embeddings = gene_embeddings.to("cpu").numpy()
+        gene_embedding_counts = gene_embedding_counts.to("cpu").numpy()
         gene_embedding_counts = np.expand_dims(gene_embedding_counts, axis=1)
+
         gene_embeddings = np.divide(
             gene_embeddings,
             gene_embedding_counts,
             out=np.ones_like(gene_embeddings) * np.nan,
             where=gene_embedding_counts != 0,
         )
+
         gene2idx = vocab.get_stoi()
         all_gene_ids = np.array(list(gene2idx.values()))
         gene_embeddings = gene_embeddings[all_gene_ids, :]

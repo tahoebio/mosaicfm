@@ -1,9 +1,9 @@
 # Copyright (C) Vevo Therapeutics 2025. All rights reserved.
-# python
+# flake8: noqa: SIM401
 import gc
 import logging
 import os
-from typing import Any, Dict, Generator, List, Optional
+from typing import Dict, Generator, List, Optional
 
 import datasets
 import numpy as np
@@ -12,6 +12,7 @@ import scanpy as sc
 from omegaconf import DictConfig
 from omegaconf import OmegaConf as om
 from scipy.sparse import csc_matrix, csr_matrix
+
 from mosaicfm.data import CountDataset
 from mosaicfm.tokenizer import GeneVocab
 
@@ -44,43 +45,39 @@ def find_h5ad_files(
 
 def dataset_generator(
     adata_files: List[str],
+    cfg: DictConfig,
     vocab: GeneVocab,
-    gene_col: str,
-    cls_token: str,
-    pad_value: int,
-    obs_filter: Optional[Dict[str, str]] = None,
-    obs_metadata_columns: Optional[List[str]] = None,
-    additional_metadata_info: Optional[List[Dict[str, Any]]] = None,
-    add_obs_index: bool = True,
 ) -> Generator[Dict, None, None]:
-    """Generator that processes AnnData files and yields dictionary items for
-    the dataset.
-
-    The function reads each AnnData file, applies optional filters, merges additional
-    metadata if provided, and constructs a CountDataset for each file. It can optionally
-    add the dataframe index as an observation metadata column.
+    """Generator function that processes AnnData files and yields dataset items.
+    Reads configuration parameters from the given DictConfig to set up filters,
+    tokens and metadata.
 
     Args:
-        adata_files (List[str]): List of AnnData file paths.
-        vocab (GeneVocab): A GeneVocab object used to encode gene IDs.
-        gene_col (str): Column name within observation variables corresponding to genes.
-        cls_token (str): Special token representing the class token.
-        pad_value (int): Value used for padding in the dataset.
-        obs_filter (Optional[Dict[str, str]]): Dictionary for filtering observations.
-        obs_metadata_columns (Optional[List[str]]): Columns to include in observation metadata.
-        additional_metadata_info (Optional[List[Dict[str, Any]]]):
-            List of dictionaries containing paths and merge keys for additional metadata.
-        add_obs_index (bool): If True, resets the index of the observations and adds it
-            as a metadata key.
+        adata_files (List[str]): List of paths to AnnData files.
+        cfg (DictConfig): Configuration for dataset generation (huggingface section).
+        vocab (GeneVocab): Vocabulary mapping for gene tokens.
 
     Yields:
-        Dict: A dictionary representing an item in the dataset, including count data and metadata.
+        Dict: A dictionary representing a single dataset sample with gene tokens,
+              expression values, and additional metadata.
     """
-    if obs_metadata_columns is None:
-        obs_metadata_columns = []
+    gene_col = cfg.gene_col
+    cls_token = cfg.get("cls_token", "<cls>")
+    pad_value = cfg.get("pad_value", -2)
+    add_cls_token = cfg.get("add_cls_token", True)
+    obs_filter = cfg.get("obs_filter", None)
+    obs_metadata_columns = cfg.get("obs_metadata_columns", [])
+    additional_metadata_info = cfg.get("additional_metadata_info", None)
+    add_obs_index = cfg.get("add_obs_index", True)
+    filter_cells_kwargs = cfg.get("filter_cells_kwargs", None)
+    filter_genes_kwargs = cfg.get("filter_genes_kwargs", None)
 
     for file in adata_files:
         adata = sc.read_h5ad(file, backed="r")
+        if filter_cells_kwargs:
+            sc.pp.filter_cells(adata, **filter_cells_kwargs)
+        if filter_genes_kwargs:
+            sc.pp.filter_genes(adata, **filter_genes_kwargs)
 
         if obs_filter:
             filter_key = obs_filter.get("key")
@@ -109,7 +106,9 @@ def dataset_generator(
                     metadata_df.loc[:, right_key].astype(str).str.strip()
                 )
                 metadata_df = metadata_df.drop_duplicates(subset=right_key)
-                columns = [right_key] + [col for col in meta_source["columns"] if col != right_key]
+                columns = [right_key] + [
+                    col for col in meta_source["columns"] if col != right_key
+                ]
                 base_obs = base_obs.merge(
                     metadata_df[columns],
                     left_on=left_key,
@@ -121,12 +120,16 @@ def dataset_generator(
                         obs_metadata_columns.append(col)
         if obs_metadata_columns:
             base_obs.loc[:, obs_metadata_columns] = (
-                base_obs.loc[:, obs_metadata_columns].fillna("").astype(str)
+                base_obs.loc[:, obs_metadata_columns].astype(str).fillna("")
             )
+
         assert base_obs.shape[0] == adata.obs.shape[0]
-        base_var = adata.var.copy()
-        base_var.reset_index(inplace=True)
-        gene_ids_in_vocab = np.array([vocab[gene] for gene in base_var[gene_col]])
+        adata.var.reset_index(inplace=True)
+        adata.var["id_in_vocab"] = [
+            vocab[gene] if gene in vocab else -1 for gene in adata.var[gene_col]
+        ]
+        adata = adata[:, adata.var["id_in_vocab"] >= 0]
+        gene_token_ids = np.array(adata.var["id_in_vocab"])
         count_matrix = adata.X
         if isinstance(count_matrix, np.ndarray):
             count_matrix = csr_matrix(count_matrix)
@@ -137,9 +140,10 @@ def dataset_generator(
 
         count_dataset = CountDataset(
             count_matrix,
-            gene_ids_in_vocab,
-            cls_token_id=vocab[cls_token],
-            pad_value=pad_value,
+            gene_token_ids,
+            add_cls_token=add_cls_token,
+            cls_token_id=vocab[cls_token] if add_cls_token else None,
+            pad_value=pad_value if add_cls_token else None,
         )
 
         for idx, item in enumerate(count_dataset):
@@ -167,13 +171,8 @@ def main(cfg: DictConfig) -> None:
         cfg.huggingface.vocab_path,
     )
     vocab = GeneVocab.from_file(vocab_file)
-    gene_col = cfg.huggingface.gene_col
     num_chunks = cfg.huggingface.get("num_chunks", 10)
     chunks = np.array_split(adata_files, num_chunks)
-    obs_filter = cfg.huggingface.get("obs_filter", None)
-    obs_metadata_columns = cfg.huggingface.get("obs_metadata_columns", None)
-    additional_metadata_info = cfg.huggingface.get("additional_metadata_info", None)
-    add_obs_index = cfg.huggingface.get("add_obs_index", True)
 
     for i, chunk in enumerate(chunks):
         save_path = os.path.join(cfg.huggingface.output_root, f"chunk_{i}.dataset")
@@ -185,14 +184,8 @@ def main(cfg: DictConfig) -> None:
             dataset_generator,
             gen_kwargs={
                 "adata_files": chunk.tolist(),
+                "cfg": cfg.huggingface,
                 "vocab": vocab,
-                "gene_col": gene_col,
-                "cls_token": cfg.huggingface.get("cls_token", "<cls>"),
-                "pad_value": cfg.huggingface.get("pad_value", -2),
-                "obs_filter": obs_filter,
-                "obs_metadata_columns": obs_metadata_columns,
-                "additional_metadata_info": additional_metadata_info,
-                "add_obs_index": add_obs_index,
             },
             num_proc=min(len(chunk), cfg.huggingface.get("num_proc", 1)),
             keep_in_memory=False,

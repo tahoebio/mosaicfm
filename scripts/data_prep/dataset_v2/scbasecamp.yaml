@@ -9,17 +9,21 @@ vocab:
 huggingface:
   ignore_dir: None
   dataset_name: scbasecamp
+  add_cls_token: True
   cls_token: "<cls>"
   pad_value: -2
   gene_col: "index" # The adata.var.index is the gene_id
   adata_dir: "/vevo/mosaicfm/datasets/scbasecamp/h5ad"
   num_chunks: 10
+  filter_cells:
+    min_genes: 10
+    min_counts: 20
   output_root: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/scbasecamp_hf_chunks"
-  merged_dataset_root: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/scbasecamp_merged_w_metadata"
+  merged_dataset_root: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/scbasecamp_merged"
   split_parameters:
     test_size: 0.01
     seed: 42
-    shuffle: True
+    shuffle: False
   num_proc: 32
   obs_metadata_columns:
     - SRX_accession
@@ -38,7 +42,7 @@ huggingface:
   vocab_path: ${vocab.output_file}
 
 mds:
-  out_root: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/scbasecamp_merged_MDS_v2"
+  out_root: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/scbasecamp_merged_MDS"
   root_dir: ${huggingface.merged_dataset_root}
   num_proc: 128
   splits:
@@ -50,7 +54,6 @@ mds:
     genes: "pkl"
     id: "int64"
   compression: zstd
-  min_length: 4
   hashes:
     - "sha1"
     - "xxh64"
