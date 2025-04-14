@@ -92,7 +92,7 @@ class DataCollator(DefaultDataCollator):
         self.data_style = data_style
         self.num_bins = num_bins
         self.right_binning = right_binning
-        self.drug_id = vocab["<drug>"]
+        self.drug_token = vocab["<drug>"]
 
         # filter non_special gene_ids
         gene_to_id = vocab.get_stoi()
@@ -413,8 +413,8 @@ class DataCollator(DefaultDataCollator):
             genes = examples[i]["genes"]
             expressions = examples[i]["expressions"]
 
-            # add drug id at location 1 of genes and expressions (after <cls>)
-            genes = torch.cat((genes[:1], torch.tensor([self.drug_id]), genes[1:]))
+            # add drug token <drug>, and -2 expression at location 1  (after <cls>) of genes and expressions
+            genes = torch.cat((genes[:1], torch.tensor([self.drug_token]), genes[1:]))
             expressions = torch.cat(
                 (expressions[:1], torch.tensor([self.pad_value]), expressions[1:]),
             )
