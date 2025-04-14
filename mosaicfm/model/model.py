@@ -196,7 +196,7 @@ class SCGPTModel(nn.Module):
         pcpt_values = self.expression_encoder(pcpt_values)  # (batch, pcpt_len, embsize)
         pcpt_total_embs = pcpt_token_embs + pcpt_values  # (batch, pcpt_len, embsize)
 
-        # calculate chemical embedding and append it to the end of pcpt tokens
+        # calculate chemical embedding and put it in its correct place (after <cls>)
         drug_embs = self.chem_encoder(drug_ids)  # (batch, embsize)
         pcpt_total_embs[:, 1, :] = drug_embs  # (batch, pcpt_len, embsize)
 
