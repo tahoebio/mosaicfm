@@ -6,11 +6,6 @@ import os
 import sys
 import warnings
 from typing import Any, Dict, List, Optional, Union
-
-import torch._dynamo
-
-torch._dynamo.config.suppress_errors = True
-
 import composer
 import torch
 from composer.core.callback import Callback
