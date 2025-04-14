@@ -14,6 +14,11 @@ torch._dynamo.config.suppress_errors = True
 import composer
 import torch
 from composer.core.callback import Callback
+# register custom callbacks
+from llmfoundry.registry import callbacks
+from mosaicfm.tasks import CellClassification
+callbacks.register("cell-classification", func=CellClassification)
+
 from composer.utils import dist, get_device, reproducibility
 from llmfoundry.utils.builders import (
     build_algorithm,

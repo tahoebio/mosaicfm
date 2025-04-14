@@ -222,9 +222,4 @@ class CellClassification(Callback):
         adata.X = adata.X.todense()
 
         return adata, gene_ids, labels, label_names
-
-
-# register custom callbacks
-from llmfoundry.registry import callbacks
-
-callbacks.register("cell-classification", func=CellClassification)
+    
