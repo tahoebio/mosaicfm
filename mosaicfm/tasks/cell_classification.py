@@ -11,11 +11,10 @@ from composer.loggers import Logger
 from composer.utils import dist
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import kneighbors_graph
-from torch.distributed.fsdp.fully_sharded_data_parallel import \
-    FullyShardedDataParallel as FSDP
+from torch.distributed.fsdp.fully_sharded_data_parallel import (
+    FullyShardedDataParallel as FSDP,
+)
 
-from mosaicfm.model import ComposerSCGPTModel
-from mosaicfm.tokenizer import GeneVocab
 from mosaicfm.utils import download_file_from_s3_url
 
 
@@ -23,29 +22,20 @@ from mosaicfm.utils import download_file_from_s3_url
 class CellClassification(Callback):
     def __init__(
         self,
-        cfg,
-        model: ComposerSCGPTModel,
-        vocab: GeneVocab,
-        model_config,
-        collator_config,
-        run_name,
+        cfg: dict,
     ):
 
         super().__init__()
 
-        model.eval()
-        self.model = model
-        self.vocab = vocab
-        model_config["precision"] = "amp_bf16"
-        self.model_config = model_config
-        self.collator_config = collator_config
-        self.run_name = run_name
         self.dataset_registry = cfg.get("datasets")
         self.logistic_cfg = cfg.get("logistic")
         self.batch_size = cfg.get("batch_size", 50)
         self.seq_len = cfg.get("seq_len", 2048)
 
         # load gene_to_id mapping
+        assert (
+            "ensemble_to_gene_path" in cfg
+        ), "ensemble_to_gene_path not found in config and should be provided!"
         ensemble_to_gene_path = cfg.get("ensemble_to_gene_path")
 
         if dist.get_local_rank() == 0:
@@ -53,7 +43,9 @@ class CellClassification(Callback):
                 s3_url=ensemble_to_gene_path["remote"],
                 local_file_path=ensemble_to_gene_path["local"],
             )
-        with dist.local_rank_zero_download_and_wait(ensemble_to_gene_path["local"]):
+        with dist.local_rank_zero_download_and_wait(
+            ensemble_to_gene_path["local"],
+        ):
             dist.barrier()
 
         with open(ensemble_to_gene_path["local"]) as f:
@@ -61,6 +53,13 @@ class CellClassification(Callback):
         self.gene_to_id = dict(zip(id_to_gene.values(), id_to_gene.keys()))
 
     def fit_end(self, state: State, logger: Logger):
+
+        self.model = state.model
+        self.model.eval()
+        self.model_config = self.model.model_config
+        self.collator_config = self.model.collator_config
+        self.vocab = state.train_dataloader.collate_fn.vocab
+        self.run_name = state.run_name
 
         # cell classification both for zheng and Segerstolpe datasets
         for datast_name, dataset_cfg in self.dataset_registry.items():
@@ -223,3 +222,9 @@ class CellClassification(Callback):
         adata.X = adata.X.todense()
 
         return adata, gene_ids, labels, label_names
+
+
+# register custom callbacks
+from llmfoundry.registry import callbacks
+
+callbacks.register("cell-classification", func=CellClassification)

@@ -8,6 +8,7 @@ import warnings
 from typing import Any, Dict, List, Optional, Union
 
 import torch._dynamo
+
 torch._dynamo.config.suppress_errors = True
 
 import composer
@@ -32,8 +33,6 @@ from omegaconf import OmegaConf as om
 from rich.traceback import install
 from streaming.base.util import clean_stale_shared_memory
 
-from mosaicfm.tasks import CellClassification
-
 install()
 
 from mosaicfm.data import build_dataloader
@@ -42,6 +41,7 @@ from mosaicfm.tokenizer import GeneVocab
 from mosaicfm.utils import download_file_from_s3_url
 
 log = logging.getLogger(__name__)
+
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -163,6 +163,7 @@ def main(cfg: DictConfig) -> composer.Trainer:
         default_value=None,
     )
     precision: str = pop_config(cfg, "precision", must_exist=True)
+    model_config["precision"] = precision
 
     # Optional parameters will be set to default values if not specified.
     default_run_name: str = os.environ.get("RUN_NAME")
@@ -409,6 +410,16 @@ def main(cfg: DictConfig) -> composer.Trainer:
         else None
     )
 
+    # Callbacks
+    callbacks: List[Callback] = (
+        [
+            build_callback(str(name), callback_cfg, om.to_container(logged_cfg))
+            for name, callback_cfg in callback_configs.items()
+        ]
+        if callback_configs
+        else []
+    )
+
     # Build DataLoaders
     log.info("Building DataLoaders...")
     clean_stale_shared_memory()
@@ -440,27 +451,6 @@ def main(cfg: DictConfig) -> composer.Trainer:
             model_config=model_config,
             collator_config=collator_config,
         )
-
-    # Callbacks
-    callbacks: List[Callback] = (
-        [
-            (
-                build_callback(str(name), callback_cfg, om.to_container(logged_cfg))
-                if str(name) != "cell-classification"
-                else CellClassification(
-                    cfg=DictConfig(callback_cfg),
-                    model=model,
-                    vocab=vocab,
-                    model_config=model_config,
-                    collator_config=collator_config,
-                    run_name=run_name,
-                )
-            )
-            for name, callback_cfg in callback_configs.items()
-        ]
-        if callback_configs
-        else []
-    )
 
     # Log number of parameters
     n_params = sum(p.numel() for p in model.parameters())
