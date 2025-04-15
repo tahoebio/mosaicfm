@@ -3,8 +3,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import List, Generator
-from multiprocessing import Process
+from typing import Generator, List
 
 import datasets
 from omegaconf import DictConfig
@@ -16,9 +15,6 @@ logging.basicConfig(
     level=logging.INFO,
 )
 log = logging.getLogger(__name__)
-
-# Disable caching for efficiency
-datasets.disable_caching()
 
 
 def get_files(path: str) -> List[str]:
@@ -34,13 +30,6 @@ def get_datasets(files: List[str]) -> Generator[datasets.Dataset, None, None]:
         yield datasets.load_from_disk(file)
 
 
-def save_dataset_parallel(dataset: datasets.Dataset, path: str):
-    """Save dataset to disk in a separate process for speed."""
-    process = Process(target=dataset.save_to_disk, args=(path,))
-    process.start()
-    return process
-
-
 def main(cfg: DictConfig):
     dataset_root = cfg.huggingface.output_root
     dataset_name = cfg.huggingface.dataset_name
@@ -51,7 +40,7 @@ def main(cfg: DictConfig):
 
     log.info(f"Merging dataset chunks from {dataset_root}...")
     merged_dataset = datasets.concatenate_datasets(
-        get_datasets(get_files(dataset_root)),
+        list(get_datasets(get_files(dataset_root))),
     )
     log.info(f"Total {dataset_name} size: {len(merged_dataset)} samples")
 
@@ -66,8 +55,8 @@ def main(cfg: DictConfig):
     print(f"train set number of samples: {len(train_dataset)}")
     print(f"valid set number of samples: {len(valid_dataset)}")
 
-    valid_dataset.save_to_disk( os.path.join(save_dir, f"{dataset_name}_valid.dataset"))
-    train_dataset.save_to_disk(os.path.join(save_dir, f"{dataset_name}_train.dataset"))
+    valid_dataset.save_to_disk(os.path.join(save_dir, "valid.dataset"))
+    train_dataset.save_to_disk(os.path.join(save_dir, "train.dataset"))
     log.info("Dataset merging and saving completed successfully.")
 
 
