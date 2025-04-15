@@ -54,6 +54,7 @@ mds:
     genes: "pkl"
     id: "int64"
   compression: zstd
+  min_length: 10
   hashes:
     - "sha1"
     - "xxh64"
