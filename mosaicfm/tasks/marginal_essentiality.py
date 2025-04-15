@@ -20,28 +20,24 @@ from mosaicfm.utils import download_file_from_s3_url
 class MarginalEssentiality(Callback):
     def __init__(
         self,
-        cfg,
-        model: ComposerSCGPTModel,
-        vocab: GeneVocab,
-        model_config,
-        collator_config,
-        run_name,
+        cfg: dict
     ):
 
         super().__init__()
-        model.eval()
-        self.model = model
-        self.vocab = vocab
-        model_config["precision"] = "amp_bf16"
-        self.model_config = model_config
-        self.collator_config = collator_config
-        self.run_name = run_name
         self.task_cfg = cfg
         self.batch_size = self.task_cfg.get("batch_size", 32)
         self.seq_len = self.task_cfg.get("seq_len", 8192)
         self.rf_jobs = self.task_cfg.get("rf_jobs", 8)
 
     def fit_end(self, state: State, logger: Logger):
+
+        # get variables from state
+        self.model = state.model
+        self.model.eval()
+        self.model_config = self.model.model_config
+        self.collator_config = self.model.collator_config
+        self.vocab = state.train_dataloader.collate_fn.vocab
+        self.run_name = state.run_name
 
         # download task data from S3
         local_adata_path = os.path.join(self.task_cfg["local_dir"], "ccle.h5ad")
