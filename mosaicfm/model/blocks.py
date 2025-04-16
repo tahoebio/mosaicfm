@@ -381,10 +381,6 @@ class GeneEncoder(nn.Module):
         
         return x
     
-class StaticEmbedding(nn.Embedding):
-    def reset_parameters(self):
-        return True  # disables weight re-init
-
 class ChemEncoder(nn.Module):
     def __init__(
         self,
@@ -393,6 +389,7 @@ class ChemEncoder(nn.Module):
         padding_idx: int = 0,
         activation: str = "leaky_relu",
         use_norm: bool = True,
+        freeze: bool = False,
 
     ):
         super().__init__()
@@ -409,8 +406,7 @@ class ChemEncoder(nn.Module):
         drug_fps = torch.as_tensor(np.load(drug_fps_path["local"]), dtype=torch.float32)
         embedding_dim = drug_fps.shape[1]
 
-        self.embedding = StaticEmbedding.from_pretrained(drug_fps, padding_idx=padding_idx)
-        print("Embedding Weights after intitialization of ChemEncoder", self.embedding.weight)
+        self.embedding = nn.Embedding.from_pretrained(drug_fps, padding_idx=padding_idx, freeze=freeze)
         self.fc = nn.Linear(embedding_dim, d_out)
         self.activation = resolve_ffn_act_fn({"name": activation})
         self.use_norm = use_norm
@@ -418,11 +414,7 @@ class ChemEncoder(nn.Module):
             self.norm = nn.LayerNorm(d_out)
 
     def forward(self, x: Tensor) -> Tensor:
-        with torch.no_grad():
-            x = self.embedding(
-                x,
-            )  # (batch, d_out), the embedding weights will be casted to bf16 during trainin so you might not see the original pre-trained weights
-        print("Embedding weights inside forward ChemEncoder", self.embedding.weight.shape, self.embedding.weight[:10])
+        x = self.embedding(x)  # (batch, d_out)
         x = self.activation(self.fc(x))
         if self.use_norm:
             x = self.norm(x)

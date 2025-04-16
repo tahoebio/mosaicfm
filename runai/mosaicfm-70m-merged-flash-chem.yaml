@@ -52,6 +52,7 @@ model:
       local: "/vevo/gits/mosaicfm/debug_notebooks/morgan/drug_fps.npy"
     activation: "leaky_relu"
     padding_idx: 0
+    freeze: False
 collator:
   do_padding: True
   pad_value: -2
