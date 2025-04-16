@@ -159,11 +159,10 @@ class SCGPTModel(nn.Module):
             )
             self.apply(self.param_init_fn)
 
-
     def param_init_fn(self, module: nn.Module):
-        #skip initialization for modules that has skip_init=Tru
-        if hasattr(module, 'skip_init') and module.skip_init:
-            log.info("Skipping re-initializing for", module._get_name())    
+        # skip initialization for modules that has skip_init=True
+        if hasattr(module, "skip_init") and module.skip_init:
+            log.info(f"Skipping re-initializing for {module._get_name()}")
             return
         init_fn_name = self.init_config["name"]
         param_init_fns.get(init_fn_name)(

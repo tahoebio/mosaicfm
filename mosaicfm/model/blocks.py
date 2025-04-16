@@ -378,9 +378,10 @@ class GeneEncoder(nn.Module):
             x = self.enc_norm(
                 x,
             )  # Norm for embedding is not used when using pre-norm transformer.
-        
+
         return x
-    
+
+
 class ChemEncoder(nn.Module):
     def __init__(
         self,
@@ -390,7 +391,6 @@ class ChemEncoder(nn.Module):
         activation: str = "leaky_relu",
         use_norm: bool = True,
         freeze: bool = False,
-
     ):
         super().__init__()
 
@@ -406,7 +406,11 @@ class ChemEncoder(nn.Module):
         drug_fps = torch.as_tensor(np.load(drug_fps_path["local"]), dtype=torch.float32)
         embedding_dim = drug_fps.shape[1]
 
-        self.embedding = nn.Embedding.from_pretrained(drug_fps, padding_idx=padding_idx, freeze=freeze)
+        self.embedding = nn.Embedding.from_pretrained(
+            drug_fps,
+            padding_idx=padding_idx,
+            freeze=freeze,
+        )
         self.fc = nn.Linear(embedding_dim, d_out)
         self.activation = resolve_ffn_act_fn({"name": activation})
         self.use_norm = use_norm
