@@ -10,8 +10,6 @@ from typing import Any, Dict, List, Optional, Union
 import composer
 import torch
 from composer.core.callback import Callback
-
-# register custom callbacks
 from llmfoundry.registry import callbacks
 
 from mosaicfm.tasks import CellClassification

@@ -11,9 +11,7 @@ from composer.loggers import Logger
 from composer.utils import dist
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import kneighbors_graph
-from torch.distributed.fsdp.fully_sharded_data_parallel import (
-    FullyShardedDataParallel as FSDP,
-)
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 
 from mosaicfm.utils import download_file_from_s3_url
 
@@ -95,7 +93,7 @@ class CellClassification(Callback):
         with FSDP.summon_full_params(self.model.model):
             cell_embeddings_train = get_batch_embeddings(
                 adata=adata_train,
-                model=self.model.model.module,
+                model=self.model.model,
                 vocab=self.vocab,
                 gene_ids=gene_ids_train,
                 model_cfg=self.model_config,
@@ -191,10 +189,7 @@ class CellClassification(Callback):
         adata.obs["cell_type_names"] = [
             class_idx_to_name[int(id)] for id in adata.obs[cell_type_key]
         ]
-
-        adata.var["id_in_vocab"] = [
-            vocab[gene] if gene in vocab else -1 for gene in adata.var[gene_col]
-        ]
+        adata.var["id_in_vocab"] = [vocab[gene] for gene in adata.var[gene_col]]
         gene_ids_in_vocab = np.array(adata.var["id_in_vocab"])
         print(
             f"match {np.sum(gene_ids_in_vocab >= 0)}/{len(gene_ids_in_vocab)} genes "
