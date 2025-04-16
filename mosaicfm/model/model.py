@@ -111,6 +111,7 @@ class SCGPTModel(nn.Module):
             padding_idx=chem_encoder_config.get("padding_idx", 0),
             activation=chem_encoder_config.get("activate", "leaky_relu"),
         )
+        print("Weights after instanciation of ChemEncoder:", self.chem_encoder.embedding.weight)
 
         encoder_layers = SCGPTBlock(
             d_model=self.d_model,
@@ -138,6 +139,7 @@ class SCGPTModel(nn.Module):
             n_layers=expression_decoder_config.get("n_layers", 2),
             activation=expression_decoder_config.get("activation", "leaky_relu"),
         )
+        print("weights after instantiation of expression decoder:", self.expression_decoder.out_proj.weight)
 
         if model_config.mvc is not None:
             mvc_config = model_config.mvc
@@ -152,9 +154,18 @@ class SCGPTModel(nn.Module):
             log.info(
                 'MosaicML recommends using config.init_device="meta" with Composer + FSDP for faster initialization.',
             )
+            print("Weights before param_init of ChemEncoder:", self.chem_encoder.embedding.weight)
             self.apply(self.param_init_fn)
 
     def param_init_fn(self, module: nn.Module):
+        #skip initialization for chemical encoder
+        if isinstance(module, ChemEncoder):
+            print("Skipping re-initializing for ChemEncoder")
+            print("Weights before re-initialization:", module._get_name, module.embedding.weight)   
+            return
+        if isinstance(module, ExprDecoder):
+            print("Weights before re-initialization:", module._get_name, module.out_proj.weight)
+        
         init_fn_name = self.init_config["name"]
         param_init_fns.get(init_fn_name)(
             module=module,
