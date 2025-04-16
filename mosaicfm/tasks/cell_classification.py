@@ -222,4 +222,3 @@ class CellClassification(Callback):
         adata.X = adata.X.todense()
 
         return adata, gene_ids, labels, label_names
-    
