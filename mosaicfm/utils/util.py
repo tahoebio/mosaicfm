@@ -1,5 +1,6 @@
 # Copyright (C) Vevo Therapeutics 2024-2025. All rights reserved.
 import logging
+import os
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -25,8 +26,9 @@ def add_file_handler(logger: logging.Logger, log_file_path: Path):
 def download_file_from_s3_url(s3_url, local_file_path):
     """Downloads a file from an S3 URL to the specified local path.
 
-    :param local_file_path: Local path where the file will be saved. :return:
-    The local path to the downloaded file.
+    :param s3_url: S3 URL in the form s3://bucket-name/path/to/file
+    :param local_file_path: Local path where the file will be saved.
+    :return: The local path to the downloaded file, or None if download fails.
     """
     # Validate the S3 URL format
     assert s3_url.startswith("s3://"), "URL must start with 's3://'"
@@ -41,6 +43,9 @@ def download_file_from_s3_url(s3_url, local_file_path):
     # Ensure bucket name and file key are not empty
     assert bucket_name, "Bucket name cannot be empty"
     assert s3_file_key, "S3 file key cannot be empty"
+
+    # Ensure the directory for local_file_path exists
+    os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
 
     # Create an S3 client
     s3 = boto3.client("s3")

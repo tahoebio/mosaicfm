@@ -1,7 +1,7 @@
 integrations:
 - integration_type: git_repo
   git_repo: vevotx/mosaicfm
-  git_branch: 46-update-code-to-support-latest-versions-of-supporting-packages
+  git_branch: cell-classification
   # git_commit:  # OR use your commit hash
   pip_install: -e . --no-deps
   ssh_clone: true  # Should be true if using a private repo
@@ -13,16 +13,17 @@ integrations:
 command: |
   cd mosaicfm/scripts
   composer train.py /mnt/config/parameters.yaml
-image: vevotx/mosaicfm:1.0.0
+image: vevotx/mosaicfm:1.1.0
 env_variables:
-  MOSAICML_PLATFORM: False #Logging metadata to MosaicML platform is disabled, since it seems to timeout
+  MOSAICML_PLATFORM: False # Logging metadata to MosaicML platform is disabled, since it seems to timeout
+  OPENBLAS_NUM_THREADS: 1 # Prevents an issue
 name: mosaicfm-70m
 
 compute:
   gpus: 16 # Number of GPUs to use
-  cluster: r15z1p1
+  cluster: r18z1p1
 scheduling:
-  max_duration: 0.1 # Maximum duration of the run in hours
+  max_duration: 0.5 # Maximum duration of the run in hours
 
   ## These configurations are optional
   # cluster:
@@ -36,8 +37,8 @@ parameters:
   seed: ${global_seed}
   device_train_batch_size: 400
   global_train_batch_size: 4800
-  device_eval_batch_size: 400
-  device_train_microbatch_size: 400
+  device_eval_batch_size: 300
+  device_train_microbatch_size: 300
   vocabulary:
     remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/vevo_v2_vocab.json"
     local: "vocab.json"
@@ -58,6 +59,7 @@ parameters:
     attn_config:
       attn_impl: flash
       attn_type: "grouped_query_attention"
+      use_attn_mask: False
       kv_nheads: 8
       attn_pdrop: 0.0
     norm_config:
@@ -149,8 +151,9 @@ parameters:
       clipping_threshold: 1.0
     low_precision_layernorm: {}
   precision: amp_bf16
-  eval_interval: "1000ba"
-  max_duration: "6ep"
+  eval_interval: "100ba"
+  eval_subset_num_batches: 100
+  max_duration: "1000ba"
   fsdp_config:
     sharding_strategy: FULL_SHARD
     mixed_precision: DEFAULT
@@ -165,6 +168,49 @@ parameters:
     lr_monitor: {}
     memory_monitor: {}
     runtime_estimator: {}
+    cell-classification:
+      cfg:
+        ensemble_to_gene_path:
+          remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/vevo_v2_ensembl_to_gene_name.json"
+          local: "cell-classification-data/datasets/vevo_v2_ensembl_to_gene_name.json"
+        datasets:
+          zheng:
+            train:
+              remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/zheng/zheng_train.h5ad"
+              local: "cell-classification-data/data/datasets/zheng/zheng_train.h5ad"
+            test:
+              remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/zheng/zheng_test.h5ad"
+              local: "cell-classification-data/data/datasets/zheng/zheng_test.h5ad"
+            class_names:
+              remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/zheng/zheng-str_label.npy"
+              local: "cell-classification-data/data/datasets/zheng/zheng-str_label.npy"
+          Segerstolpe:
+            train:
+              remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/Segerstolpe/Segerstolpe_train.h5ad"
+              local: "cell-classification-data/data/datasets/Segerstolpe/Segerstolpe_train.h5ad"
+            test:
+              remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/Segerstolpe/Segerstolpe_test.h5ad"
+              local: "cell-classification-data/data/datasets/Segerstolpe/Segerstolpe_test.h5ad"
+            class_names:
+              remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/Segerstolpe/Segerstolpe-str_label.npy"
+              local: "cell-classification-data/data/datasets/Segerstolpe/Segerstolpe-str_label.npy"
+          kim:
+            train:
+              remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/kim2020/kim_train.h5ad"
+              local: "cell-classification-data/data/datasets/kim2020_lung/kim_train.h5ad"
+            test:
+              remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/kim2020/kim_test.h5ad"
+              local: "cell-classification-data/data/datasets/kim2020_lung/kim_test.h5ad"
+            class_names:
+              remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/kim2020/kim-str_label.npy"
+              local: "cell-classification-data/data/datasets/kim2020_lung/kim-str_label.npy"
+        logistic:
+          max_iter: 5000
+          solver: "lbfgs"
+          multi_class: "multinomial"
+          random_state: 42
+        batch_size: 100
+        seq_len: 2048
   loggers:
     wandb:
       project: vevo-scgpt
@@ -172,4 +218,3 @@ parameters:
   save_folder: "s3://vevo-ml-datasets/vevo-scgpt/models/{run_name}"
   save_interval: "2000ba"
   autoresume: True
-  compile_config: {}
