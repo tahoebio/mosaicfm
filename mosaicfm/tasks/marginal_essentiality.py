@@ -73,14 +73,19 @@ class MarginalEssentiality(Callback):
             )
 
         # load task DataFrame
-        task_df = pd.read_csv(local_label_path)
-        task_df = task_df[task_df["gene_id"].isin(genes)]
-        genes = task_df["gene_id"].to_numpy()
-        labels = task_df["essential"].to_numpy()
-
-        # get mean embeddings for each gene
         gene2idx = vocab.get_stoi()
         gene_names = list(gene2idx.keys())
+        task_df = pd.read_csv(local_label_path)
+        task_df = task_df[task_df["gene_id"].isin(genes)]
+        task_df = task_df[task_df["gene_id"].isin(gene_names)]
+        genes = task_df["gene_id"].to_numpy()
+        labels = task_df["essential"].to_numpy()
+        print(len(genes))
+        print(genes[:10])
+        print(len(gene_names))
+        print(gene_names[:10])
+
+        # get mean embeddings for each gene
         mean_embs = np.zeros((len(genes), gene_embeddings.shape[1]))
         for i, g in enumerate(genes):
             mean_embs[i] = gene_embeddings[np.where(gene_names == g)[0][0]]
