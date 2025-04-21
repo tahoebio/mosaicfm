@@ -153,7 +153,7 @@ parameters:
   precision: amp_bf16
   eval_interval: "100ba"
   eval_subset_num_batches: 100
-  max_duration: "1000ba"
+  max_duration: "200ba"
   fsdp_config:
     sharding_strategy: FULL_SHARD
     mixed_precision: DEFAULT

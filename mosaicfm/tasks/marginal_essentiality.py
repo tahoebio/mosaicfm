@@ -56,6 +56,7 @@ class MarginalEssentiality(Callback):
         print(f"matched {np.sum(gene_ids_in_vocab >= 0)}/{len(gene_ids_in_vocab)} genes in vocabulary of size {len(vocab)}")
 
         # get gene embeddings
+        from mosaicfm.tasks import get_batch_embeddings
         with FSDP.summon_full_params(self.model.model):
             _, gene_embeddings = get_batch_embeddings(
                 adata=adata,
