@@ -169,8 +169,9 @@ parameters:
     memory_monitor: {}
     runtime_estimator: {}
     marginal-essentiality:
-      remote_dir: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/marginal-essentiality"
-      local_dir: "marginal-essentiality-data"
+      cfg:
+        remote_dir: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/marginal-essentiality"
+        local_dir: "marginal-essentiality-data"
     cell-classification:
       cfg:
         ensemble_to_gene_path:
