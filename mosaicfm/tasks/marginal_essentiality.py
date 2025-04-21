@@ -74,6 +74,7 @@ class MarginalEssentiality(Callback):
 
         # load task DataFrame
         task_df = pd.read_csv(local_label_path)
+        task_df = task_df[task_df["gene_id"].isin(genes)]
         genes = task_df["gene_id"].to_numpy()
         labels = task_df["essential"].to_numpy()
 
