@@ -54,6 +54,8 @@ class MarginalEssentiality(Callback):
         genes = adata.var["feature_id"].tolist()
         gene_ids = np.array([vocab[gene] for gene in genes], dtype=int)
         print(f"matched {np.sum(gene_ids_in_vocab >= 0)}/{len(gene_ids_in_vocab)} genes in vocabulary of size {len(vocab)}")
+        adata = adata.copy()
+        adata.X = adata.X.todense()
 
         # get gene embeddings
         from mosaicfm.tasks import get_batch_embeddings
