@@ -205,9 +205,13 @@ class SCGPTModel(nn.Module):
         pcpt_values = self.expression_encoder(pcpt_values)  # (batch, pcpt_len, embsize)
         pcpt_total_embs = pcpt_token_embs + pcpt_values  # (batch, pcpt_len, embsize)
 
-        # calculate chemical embedding and put it in its correct place (after <cls>)
-        drug_embs = self.chem_encoder(drug_ids)  # (batch, embsize)
-        pcpt_total_embs[:, 1, :] = drug_embs  # (batch, pcpt_len, embsize)
+        # calculate chemical embedding and add it to all tokens including <cls>
+        drug_emb = self.chem_encoder(drug_ids)  # (batch, embsize)
+        pcpt_total_embs += drug_emb.unsqueeze(1)  # (batch, pcpt_len, embsize)
+
+        print(
+            f"pcpt_genes shape: {pcpt_genes.shape}, pcpt_values shape: {pcpt_values.shape}, pcpt_total_embs shape: {pcpt_total_embs.shape}, drug_ids shape: {drug_ids.shape}",
+        )
 
         if gen_genes is not None:
             gen_token_embs = self.gene_encoder(gen_genes)  # (batch, gen_len, embsize)
