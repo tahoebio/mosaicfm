@@ -12,7 +12,9 @@ from composer.core.callback import Callback
 # register custom callbacks
 from llmfoundry.registry import callbacks
 from mosaicfm.tasks import CellClassification
+from mosaicfm.tasks import MarginalEssentiality
 callbacks.register("cell-classification", func=CellClassification)
+callbacks.register("marginal-essentiality", func=MarginalEssentiality)
 
 from composer.utils import dist, get_device, reproducibility
 from llmfoundry.utils.builders import (
