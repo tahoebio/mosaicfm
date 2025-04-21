@@ -104,14 +104,15 @@ class SCGPTModel(nn.Module):
         else:
             raise ValueError(f"Unknown input_emb_style: {self.input_emb_style}")
 
-        chem_encoder_config = model_config.chemical_encoder
-        self.chem_encoder = ChemEncoder(
-            drug_fps_path=chem_encoder_config.get("drug_fps_path"),
-            d_out=self.d_model,
-            padding_idx=chem_encoder_config.get("padding_idx", 0),
-            activation=chem_encoder_config.get("activate", "leaky_relu"),
-            freeze=chem_encoder_config.get("freeze", False),
-        )
+        if model_config.chemical_encoder is not None:
+            chem_encoder_config = model_config.chemical_encoder
+            self.chem_encoder = ChemEncoder(
+                drug_fps_path=chem_encoder_config.get("drug_fps_path"),
+                d_out=self.d_model,
+                padding_idx=chem_encoder_config.get("padding_idx", 0),
+                activation=chem_encoder_config.get("activate", "leaky_relu"),
+                freeze=chem_encoder_config.get("freeze", False),
+            )
 
         # Disable re-inititialization for the entire subtree of chem_encoder
         for module in self.chem_encoder.modules():
@@ -153,6 +154,14 @@ class SCGPTModel(nn.Module):
                 scaled_dot_product=mvc_config.get("scaled_dot_product", False),
             )
 
+        if model_config.chemical_decoder is not None:
+            chem_decoder_config = model_config.chemical_decoder
+            self.chem_decoder = MVCDecoder(
+                d_model=self.d_model,
+                arch_style=chem_decoder_config.arch_style,
+                query_activation=chem_decoder_config.query_activation,
+                scaled_dot_product=chem_decoder_config.get("scaled_dot_product", False),
+            )
         if self.init_device != "meta":
             log.info(
                 'MosaicML recommends using config.init_device="meta" with Composer + FSDP for faster initialization.',
@@ -236,9 +245,10 @@ class SCGPTModel(nn.Module):
 
         return pcpt_output, gen_output
 
-    def _get_cell_emb_from_layer(
+    def _get_token_emb_from_layer(
         self,
         layer_output: Tensor,
+        style: str,
         weights: Tensor = None,
     ) -> Tensor:
         """
@@ -250,11 +260,13 @@ class SCGPTModel(nn.Module):
         Returns:
             :obj:`Tensor`: shape (batch, embsize)
         """
-        if self.cell_emb_style == "cls":
+        if style == "cls":
             cell_emb = layer_output[:, 0, :]  # (batch, embsize)
-        elif self.cell_emb_style == "avg-pool":
+        elif style == "chem":
+            cell_emb = layer_output[:, 1, :]  # (batch, embsize)
+        elif style == "avg-pool":
             cell_emb = torch.mean(layer_output, dim=1)
-        elif self.cell_emb_style == "w-pool":
+        elif style == "w-pool":
             if weights is None:
                 raise ValueError("weights is required when cell_emb_style is w-pool")
             if weights.dim() != 2:  # noqa: PLR2004
@@ -270,8 +282,12 @@ class SCGPTModel(nn.Module):
         transformer_output: Tensor,
         CLS: bool = False,
         MVC: bool = False,
+        CHEM: bool = False,
     ) -> Mapping[str, Tensor]:
-        cell_emb = self._get_cell_emb_from_layer(transformer_output)
+        cell_emb = self._get_token_emb_from_layer(
+            transformer_output,
+            style=self.cell_emb_style,
+        )
         output["cell_emb"] = cell_emb
 
         if CLS:
@@ -282,6 +298,13 @@ class SCGPTModel(nn.Module):
                 self.cur_gene_token_embs,
             )
             output["mvc_output"] = mvc_output["pred"]  # (batch, seq_len)
+        if CHEM:
+            chem_emb = self._get_token_emb_from_layer(transformer_output, style="chem")
+            chem_output = self.chem_decoder(
+                chem_emb,
+                self.cur_gene_token_embs,
+            )
+            output["chem_output"] = chem_output["pred"]
         return output
 
     def forward(
@@ -312,6 +335,7 @@ class SCGPTModel(nn.Module):
         gen_key_padding_mask: Tensor,
         CLS: bool = False,
         MVC: bool = False,
+        CHEM: bool = False,
         input_cell_emb: Optional[Tensor] = None,
     ) -> Mapping[str, Tensor]:
         """
@@ -363,6 +387,7 @@ class SCGPTModel(nn.Module):
             transformer_output,
             CLS=CLS,
             MVC=MVC,
+            CHEM=CHEM,
         )
 
         return output
@@ -374,6 +399,7 @@ class SCGPTModel(nn.Module):
         src_key_padding_mask: Tensor,
         CLS: bool = False,
         MVC: bool = False,
+        CHEM: bool = False,
     ) -> Mapping[str, Tensor]:
         """
         Args:
@@ -385,7 +411,8 @@ class SCGPTModel(nn.Module):
                 (CLS) output
             MVC (:obj:`bool`): if True, return the masked value prediction for cell
                 embedding MVC output
-
+            CHEM (:obj:`bool`): if True, return the masked value prediction for chemical
+                embedding Chem_decoder output
         Returns:
             dict of output Tensors.
         """
@@ -400,6 +427,7 @@ class SCGPTModel(nn.Module):
             transformer_output,
             CLS=CLS,
             MVC=MVC,
+            CHEM=CHEM,
         )
 
         return output
@@ -429,6 +457,7 @@ class ComposerSCGPTModel(ComposerModel):
         self.train_metrics = {
             "MSE": MaskedMseMetric(name="MSE"),
             "MVC": MaskedMseMetric(name="MVC"),
+            "CHEM": MaskedMseMetric(name="CHEM"),
         }
         self.standard_scale_outputs = model_config.get("standard_scale_outputs", False)
         self.collator_config = collator_config
@@ -436,6 +465,7 @@ class ComposerSCGPTModel(ComposerModel):
         self.val_metrics = {
             "MSE": MaskedMseMetric(name="MSE"),
             "MVC": MaskedMseMetric(name="MVC"),
+            "CHEM": MaskedMseMetric(name="CHEM"),
             "Spearman": MaskedSpearmanMetric(name="Spearman"),
         }
         if self.use_cell_conditioned_generation:
@@ -461,6 +491,7 @@ class ComposerSCGPTModel(ComposerModel):
             gen_gene,
             gen_key_padding_mask,
             MVC=True,
+            CHEM=True,
             generative_training=True,
         )
         if self.use_cell_conditioned_generation:
@@ -503,6 +534,11 @@ class ComposerSCGPTModel(ComposerModel):
             gen_expr_target,
             positions_to_match,
         )
+        loss_chem = self.criterion(
+            outputs["chem_output"][:, pcpt_gene.shape[1] :],
+            gen_expr_target,
+            positions_to_match,
+        )
         if self.use_cell_conditioned_generation:
             loss_gen = self.criterion(
                 outputs["cell_conditioned_gen_preds"],
@@ -511,7 +547,7 @@ class ComposerSCGPTModel(ComposerModel):
             )
             loss = (loss_mse + loss_mvc + loss_gen) / 3
         else:
-            loss = (loss_mse + loss_mvc) / 2
+            loss = (loss_mse + loss_mvc + loss_chem) / 3
         return loss
 
     def update_metric(self, batch, outputs, metric):
@@ -526,6 +562,8 @@ class ComposerSCGPTModel(ComposerModel):
             preds = outputs["gen_preds"]
         elif metric.name == "MVC":
             preds = outputs["mvc_output"][:, pcpt_gene.shape[1] :]
+        elif metric.name == "CHEM":
+            preds = outputs["chem_output"][:, pcpt_gene.shape[1] :]
         elif metric.name == "GEN":
             assert self.use_cell_conditioned_generation
             preds = outputs["cell_conditioned_gen_preds"]
