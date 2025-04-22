@@ -13,8 +13,6 @@ from sklearn.metrics import roc_auc_score
 from torch.distributed.fsdp.fully_sharded_data_parallel import \
     FullyShardedDataParallel as FSDP
 
-from mosaicfm.model import ComposerSCGPTModel
-from mosaicfm.tokenizer import GeneVocab
 from mosaicfm.utils import download_file_from_s3_url
 
 class MarginalEssentiality(Callback):
@@ -62,7 +60,7 @@ class MarginalEssentiality(Callback):
         with FSDP.summon_full_params(self.model.model):
             _, gene_embeddings = get_batch_embeddings(
                 adata=adata,
-                model=self.model.model.module,
+                model=self.model.model,
                 vocab=self.vocab,
                 gene_ids=gene_ids,
                 model_cfg=self.model_config,

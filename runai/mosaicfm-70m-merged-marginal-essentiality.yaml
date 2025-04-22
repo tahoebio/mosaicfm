@@ -22,10 +22,11 @@ model:
   use_glu: False
   cell_emb_style: cls
   attn_config:
-    attn_impl: triton
+    attn_impl: flash
     attn_type: "grouped_query_attention"
     kv_nheads: 8
     attn_pdrop: 0.0
+    use_attn_mask: False
   norm_config:
     norm_type: "layernorm"
     eps: 1.0e-5
@@ -62,10 +63,10 @@ train_loader:
   dataset:
     streams:
       tahoe:
-        remote: None
+        remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/tahoe_100m_MDS_v1/train/"
         local: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/tahoe_merged_MDS/train"
       cellxgene:
-        remote: None
+        remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/cellxgene_2025_01_21_merged_MDS/train/"
         local: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/cellxgene_merged_MDS/train"
     download_timeout: 300
     allow_unsafe_types: True
@@ -81,10 +82,10 @@ valid_loader:
   dataset:
     streams:
       tahoe:
-        remote: None
+        remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/tahoe_100m_MDS_v1/valid/"
         local: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/tahoe_merged_MDS/valid"
       cellxgene:
-        remote: None
+        remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/cellxgene_2025_01_21_merged_MDS/valid/"
         local: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/cellxgene_merged_MDS/valid"
     download_timeout: 300
     allow_unsafe_types: True
@@ -116,7 +117,8 @@ algorithms:
   low_precision_layernorm: {}
 precision: amp_bf16
 eval_interval: "1000ba"
-max_duration: "6ep"
+eval_subset_num_batches: 100
+max_duration: "10ba"
 fsdp_config:
   sharding_strategy: FULL_SHARD
   mixed_precision: DEFAULT
@@ -132,50 +134,52 @@ callbacks:
   memory_monitor: {}
   runtime_estimator: {}
   marginal-essentiality:
-    remote_dir: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/marginal-essentiality"
-    local_dir: "/vevo/data/download/marginal-essentiality"
-  cell-classification:
-    ensemble_to_gene_path: 
-      remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/vevo_v2_ensembl_to_gene_name.json"
-      local: "/vevo/data/datasets/vevo_v2_ensembl_to_gene_name.json"
-    datasets:  
-      zheng:
-        train: 
-          remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/zheng/zheng_train.h5ad"
-          local: "/vevo/data/datasets/zheng/zheng_train.h5ad"
-        test:
-          remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/zheng/zheng_test.h5ad"
-          local: "/vevo/data/datasets/zheng/zheng_test.h5ad"
-        class_names:
-          remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/zheng/zheng-str_label.npy"
-          local: "/vevo/data/datasets/zheng/zheng-str_label.npy"
-      Segerstolpe: 
-        train:
-          remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/Segerstolpe/Segerstolpe_train.h5ad"
-          local: "/vevo/data/datasets/Segerstolpe/Segerstolpe_train.h5ad"
-        test:
-          remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/Segerstolpe/Segerstolpe_test.h5ad"
-          local: "/vevo/data/datasets/Segerstolpe/Segerstolpe_test.h5ad"
-        class_names:
-          remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/Segerstolpe/Segerstolpe-str_label.npy"
-          local: "/vevo/data/datasets/Segerstolpe/Segerstolpe-str_label.npy"
-      kim: 
-        train:
-          remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/kim2020/kim_train.h5ad"
-          local: "/vevo/data/datasets/kim2020_lung/kim_train.h5ad"
-        test:
-          remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/kim2020/kim_test.h5ad"
-          local: "/vevo/data/datasets/kim2020_lung/kim_test.h5ad"
-        class_names:
-          remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/kim2020/kim-str_label.npy"
-          local: "/vevo/data/datasets/kim2020_lung/kim-str_label.npy"
-    logistic:
-      max_iter: 5000
-      solver: "lbfgs"
-      multi_class: "multinomial"
-      random_state: 42
-    batch_size: 100
-    seq_len: 2048  
+    cfg:
+      remote_dir: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/marginal-essentiality"
+      local_dir: "/vevo/data/download/marginal-essentiality"
+  # cell-classification:
+  #   cfg:
+  #     ensemble_to_gene_path: 
+  #       remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/vevo_v2_ensembl_to_gene_name.json"
+  #       local: "/vevo/data/datasets/vevo_v2_ensembl_to_gene_name.json"
+  #     datasets:  
+  #       zheng:
+  #         train: 
+  #           remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/zheng/zheng_train.h5ad"
+  #           local: "/vevo/data/datasets/zheng/zheng_train.h5ad"
+  #         test:
+  #           remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/zheng/zheng_test.h5ad"
+  #           local: "/vevo/data/datasets/zheng/zheng_test.h5ad"
+  #         class_names:
+  #           remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/zheng/zheng-str_label.npy"
+  #           local: "/vevo/data/datasets/zheng/zheng-str_label.npy"
+  #       Segerstolpe: 
+  #         train:
+  #           remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/Segerstolpe/Segerstolpe_train.h5ad"
+  #           local: "/vevo/data/datasets/Segerstolpe/Segerstolpe_train.h5ad"
+  #         test:
+  #           remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/Segerstolpe/Segerstolpe_test.h5ad"
+  #           local: "/vevo/data/datasets/Segerstolpe/Segerstolpe_test.h5ad"
+  #         class_names:
+  #           remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/Segerstolpe/Segerstolpe-str_label.npy"
+  #           local: "/vevo/data/datasets/Segerstolpe/Segerstolpe-str_label.npy"
+  #       kim: 
+  #         train:
+  #           remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/kim2020/kim_train.h5ad"
+  #           local: "/vevo/data/datasets/kim2020_lung/kim_train.h5ad"
+  #         test:
+  #           remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/kim2020/kim_test.h5ad"
+  #           local: "/vevo/data/datasets/kim2020_lung/kim_test.h5ad"
+  #         class_names:
+  #           remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/kim2020/kim-str_label.npy"
+  #           local: "/vevo/data/datasets/kim2020_lung/kim-str_label.npy"
+  #     logistic:
+  #       max_iter: 5000
+  #       solver: "lbfgs"
+  #       multi_class: "multinomial"
+  #       random_state: 42
+  #     batch_size: 100
+  #     seq_len: 2048  
 loggers:
   wandb:
     project: vevo-scgpt
