@@ -156,7 +156,7 @@ def main(cfg: DictConfig) -> composer.Trainer:
         cfg,
         "eval_subset_num_batches",
         must_exist=False,
-        default_value=None,
+        default_value=-1,
     )
     precision: str = pop_config(cfg, "precision", must_exist=True)
 
@@ -380,6 +380,22 @@ def main(cfg: DictConfig) -> composer.Trainer:
     model_config.vocab_size = len(vocab)
     log.info(f"Setting vocab size to: {len(vocab)}")
     logged_cfg.update({"vocab_size": len(vocab)})
+
+    # Pretrained Gene Embeddings
+    gene_embed_config = model_config.gene_encoder.get("gene_embedding", None)
+    if gene_embed_config is None:
+        log.info(
+            "No pretrained gene embedding provided. Continuing with random initialization of gene embedding.",
+        )
+    else:
+        log.info("Downloading gene embedding...")
+        if dist.get_local_rank() == 0:
+            download_file_from_s3_url(
+                s3_url=gene_embed_config["remote"],
+                local_file_path=gene_embed_config["local"],
+            )
+        with dist.local_rank_zero_download_and_wait(gene_embed_config["local"]):
+            dist.barrier()
 
     # Scheduler
     scheduler_name: str = scheduler_config.pop("name")

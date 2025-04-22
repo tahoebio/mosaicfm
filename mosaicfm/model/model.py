@@ -66,12 +66,16 @@ class SCGPTModel(nn.Module):
         if self.cell_emb_style not in ["cls", "avg-pool", "w-pool"]:
             raise ValueError(f"Unknown cell_emb_style: {self.cell_emb_style}")
 
+        # Inititalize the gene encoder with embedding if provided
+        gene_embedding_config = self.gene_encoder_config.get("gene_embedding", None)
         self.gene_encoder = GeneEncoder(
             self.vocab_size,
             self.d_model,
             padding_idx=self.pad_token_id,
             use_norm=self.gene_encoder_config["use_norm"],
+            pretrained_config=gene_embedding_config,
         )
+
         self.flag_encoder = nn.Embedding(2, self.d_model)
 
         expression_encoder_config = model_config.expression_encoder
@@ -146,6 +150,10 @@ class SCGPTModel(nn.Module):
             self.apply(self.param_init_fn)
 
     def param_init_fn(self, module: nn.Module):
+        # any module marked with skip_init should be left alone
+        if getattr(module, "skip_init", False):
+            print(f"[param_init_fn] Skipping init for {module.__class__.__name__}")
+            return
         init_fn_name = self.init_config["name"]
         param_init_fns.get(init_fn_name)(
             module=module,
