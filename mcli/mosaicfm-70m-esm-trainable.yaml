@@ -73,7 +73,7 @@ parameters:
       use_norm: True
       gene_embedding:
         remote: "s3://vevo-ml-datasets/esm-embeddings/esmc_pretrained_gene_encoder.pt"
-        local: "/vevo/repo/mosaicfm/datasets/esmc_pretrained_gene_encoder.pt"
+        local: "esmc_pretrained_gene_encoder.pt"
         fix_embedding: false # set to false to be trainable
     mvc:
       arch_style: "inner product"
