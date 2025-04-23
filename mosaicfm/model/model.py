@@ -209,10 +209,6 @@ class SCGPTModel(nn.Module):
         drug_emb = self.chem_encoder(drug_ids)  # (batch, embsize)
         pcpt_total_embs += drug_emb.unsqueeze(1)  # (batch, pcpt_len, embsize)
 
-        print(
-            f"pcpt_genes shape: {pcpt_genes.shape}, pcpt_values shape: {pcpt_values.shape}, pcpt_total_embs shape: {pcpt_total_embs.shape}, drug_ids shape: {drug_ids.shape}",
-        )
-
         if gen_genes is not None:
             gen_token_embs = self.gene_encoder(gen_genes)  # (batch, gen_len, embsize)
             self.cur_gene_token_embs = torch.cat(
