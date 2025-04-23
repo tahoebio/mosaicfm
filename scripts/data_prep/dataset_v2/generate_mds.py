@@ -54,7 +54,14 @@ def process_data(
         log.warning(f"No files found in {dataset_path}. Exiting processing.")
         return
 
-    arg_tuples = each_task(out_root, dataset_path, columns, compression, hashes, min_length)
+    arg_tuples = each_task(
+        out_root,
+        dataset_path,
+        columns,
+        compression,
+        hashes,
+        min_length,
+    )
 
     with Pool(initializer=init_worker, processes=num_proc) as pool:
         pool.imap_unordered(convert_to_mds, arg_tuples)
