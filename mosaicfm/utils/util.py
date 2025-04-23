@@ -21,6 +21,7 @@ def add_file_handler(logger: logging.Logger, log_file_path: Path):
     h.setLevel(logger.level)
     logger.addHandler(h)
 
+
 def download_file_from_s3_url(s3_url, local_file_path):
     """Downloads a file from an S3 URL to the specified local path.
 
@@ -41,10 +42,10 @@ def download_file_from_s3_url(s3_url, local_file_path):
     # Ensure bucket name and file key are not empty
     assert bucket_name, "Bucket name cannot be empty"
     assert s3_file_key, "S3 file key cannot be empty"
-    
+
     # Ensure the directory for local_file_path exists (if any)
     local_path = Path(local_file_path)
-    if local_path.parent != Path('.'):
+    if local_path.parent != Path("."):
         local_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Create an S3 client

@@ -11,9 +11,8 @@ from composer.loggers import Logger
 from composer.utils import dist
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import kneighbors_graph
-from torch.distributed.fsdp.fully_sharded_data_parallel import (
-    FullyShardedDataParallel as FSDP,
-)
+from torch.distributed.fsdp.fully_sharded_data_parallel import \
+    FullyShardedDataParallel as FSDP
 
 from mosaicfm.utils import download_file_from_s3_url
 
@@ -222,4 +221,3 @@ class CellClassification(Callback):
         adata.X = adata.X.todense()
 
         return adata, gene_ids, labels, label_names
-    

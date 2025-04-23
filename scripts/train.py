@@ -6,13 +6,15 @@ import os
 import sys
 import warnings
 from typing import Any, Dict, List, Optional, Union
+
 import composer
 import torch
 from composer.core.callback import Callback
 # register custom callbacks
 from llmfoundry.registry import callbacks
-from mosaicfm.tasks import CellClassification
-from mosaicfm.tasks import MarginalEssentiality
+
+from mosaicfm.tasks import CellClassification, MarginalEssentiality
+
 callbacks.register("cell-classification", func=CellClassification)
 callbacks.register("marginal-essentiality", func=MarginalEssentiality)
 

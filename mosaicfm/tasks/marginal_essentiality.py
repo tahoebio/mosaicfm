@@ -7,18 +7,19 @@ import scanpy as sc
 from composer import State
 from composer.core.callback import Callback
 from composer.loggers import Logger
-from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import train_test_split
 from torch.distributed.fsdp.fully_sharded_data_parallel import \
     FullyShardedDataParallel as FSDP
 
 from mosaicfm.utils import download_file_from_s3_url
 
+
 class MarginalEssentiality(Callback):
     def __init__(
         self,
-        cfg: dict
+        cfg: dict,
     ):
 
         super().__init__()
@@ -40,23 +41,34 @@ class MarginalEssentiality(Callback):
         # download task data from S3
         local_adata_path = os.path.join(self.task_cfg["local_dir"], "ccle.h5ad")
         local_label_path = os.path.join(self.task_cfg["local_dir"], "labels.csv")
-        download_file_from_s3_url(s3_url=os.path.join(self.task_cfg["remote_dir"], "ccle.h5ad"), local_file_path=local_adata_path)
-        download_file_from_s3_url(s3_url=os.path.join(self.task_cfg["remote_dir"], "labels.csv"), local_file_path=local_label_path)
+        download_file_from_s3_url(
+            s3_url=os.path.join(self.task_cfg["remote_dir"], "ccle.h5ad"),
+            local_file_path=local_adata_path,
+        )
+        download_file_from_s3_url(
+            s3_url=os.path.join(self.task_cfg["remote_dir"], "labels.csv"),
+            local_file_path=local_label_path,
+        )
 
         # load and process AnnData of CCLE counts
         vocab = self.vocab
         adata = sc.read_h5ad(local_adata_path)
-        adata.var["id_in_vocab"] = [vocab[gene] if gene in vocab else -1 for gene in adata.var["feature_id"]]
+        adata.var["id_in_vocab"] = [
+            vocab[gene] if gene in vocab else -1 for gene in adata.var["feature_id"]
+        ]
         adata = adata[:, adata.var["id_in_vocab"] >= 0]
         gene_ids_in_vocab = np.array(adata.var["id_in_vocab"])
         genes = adata.var["feature_id"].tolist()
         gene_ids = np.array([vocab[gene] for gene in genes], dtype=int)
-        print(f"matched {np.sum(gene_ids_in_vocab >= 0)}/{len(gene_ids_in_vocab)} genes in vocabulary of size {len(vocab)}")
+        print(
+            f"matched {np.sum(gene_ids_in_vocab >= 0)}/{len(gene_ids_in_vocab)} genes in vocabulary of size {len(vocab)}",
+        )
         adata = adata.copy()
         adata.X = adata.X.todense()
 
         # get gene embeddings
         from mosaicfm.tasks import get_batch_embeddings
+
         with FSDP.summon_full_params(self.model.model):
             _, gene_embeddings = get_batch_embeddings(
                 adata=adata,
@@ -67,7 +79,7 @@ class MarginalEssentiality(Callback):
                 collator_cfg=self.collator_config,
                 batch_size=self.batch_size,
                 max_length=self.seq_len,
-                return_gene_embeddings=True
+                return_gene_embeddings=True,
             )
 
         # load task DataFrame
@@ -89,7 +101,7 @@ class MarginalEssentiality(Callback):
             mean_embs,
             labels,
             test_size=0.2,
-            random_state=42
+            random_state=42,
         )
 
         # train classifer and report auROC on test set
