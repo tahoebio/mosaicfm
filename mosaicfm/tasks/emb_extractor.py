@@ -25,23 +25,20 @@ def get_batch_embeddings(
     max_length: Optional[int] = None,
     return_gene_embeddings: bool = False,
 ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
-    """Extracts cell embeddings from an AnnData object using a pre-trained SCGPT
-    model.
+    """Get the cell embeddings for a batch of cells.
 
     Args:
-        adata (AnnData): The AnnData object containing the count matrix and gene metadata.
-        model (SCGPTModel): The pre-trained SCGPT model used for embedding extraction.
-        vocab (GeneVocab): The vocabulary mapping for gene tokens.
-        model_cfg (DictConfig): Configuration for the SCGPT model.
-        collator_cfg (DictConfig): Configuration for the data collator.
-        gene_ids (Optional[np.ndarray]): Array of gene IDs to use for embedding. If None,
-            it defaults to the "id_in_vocab" column in `adata.var`.
-        batch_size (int): The batch size for data loading. Defaults to 8.
-        num_workers (int): Number of workers for the DataLoader. Defaults to 8.
-        max_length (Optional[int]): Maximum sequence length for the model. If None,
-            it defaults to the number of genes.
-        return_gene_embeddings (bool): Whether to return gene embeddings in addition
-            to cell embeddings. Defaults to False.
+        adata (AnnData): The AnnData object.
+        model (SCGPTModel): The model.
+        vocab (GeneVocab): The gene-to-ID vocabulary
+        model_cfg (DictConfig, optional): The model configuration dictionary.
+        collator_cfg (DictConfig, optional): The collator configuration dictionary.
+        gene_ids (np.ndarray, optional): The gene vocabulary ids.
+            Defaults to None, in which case the gene IDs are taken from adata.var["id_in_vocab"].
+        batch_size (int): The batch size for inference. Defaults to 8.
+        num_workers (int): The number of workers for the data loader. Defaults to 8.
+        max_length (int, optional): The maximum context length. Defaults to number of genes in the adata.
+        return_gene_embeddings (bool): Whether to return the mean gene embeddings as well. Defaults to False.
 
     Returns:
         Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
@@ -73,18 +70,18 @@ def get_batch_embeddings(
     collate_fn = DataCollator(
         vocab=vocab,
         do_padding=collator_cfg.get("do_padding", True),
-        unexp_padding=False,
+        unexp_padding=False,  # Disable padding with random unexpressed genes for inference
         pad_token_id=collator_cfg.pad_token_id,
         pad_value=collator_cfg.pad_value,
-        do_mlm=False,
+        do_mlm=False,  # Disable masking for inference
         do_binning=collator_cfg.get("do_binning", True),
         log_transform=collator_cfg.get("log_transform", False),
         target_sum=collator_cfg.get("target_sum"),
-        mlm_probability=collator_cfg.mlm_probability,
+        mlm_probability=collator_cfg.mlm_probability,  # Not used
         mask_value=collator_cfg.mask_value,
         max_length=max_length,
-        sampling=collator_cfg.sampling,
-        data_style="pcpt",
+        sampling=collator_cfg.sampling,  # Turned on since max-length can be less than the number of genes
+        data_style="pcpt",  # Disable splitting of genes into pcpt and gen for inference
         num_bins=collator_cfg.get("num_bins", 51),
         right_binning=collator_cfg.get("right_binning", False),
     )
@@ -100,7 +97,6 @@ def get_batch_embeddings(
 
     device = next(model.parameters()).device
     cell_embeddings = np.zeros((len(dataset), model_cfg["d_model"]), dtype=np.float32)
-
     if return_gene_embeddings:
         gene_embeddings = torch.zeros(
             len(vocab),

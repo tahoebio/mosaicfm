@@ -22,9 +22,8 @@ model:
   use_glu: False
   cell_emb_style: cls
   attn_config:
-    attn_impl: flash
+    attn_impl: triton
     attn_type: "grouped_query_attention"
-    use_attn_mask: false
     kv_nheads: 8
     attn_pdrop: 0.0
   norm_config:
@@ -63,11 +62,11 @@ train_loader:
   dataset:
     streams:
       tahoe:
-        remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/tahoe_100m_MDS_v2/train/"
-        local: "mds-data-folder/tahoe/train"
-      scbasecamp:
-        remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/scbasecamp_2025_02_25_MDS_v2/train/"
-        local: "mds-data-folder/scbasecamp/train"
+        remote: None
+        local: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/tahoe_merged_MDS/train"
+      cellxgene:
+        remote: None
+        local: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/cellxgene_merged_MDS/train"
     download_timeout: 300
     allow_unsafe_types: True
     shuffle: True
@@ -82,11 +81,11 @@ valid_loader:
   dataset:
     streams:
       tahoe:
-        remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/tahoe_100m_MDS_v2/valid/"
-        local: "mds-data-folder/tahoe/val"
-      scbasecamp:
-        remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/scbasecamp_2025_02_25_MDS_v2/valid/"
-        local: "mds-data-folder/scbasecamp/val"
+        remote: None
+        local: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/tahoe_merged_MDS/valid"
+      cellxgene:
+        remote: None
+        local: "/vevo/mosaicfm/datasets/vevo_merged_jan_2025/cellxgene_merged_MDS/valid"
     download_timeout: 300
     allow_unsafe_types: True
     shuffle: False
@@ -116,17 +115,16 @@ algorithms:
     clipping_threshold: 1.0
   low_precision_layernorm: {}
 precision: amp_bf16
-eval_interval: "100ba"
-eval_subset_num_batches: 100
+eval_interval: "1000ba"
 max_duration: "6ep"
-#fsdp_config:
-#  sharding_strategy: FULL_SHARD
-#  mixed_precision: DEFAULT
-#  activation_checkpointing: false
-#  activation_checkpointing_reentrant: false
-#  activation_cpu_offload: false
-#  limit_all_gathers: true
-#  verbose: true
+fsdp_config:
+  sharding_strategy: FULL_SHARD
+  mixed_precision: DEFAULT
+  activation_checkpointing: false
+  activation_checkpointing_reentrant: false
+  activation_cpu_offload: false
+  limit_all_gathers: true
+  verbose: true
 callbacks:
   speed_monitor:
     window_size: 20
