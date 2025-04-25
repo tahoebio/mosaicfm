@@ -170,51 +170,21 @@ parameters:
     runtime_estimator: {}
     marginal-essentiality:
       cfg:
-        remote_dir: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/marginal-essentiality"
-        local_dir: "marginal-essentiality-data"
-    # cell-classification:
-    #   cfg:
-    #     ensemble_to_gene_path:
-    #       remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/vevo_v2_ensembl_to_gene_name.json"
-    #       local: "cell-classification-data/datasets/vevo_v2_ensembl_to_gene_name.json"
-    #     datasets:
-    #       zheng:
-    #         train:
-    #           remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/zheng/zheng_train.h5ad"
-    #           local: "cell-classification-data/data/datasets/zheng/zheng_train.h5ad"
-    #         test:
-    #           remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/zheng/zheng_test.h5ad"
-    #           local: "cell-classification-data/data/datasets/zheng/zheng_test.h5ad"
-    #         class_names:
-    #           remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/zheng/zheng-str_label.npy"
-    #           local: "cell-classification-data/data/datasets/zheng/zheng-str_label.npy"
-    #       Segerstolpe:
-    #         train:
-    #           remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/Segerstolpe/Segerstolpe_train.h5ad"
-    #           local: "cell-classification-data/data/datasets/Segerstolpe/Segerstolpe_train.h5ad"
-    #         test:
-    #           remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/Segerstolpe/Segerstolpe_test.h5ad"
-    #           local: "cell-classification-data/data/datasets/Segerstolpe/Segerstolpe_test.h5ad"
-    #         class_names:
-    #           remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/Segerstolpe/Segerstolpe-str_label.npy"
-    #           local: "cell-classification-data/data/datasets/Segerstolpe/Segerstolpe-str_label.npy"
-    #       kim:
-    #         train:
-    #           remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/kim2020/kim_train.h5ad"
-    #           local: "cell-classification-data/data/datasets/kim2020_lung/kim_train.h5ad"
-    #         test:
-    #           remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/kim2020/kim_test.h5ad"
-    #           local: "cell-classification-data/data/datasets/kim2020_lung/kim_test.h5ad"
-    #         class_names:
-    #           remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/kim2020/kim-str_label.npy"
-    #           local: "cell-classification-data/data/datasets/kim2020_lung/kim-str_label.npy"
-    #     logistic:
-    #       max_iter: 5000
-    #       solver: "lbfgs"
-    #       multi_class: "multinomial"
-    #       random_state: 42
-    #     batch_size: 100
-    #     seq_len: 2048
+        batch_size: 32
+        seq_len: 8192
+        adata:
+          remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/marginal-essentiality/ccle.h5ad"
+          local: "/vevo/data/download/marginal-essentiality/ccle.h5ad"
+          gene_column: "feature_id"
+        labels:
+          remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/marginal-essentiality/labels.csv"
+          local: "/vevo/data/download/marginal-essentiality/labels.csv"
+          gene_column: "gene_id"
+          label_column: "essential"
+        classifier:
+          n_jobs: 32
+          test_size: 0.2
+          random_state: 42
   loggers:
     wandb:
       project: vevo-scgpt

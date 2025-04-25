@@ -23,10 +23,11 @@ class MarginalEssentiality(Callback):
     ):
 
         super().__init__()
-        self.task_cfg = cfg
-        self.batch_size = self.task_cfg.get("batch_size", 32)
-        self.seq_len = self.task_cfg.get("seq_len", 8192)
-        self.rf_jobs = self.task_cfg.get("rf_jobs", 8)
+        self.batch_size = cfg.get("batch_size", 32)
+        self.seq_len = cfg.get("seq_len", 8192)
+        self.adata_cfg = cfg.get("adata")
+        self.labels_cfg = cfg.get("labels")
+        self.classifier_cfg = cfg.get("classifier")
 
     def fit_end(self, state: State, logger: Logger):
 
@@ -39,32 +40,28 @@ class MarginalEssentiality(Callback):
         self.run_name = state.run_name
 
         # download task data from S3
-        local_adata_path = os.path.join(self.task_cfg["local_dir"], "ccle.h5ad")
-        local_label_path = os.path.join(self.task_cfg["local_dir"], "labels.csv")
         download_file_from_s3_url(
-            s3_url=os.path.join(self.task_cfg["remote_dir"], "ccle.h5ad"),
-            local_file_path=local_adata_path,
+            s3_url=self.adata_cfg["remote"],
+            local_file_path=self.adata_cfg["local"],
         )
         download_file_from_s3_url(
-            s3_url=os.path.join(self.task_cfg["remote_dir"], "labels.csv"),
-            local_file_path=local_label_path,
+            s3_url=self.labels_cfg["remote"],
+            local_file_path=self.labels_cfg["local"],
         )
 
         # load and process AnnData of CCLE counts
         vocab = self.vocab
-        adata = sc.read_h5ad(local_adata_path)
+        adata = sc.read_h5ad(self.adata_cfg["local"])
         adata.var["id_in_vocab"] = [
-            vocab[gene] if gene in vocab else -1 for gene in adata.var["feature_id"]
+            vocab[gene] if gene in vocab else -1 for gene in adata.var[self.adata_cfg["gene_column"]]
         ]
         adata = adata[:, adata.var["id_in_vocab"] >= 0]
         gene_ids_in_vocab = np.array(adata.var["id_in_vocab"])
-        genes = adata.var["feature_id"].tolist()
+        genes = adata.var[self.adata_cfg["gene_column"]].tolist()
         gene_ids = np.array([vocab[gene] for gene in genes], dtype=int)
         print(
             f"matched {np.sum(gene_ids_in_vocab >= 0)}/{len(gene_ids_in_vocab)} genes in vocabulary of size {len(vocab)}",
         )
-        adata = adata.copy()
-        adata.X = adata.X.todense()
 
         # get gene embeddings
         from mosaicfm.tasks import get_batch_embeddings
@@ -85,11 +82,11 @@ class MarginalEssentiality(Callback):
         # load task DataFrame
         gene2idx = vocab.get_stoi()
         gene_names = np.array(list(gene2idx.keys()))
-        task_df = pd.read_csv(local_label_path)
-        task_df = task_df[task_df["gene_id"].isin(genes)]
-        task_df = task_df[task_df["gene_id"].isin(gene_names)]
-        genes = task_df["gene_id"].to_numpy()
-        labels = task_df["essential"].to_numpy()
+        task_df = pd.read_csv(self.labels_cfg["local"])
+        task_df = task_df[task_df[self.labels_cfg["gene_column"]].isin(genes)]
+        task_df = task_df[task_df[self.labels_cfg["gene_column"]].isin(gene_names)]
+        genes = task_df[self.labels_cfg["gene_column"]].to_numpy()
+        labels = task_df[self.labels_cfg["label_column"]].to_numpy()
 
         # get mean embeddings for each gene
         mean_embs = np.zeros((len(genes), gene_embeddings.shape[1]))
@@ -100,12 +97,12 @@ class MarginalEssentiality(Callback):
         emb_train, emb_test, labels_train, labels_test = train_test_split(
             mean_embs,
             labels,
-            test_size=0.2,
-            random_state=42,
+            test_size=self.classifier_cfg["test_size"],
+            random_state=self.classifier_cfg["random_state"],
         )
 
         # train classifer and report auROC on test set
-        rf = RandomForestClassifier(n_jobs=self.rf_jobs)
+        rf = RandomForestClassifier(n_jobs=self.classifier_cfg["n_jobs"])
         rf.fit(emb_train, labels_train)
         test_probas = rf.predict_proba(emb_test)
         auroc = float(roc_auc_score(labels_test, test_probas[:, 1]))
