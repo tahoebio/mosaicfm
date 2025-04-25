@@ -77,6 +77,7 @@ def build_dataloader(
         num_bins=collator_cfg.get("num_bins", 51),
         right_binning=collator_cfg.get("right_binning", False),
         keep_first_n_tokens=collator_cfg.get("keep_first_n_tokens", 1),
+        drug_mask_prob=collator_cfg.get("drug_mask_prob", 0.5),
     )
 
     data_loader = StreamingDataLoader(

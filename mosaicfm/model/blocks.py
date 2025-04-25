@@ -517,6 +517,34 @@ class ExprDecoder(nn.Module):
         return {"pred": pred_value}
 
 
+class ChemPredictor(nn.Module):
+    """Consists of three linear functions and leaky-relu as an activation
+    function."""
+
+    def __init__(
+        self,
+        d_model: int,
+        n_outputs: int = 1,
+        n_layers: int = 2,
+        activation: str = "leaky_relu",
+    ):
+        super().__init__()
+        d_in = d_model
+        self.activation = resolve_ffn_act_fn({"name": activation})
+        self.linear_layers = nn.ModuleList(
+            [nn.Linear(d_in, d_model) for _ in range(n_layers)],
+        )
+        self.out_proj = nn.Linear(d_model, n_outputs)
+
+    def forward(self, x: Tensor) -> Dict[str, Tensor]:
+        """X is the max-pooled pcpt genes except cls, drug tokens."""
+        for layer in self.linear_layers:
+            x = self.activation(layer(x))
+        pred_value = self.out_proj(x)
+
+        return {"pred": pred_value}
+
+
 class AffineExprDecoder(torch.nn.Module):
     def __init__(
         self,

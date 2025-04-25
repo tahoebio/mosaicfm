@@ -73,6 +73,7 @@ class DataCollator(DefaultDataCollator):
         num_bins: int = 51,
         right_binning: bool = False,
         return_tensors: str = "pt",
+        drug_mask_prob: float = 0.5,
     ):
         super().__init__(return_tensors=return_tensors)
         self.do_padding = do_padding
@@ -93,6 +94,7 @@ class DataCollator(DefaultDataCollator):
         self.num_bins = num_bins
         self.right_binning = right_binning
         self.drug_token = vocab["<drug>"]
+        self.drug_mask_prob = drug_mask_prob
 
         # filter non_special gene_ids
         gene_to_id = vocab.get_stoi()
@@ -171,6 +173,19 @@ class DataCollator(DefaultDataCollator):
                 if "drug" in example and example["drug"] in self.drug_to_id
                 else "<pad>"
             )
+            example["raw_drug"] = torch.as_tensor(
+                self.drug_to_id[drug],
+                dtype=torch.long,
+            )
+
+            # Randomly mask the drug token with 50% probability
+            if "drug" in example and example["drug"] in self.drug_to_id:
+                drug = (
+                    example["drug"]
+                    if np.random.rand() > self.drug_mask_prob
+                    else "<mask-drug>"
+                )
+
             example["drug_id"] = torch.as_tensor(self.drug_to_id[drug], dtype=torch.int)
             if isinstance(example["genes"], list):
                 example["genes"] = torch.as_tensor(example["genes"])
@@ -408,6 +423,7 @@ class DataCollator(DefaultDataCollator):
         padded_gen_expressions = []
         padded_gen_original_exp = []
         drug_ids = []
+        raw_drugs = []
 
         for i in range(len(examples)):
             genes = examples[i]["genes"]
@@ -486,9 +502,13 @@ class DataCollator(DefaultDataCollator):
             padded_gen_expressions.append(gen_expressions)
             padded_gen_original_exp.append(gen_original_exp)
 
-            # add drug id, id=0 corresponds to <pad> which indicates that drug is not available
+            # add drug id, id=0 corresponds to <pad> which indicates that drug is not available, id=1 corresponds to <mask-drug>
             drug = examples[i]["drug_id"]
             drug_ids.append(drug)
+
+            # add raw drug id (unmasked)
+            raw_drug = examples[i]["raw_drug"]
+            raw_drugs.append(raw_drug)
 
         padded_pcpt_genes = torch.stack(padded_pcpt_genes, dim=0)
         padded_pcpt_expressions = torch.stack(padded_pcpt_expressions, dim=0)
@@ -497,6 +517,7 @@ class DataCollator(DefaultDataCollator):
         padded_gen_expressions = torch.stack(padded_gen_expressions, dim=0)
         padded_gen_original_exp = torch.stack(padded_gen_original_exp, dim=0)
         drug_ids = torch.stack(drug_ids)
+        raw_drugs = torch.stack(raw_drugs)
         data_dict = {
             "pcpt_gene": padded_pcpt_genes,
             "pcpt_expr": padded_pcpt_expressions,
@@ -505,6 +526,7 @@ class DataCollator(DefaultDataCollator):
             "gen_expr_target": padded_gen_expressions,
             "gen_expr_raw": padded_gen_original_exp,  # "raw" means "not binned"
             "drug_ids": drug_ids,
+            "raw_drug_ids": raw_drugs,
         }
 
         return data_dict

@@ -10,11 +10,18 @@ from llmfoundry.layers_registry import param_init_fns
 from omegaconf import DictConfig
 from torch import Tensor, nn
 
-from mosaicfm.loss import MaskedMseMetric, MaskedSpearmanMetric, masked_mse_loss
+from mosaicfm.loss import (
+    MaskedCEMetric,
+    MaskedMseMetric,
+    MaskedSpearmanMetric,
+    masked_ce_loss,
+    masked_mse_loss,
+)
 from mosaicfm.model.blocks import (
     AffineExprDecoder,
     CategoryValueEncoder,
     ChemEncoder,
+    ChemPredictor,
     ContinuousValueEncoder,
     ExprDecoder,
     GeneEncoder,
@@ -112,6 +119,15 @@ class SCGPTModel(nn.Module):
                 padding_idx=chem_encoder_config.get("padding_idx", 0),
                 activation=chem_encoder_config.get("activate", "leaky_relu"),
                 freeze=chem_encoder_config.get("freeze", False),
+            )
+
+        if model_config.chemical_predictor is not None:
+            chem_predictor_config = model_config.chemical_predictor
+            self.chem_predictor = ChemPredictor(
+                d_model=self.d_model,
+                n_outputs=chem_predictor_config.get("n_outputs"),
+                n_layers=chem_predictor_config.get("n_layers", 2),
+                activation=chem_predictor_config.get("activation", "leaky_relu"),
             )
 
         # Disable re-inititialization for the entire subtree of chem_encoder
@@ -371,11 +387,11 @@ class SCGPTModel(nn.Module):
             gen_key_padding_mask,
             input_cell_emb=input_cell_emb,
         )
+
         if gen_output is None:  # type: ignore
             transformer_output = pcpt_output
         else:
             transformer_output = torch.cat([pcpt_output, gen_output], dim=1)
-
         output = {}
         decoder_output = self.expression_decoder(transformer_output)
         full_preds = decoder_output["pred"]  # (batch, seq_len)
@@ -389,6 +405,11 @@ class SCGPTModel(nn.Module):
             MVC=MVC,
             CHEM=CHEM,
         )
+
+        # predict drug id from pcpt tokens except for CLS and DRUG
+        pooled_pcpt_output = pcpt_output[:, 2:, :].mean(dim=1)  # (batch, embsize)
+        drug_logits = self.chem_predictor(pooled_pcpt_output)  # (batch, n_drugs)
+        output["drug_logits"] = drug_logits["pred"]
 
         return output
 
@@ -443,7 +464,11 @@ class ComposerSCGPTModel(ComposerModel):
     def __init__(self, model_config, collator_config, device=None):
         super().__init__()
         self.criterion = masked_mse_loss
+        self.classification_criterion = masked_ce_loss
+
         self.pad_token_id = collator_config.pad_token_id
+        self.drug_mask_value = collator_config.drug_mask_value
+        self.w_drug_loss = model_config.chemical_predictor.get("w_drug_loss", 0)
         self.use_cell_conditioned_generation = model_config.get(
             "use_cell_conditioned_generation",
             False,
@@ -457,6 +482,7 @@ class ComposerSCGPTModel(ComposerModel):
         self.train_metrics = {
             "MSE": MaskedMseMetric(name="MSE"),
             "MVC": MaskedMseMetric(name="MVC"),
+            "DRUG": MaskedCEMetric(name="DRUG"),
             "CHEM": MaskedMseMetric(name="CHEM"),
         }
         self.standard_scale_outputs = model_config.get("standard_scale_outputs", False)
@@ -465,6 +491,7 @@ class ComposerSCGPTModel(ComposerModel):
         self.val_metrics = {
             "MSE": MaskedMseMetric(name="MSE"),
             "MVC": MaskedMseMetric(name="MVC"),
+            "DRUG": MaskedCEMetric(name="DRUG"),
             "CHEM": MaskedMseMetric(name="CHEM"),
             "Spearman": MaskedSpearmanMetric(name="Spearman"),
         }
@@ -534,11 +561,19 @@ class ComposerSCGPTModel(ComposerModel):
             gen_expr_target,
             positions_to_match,
         )
+
         loss_chem = self.criterion(
             outputs["chem_output"][:, pcpt_gene.shape[1] :],
             gen_expr_target,
             positions_to_match,
         )
+
+        loss_drug = self.classification_criterion(
+            outputs["drug_logits"],
+            batch["raw_drug_ids"],
+            torch.ones_like(batch["raw_drug_ids"], dtype=torch.bool),
+        )
+
         if self.use_cell_conditioned_generation:
             loss_gen = self.criterion(
                 outputs["cell_conditioned_gen_preds"],
@@ -547,7 +582,7 @@ class ComposerSCGPTModel(ComposerModel):
             )
             loss = (loss_mse + loss_mvc + loss_gen) / 3
         else:
-            loss = (loss_mse + loss_mvc + loss_chem) / 3
+            loss = (loss_mse + loss_mvc + loss_chem) / 3 + self.w_drug_loss * loss_drug
         return loss
 
     def update_metric(self, batch, outputs, metric):
@@ -564,6 +599,10 @@ class ComposerSCGPTModel(ComposerModel):
             preds = outputs["mvc_output"][:, pcpt_gene.shape[1] :]
         elif metric.name == "CHEM":
             preds = outputs["chem_output"][:, pcpt_gene.shape[1] :]
+        elif metric.name == "DRUG":
+            preds = outputs["drug_logits"]
+            target = batch["raw_drug_ids"]
+            mask = torch.ones_like(target, dtype=torch.bool)
         elif metric.name == "GEN":
             assert self.use_cell_conditioned_generation
             preds = outputs["cell_conditioned_gen_preds"]
