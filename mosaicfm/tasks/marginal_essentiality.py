@@ -1,5 +1,4 @@
 # Copyright (C) Vevo Therapeutics 2025. All rights reserved.
-import os
 
 import numpy as np
 import pandas as pd
@@ -53,7 +52,8 @@ class MarginalEssentiality(Callback):
         vocab = self.vocab
         adata = sc.read_h5ad(self.adata_cfg["local"])
         adata.var["id_in_vocab"] = [
-            vocab[gene] if gene in vocab else -1 for gene in adata.var[self.adata_cfg["gene_column"]]
+            vocab[gene] if gene in vocab else -1
+            for gene in adata.var[self.adata_cfg["gene_column"]]
         ]
         adata = adata[:, adata.var["id_in_vocab"] >= 0]
         gene_ids_in_vocab = np.array(adata.var["id_in_vocab"])
