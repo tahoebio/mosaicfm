@@ -67,7 +67,7 @@ repos:
 - repo: https://github.com/PyCQA/docformatter
   # rev: v1.7.6
   # as long as https://github.com/PyCQA/docformatter/pull/287 is not yet released
-  rev: v1.7.5
+  rev: 06907d0
   hooks:
   - id: docformatter
     args: [--in-place, --wrap-summaries=80, --wrap-descriptions=80, --black,--style=google]
