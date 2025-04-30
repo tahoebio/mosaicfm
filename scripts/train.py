@@ -12,9 +12,10 @@ import torch
 from composer.core.callback import Callback
 from llmfoundry.registry import callbacks
 
-from mosaicfm.tasks import CellClassification
+from mosaicfm.tasks import CellClassification, MarginalEssentiality
 
 callbacks.register("cell-classification", func=CellClassification)
+callbacks.register("marginal-essentiality", func=MarginalEssentiality)
 
 from composer.utils import dist, get_device, reproducibility
 from llmfoundry.utils.builders import (
