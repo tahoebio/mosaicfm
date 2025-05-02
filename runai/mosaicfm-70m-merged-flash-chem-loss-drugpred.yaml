@@ -162,4 +162,4 @@ loggers:
 save_folder: "s3://vevo-ml-datasets/vevo-scgpt/models/{run_name}"
 save_interval: "2000ba"
 autoresume: False
-run_name: "mosaicfm-70m-merged-flash-chem+loss"
+run_name: "mosaicfm-70m-merged-flash-chem-loss-drugPred"

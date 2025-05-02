@@ -109,11 +109,13 @@ class MaskedCEMetric(Metric):
     ) -> None:
         if preds.shape[0] != target.shape[0]:
             raise ValueError("preds and target must have the same batch size")
-        self.sum_ce += torch.nn.functional.cross_entropy(
-            preds * mask.unsqueeze(1),
-            target * mask,
-            reduction="sum",
+        ce_loss = torch.nn.functional.cross_entropy(
+            preds,
+            target,
+            reduction="none",
         )
+        masked_ce_loss = ce_loss * mask
+        self.sum_ce += masked_ce_loss.sum()
         self.sum_mask += mask.sum()
 
     def compute(self) -> torch.Tensor:
