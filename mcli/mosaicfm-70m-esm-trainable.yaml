@@ -153,7 +153,7 @@ parameters:
       clipping_threshold: 1.0
     low_precision_layernorm: {}
   precision: amp_bf16
-  eval_interval: "100ba"
+  eval_interval: "5000ba"
   eval_subset_num_batches: 100
   max_duration: "16700ba" # 16700 * 4800 = 80.16 M cells
   fsdp_config:
