@@ -88,8 +88,8 @@ class MarginalEssentiality(Callback):
         # restore training mode
         if was_training:
             self.model.train()
-    
-    
+        print(f"Restored the model's {was_training} mode!")
+
         # load task DataFrame
         gene2idx = vocab.get_stoi()
         gene_names = np.array(list(gene2idx.keys()))

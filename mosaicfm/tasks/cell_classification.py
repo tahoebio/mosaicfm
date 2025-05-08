@@ -53,7 +53,7 @@ class CellClassification(Callback):
     def fit_end(self, state: State, logger: Logger):
 
         self.model = state.model
-        
+
         # set model to eval mode
         was_training = self.model.training
         if was_training:
@@ -78,6 +78,7 @@ class CellClassification(Callback):
         # restore training mode
         if was_training:
             self.model.train()
+        print(f"Restored the model's {was_training} mode!")
 
     def cell_classfication(self, dataset: str, logger: Logger):
         # step 1: load data train, test
