@@ -54,10 +54,7 @@ class CellClassification(Callback):
 
         self.model = state.model
 
-        # set model to eval mode
-        was_training = self.model.training
-        if was_training:
-            self.model.eval()
+        self.was_training = self.model.training
         self.model_config = self.model.model_config
         self.collator_config = self.model.collator_config
         self.vocab = state.train_dataloader.collate_fn.vocab
@@ -75,11 +72,10 @@ class CellClassification(Callback):
 
             self.cell_classfication(datast_name, logger)
 
-        # restore training mode
-        if was_training:
+        # set model back to training mode
+        if self.was_training:
             self.model.train()
-        print(f"Restored the model's {was_training} mode!")
-
+        
     def cell_classfication(self, dataset: str, logger: Logger):
         # step 1: load data train, test
         class_idx_to_name = np.load(
@@ -99,10 +95,15 @@ class CellClassification(Callback):
         # step 2: extract mosaicfm embeddings
         from mosaicfm.tasks import get_batch_embeddings
 
-        with FSDP.summon_full_params(self.model.model):
+        with FSDP.summon_full_params(self.model.model) as full_model:
+
+            # set model to eval mode
+            if self.was_training:
+                full_model.eval()
+
             cell_embeddings_train = get_batch_embeddings(
                 adata=adata_train,
-                model=self.model.model,
+                model=full_model,
                 vocab=self.vocab,
                 gene_ids=gene_ids_train,
                 model_cfg=self.model_config,
@@ -113,7 +114,7 @@ class CellClassification(Callback):
             )
             cell_embeddings_test = get_batch_embeddings(
                 adata=adata_test,
-                model=self.model.model,
+                model=full_model,
                 vocab=self.vocab,
                 gene_ids=gene_ids_test,
                 model_cfg=self.model_config,
@@ -122,6 +123,10 @@ class CellClassification(Callback):
                 max_length=self.seq_len,
                 return_gene_embeddings=False,
             )
+
+            # restore model to training mode
+            if self.was_training:
+                full_model.train()
 
         # step 3: train classifier
         clf = LogisticRegression(
