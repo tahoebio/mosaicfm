@@ -10,6 +10,13 @@ from typing import Any, Dict, List, Optional, Union
 import composer
 import torch
 from composer.core.callback import Callback
+from llmfoundry.registry import callbacks
+
+from mosaicfm.tasks import CellClassification, MarginalEssentiality
+
+callbacks.register("cell-classification", func=CellClassification)
+callbacks.register("marginal-essentiality", func=MarginalEssentiality)
+
 from composer.utils import dist, get_device, reproducibility
 from llmfoundry.utils.builders import (
     build_algorithm,
@@ -69,6 +76,18 @@ def main(cfg: DictConfig) -> composer.Trainer:
 
     # Mandatory model training configs
     model_config: DictConfig = pop_config(cfg, "model", must_exist=True)
+    attn_backend: str = model_config["attn_config"]["attn_impl"]
+    if attn_backend == "triton":
+        raise ValueError(
+            "Support for the triton backend has been removed in llm-foundry v0.8, please use torch or flash instead",
+        )
+    elif (attn_backend == "flash") and model_config["attn_config"].get(
+        "use_attn_mask",
+        True,
+    ):
+        raise ValueError(
+            "Attention mask/bias is not supported with the flash-backend, to enable use_attn_mask switch to the torch-backend",
+        )
     optimizer_config: Dict[str, Any] = pop_config(
         cfg,
         "optimizer",
@@ -85,14 +104,7 @@ def main(cfg: DictConfig) -> composer.Trainer:
     valid_loader_config: DictConfig = pop_config(cfg, "valid_loader", must_exist=True)
     collator_config: DictConfig = pop_config(cfg, "collator", must_exist=True)
     vocab_config: DictConfig = pop_config(cfg, "vocabulary", must_exist=True)
-    # Optional deepspeed, FSDP, and torch-compile config
-    deepspeed_config: Optional[Dict[str, Any]] = pop_config(
-        cfg,
-        "deepspeed_config",
-        must_exist=False,
-        default_value=None,
-        convert=True,
-    )
+    # Optional FSDP, and torch-compile config
     compile_config: Optional[Dict[str, Any]] = pop_config(
         cfg,
         "compile_config",
@@ -106,8 +118,6 @@ def main(cfg: DictConfig) -> composer.Trainer:
         default_value=None,
         convert=True,
     )
-    if (fsdp_config is not None) and (deepspeed_config is not None):
-        raise ValueError("FSDP and DeepSpeed cannot be used together.")
 
     # Optional logging, evaluation and callback configs
     logger_configs: Optional[DictConfig] = pop_config(
@@ -149,10 +159,17 @@ def main(cfg: DictConfig) -> composer.Trainer:
         default_value="500ba",
         must_exist=False,
     )
+    eval_subset_num_batches: Optional[int] = pop_config(
+        cfg,
+        "eval_subset_num_batches",
+        must_exist=False,
+        default_value=None,
+    )
     precision: str = pop_config(cfg, "precision", must_exist=True)
+    model_config["precision"] = precision
 
     # Optional parameters will be set to default values if not specified.
-    default_run_name: str = os.environ.get("RUN_NAME", "mosaicfm")
+    default_run_name: str = os.environ.get("RUN_NAME")
     run_name: str = pop_config(
         cfg,
         "run_name",
@@ -247,6 +264,10 @@ def main(cfg: DictConfig) -> composer.Trainer:
         must_exist=False,
         default_value="auto",
     )
+    if (compile_config is not None) and (device_train_microbatch_size == "auto"):
+        raise ValueError(
+            "Automatic micro-batching is not supported when using torch-compile",
+        )
 
     load_path: str = pop_config(cfg, "load_path", must_exist=False, default_value=None)
     load_weights_only: bool = pop_config(
@@ -382,16 +403,6 @@ def main(cfg: DictConfig) -> composer.Trainer:
         else []
     )
 
-    # Callbacks
-    callbacks: List[Callback] = (
-        [
-            build_callback(str(name), callback_cfg, om.to_container(logged_cfg))
-            for name, callback_cfg in callback_configs.items()
-        ]
-        if callback_configs
-        else []
-    )
-
     # Algorithms
     algorithms = (
         [
@@ -402,16 +413,28 @@ def main(cfg: DictConfig) -> composer.Trainer:
         else None
     )
 
+    # Callbacks
+    callbacks: List[Callback] = (
+        [
+            build_callback(str(name), callback_cfg, om.to_container(logged_cfg))
+            for name, callback_cfg in callback_configs.items()
+        ]
+        if callback_configs
+        else []
+    )
+
     # Build DataLoaders
     log.info("Building DataLoaders...")
     clean_stale_shared_memory()
     train_loader = build_dataloader(
+        vocab=vocab,
         loader_cfg=train_loader_config,
         collator_cfg=collator_config,
         device_batch_size=device_train_batch_size,
     )
     log.info(f"train set number of samples: {(train_loader.dataloader.dataset.size)}")
     valid_loader = build_dataloader(
+        vocab=vocab,
         loader_cfg=valid_loader_config,
         collator_cfg=collator_config,
         device_batch_size=device_eval_batch_size,
@@ -462,6 +485,7 @@ def main(cfg: DictConfig) -> composer.Trainer:
         schedulers=scheduler,
         max_duration=max_duration,
         eval_interval=eval_interval,
+        eval_subset_num_batches=eval_subset_num_batches,
         progress_bar=progress_bar,
         log_to_console=log_to_console,
         console_log_interval=console_log_interval,
@@ -470,8 +494,7 @@ def main(cfg: DictConfig) -> composer.Trainer:
         precision=precision,
         algorithms=algorithms,
         device_train_microbatch_size=device_train_microbatch_size,
-        fsdp_config=fsdp_config,
-        deepspeed_config=deepspeed_config,
+        parallelism_config={"fsdp": fsdp_config},
         save_folder=save_folder,
         save_filename=save_filename,
         save_latest_filename=save_latest_filename,
@@ -490,7 +513,18 @@ def main(cfg: DictConfig) -> composer.Trainer:
 
     if should_log_config:
         log.info("Logging config")
-        log_config(logged_cfg)
+        resolved_run_name = trainer.state.run_name
+        logged_cfg.update(
+            {
+                "run_name": resolved_run_name,
+                "save_folder": composer.utils.partial_format(
+                    save_folder,
+                    run_name=resolved_run_name,
+                ),
+            },
+        )
+        for logger in loggers:
+            log_config(logger, om.to_container(logged_cfg, resolve=True))
     torch.cuda.empty_cache()
     gc.collect()
 

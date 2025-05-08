@@ -2,5 +2,5 @@
 cd /src/mosaicfm
 pip install -e . --no-deps
 cd scripts
-composer train.py /src/mosaicfm/runai/mosaicfm-70m-tahoe.yaml
+composer train.py /src/mosaicfm/gcloud/mosaicfm-70m-merged.yaml
 ```

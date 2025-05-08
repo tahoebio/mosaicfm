@@ -155,4 +155,7 @@ scripts/modality_pred/data
 figures/
 .micromamba/
 scripts/perturbation/debug/
-runai/config_perts/*adamson*
+runai/*/
+vocab.json
+debug_notebooks/
+ckpt/

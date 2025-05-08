@@ -5,19 +5,25 @@ import numpy as np
 import torch
 from transformers import DefaultDataCollator
 
+from mosaicfm.tokenizer import GeneVocab
+
 
 class DataCollator(DefaultDataCollator):
     """Data collator for the mask value learning task. It pads the sequences to
     the maximum length in the batch and masks the gene expression values.
 
     Args:
+        vocab (:obj: GeneVocab): The vocabulary that includes the gene ids, name, special tokens, etc.
         do_padding (:obj:`bool`): whether to pad the sequences to the max length.
+        unexp_padding (:obj:`bool`): whether to pad the sequences with unexpressed genes. If False it pads with pad token.
         pad_token_id (:obj:`int`, optional): the token id to use for padding.
             This is required if do_padding is True.
         pad_value (:obj:`int`): the value to use for padding the expression
             values to the max length.
         do_mlm (:obj:`bool`): whether to do masking with MLM.
         do_binning (:obj:`bool`): whether to bin the expression values.
+        log_transform (:obj:`bool`): whether to transform the gene expression values.
+        target_sum (:obj:`int`): The target sum of the normalized counts before log1p transformation.
         mlm_probability (:obj:`float`): the probability of masking with MLM.
         mask_value (:obj:`int`): the value to fill at the expression postions
             that are masked.
@@ -43,11 +49,15 @@ class DataCollator(DefaultDataCollator):
 
     def __init__(
         self,
+        vocab: GeneVocab,
         do_padding: bool = True,
+        unexp_padding: bool = False,
         pad_token_id: Optional[int] = None,
         pad_value: int = 0,
         do_mlm: bool = True,
         do_binning: bool = True,
+        log_transform: bool = False,
+        target_sum: int = 10000,
         mlm_probability: float = 0.15,
         mask_value: int = -1,
         max_length: Optional[int] = None,
@@ -61,10 +71,13 @@ class DataCollator(DefaultDataCollator):
     ):
         super().__init__(return_tensors=return_tensors)
         self.do_padding = do_padding
+        self.unexp_padding = unexp_padding
         self.pad_token_id = pad_token_id
         self.pad_value = pad_value
         self.do_mlm = do_mlm
         self.do_binning = do_binning
+        self.log_transform = log_transform
+        self.target_sum = target_sum
         self.mlm_probability = mlm_probability
         self.mask_value = mask_value
         self.max_length = max_length
@@ -75,13 +88,29 @@ class DataCollator(DefaultDataCollator):
         self.num_bins = num_bins
         self.right_binning = right_binning
 
+        # filter non_special gene_ids
+        gene_to_id = vocab.get_stoi()
+        self.non_special_gene_ids = torch.tensor(
+            [
+                gene_id
+                for gene_name, gene_id in gene_to_id.items()
+                if not gene_name.startswith("<")
+            ],
+        )
+        self.vocab = vocab
+
     def __post_init__(self):
         if self.do_padding:
             if self.pad_token_id is None:
                 raise ValueError("`pad_token_id` is required if `do_padding`.")
             if self.max_length is None:
                 raise ValueError("`max_length` is required if `do_padding`.")
-
+        if self.do_binning and self.log_transform:
+            raise ValueError(
+                "Only one of `do_binning` and `log_transform` can be True.",
+            )
+        if self.unexp_padding and not self.do_padding:
+            raise ValueError("`do_padding` should be be True if `unexp_padding`.")
         if isinstance(self.mlm_probability, float):
             if self.mlm_probability <= 0 or self.mlm_probability >= 1:
                 raise ValueError("`mlm_probability` must be between 0 and 1.")
@@ -122,8 +151,10 @@ class DataCollator(DefaultDataCollator):
         for example in examples:
             if isinstance(example["genes"], list):
                 example["genes"] = torch.as_tensor(example["genes"])
+            example["genes"] = torch.squeeze(example["genes"])
             if isinstance(example["expressions"], list):
                 example["expressions"] = torch.as_tensor(example["expressions"])
+            example["expressions"] = torch.squeeze(example["expressions"])
         if len(self.reserve_keys) > 0:
             assert all(key in examples[0] for key in self.reserve_keys), (
                 f"reserve_keys must be a subset of the keys in the examples. "
@@ -180,6 +211,14 @@ class DataCollator(DefaultDataCollator):
                     row=expressions[self.keep_first_n_tokens :],
                     n_bins=self.num_bins,
                     right=self.right_binning,
+                )
+            elif self.log_transform:
+                assert not (
+                    self.do_binning
+                ), "Only one of `do_binning` and `log_transform` can be True."
+                expressions[self.keep_first_n_tokens :] = log_transform(
+                    row=expressions[self.keep_first_n_tokens :],
+                    target_sum=self.target_sum,
                 )
             genes, expressions = self._sample_or_truncate_plus_pad(
                 genes,
@@ -253,6 +292,14 @@ class DataCollator(DefaultDataCollator):
                     row=expressions[self.keep_first_n_tokens :],
                     n_bins=self.num_bins,
                     right=self.right_binning,
+                )
+            elif self.log_transform:
+                assert not (
+                    self.do_binning
+                ), "Only one of `do_binning` and `log_transform` can be True."
+                expressions[self.keep_first_n_tokens :] = log_transform(
+                    row=expressions[self.keep_first_n_tokens :],
+                    target_sum=self.target_sum,
                 )
             genes, expressions = self._sample_or_truncate_plus_pad(
                 genes,
@@ -345,6 +392,14 @@ class DataCollator(DefaultDataCollator):
                     row=expressions[self.keep_first_n_tokens :],
                     n_bins=self.num_bins,
                     right=self.right_binning,
+                )
+            elif self.log_transform:
+                assert not (
+                    self.do_binning
+                ), "Only one of `do_binning` and `log_transform` can be True."
+                expressions[self.keep_first_n_tokens :] = log_transform(
+                    row=expressions[self.keep_first_n_tokens :],
+                    target_sum=self.target_sum,
                 )
 
             (
@@ -516,7 +571,10 @@ class DataCollator(DefaultDataCollator):
                 return self._sample(*arrays, max_length=max_length)
             else:
                 return tuple(array[:max_length] for array in arrays)
-        else:  # pad
+        # We either pad by pad_token or pad by unexpressed genes
+        elif self.unexp_padding:
+            return self._pad_unexp_genes(*arrays, max_length=max_length)
+        else:  # pad with pad token
             return self._pad(*arrays, max_length=max_length)
 
     def _sample(
@@ -567,6 +625,71 @@ class DataCollator(DefaultDataCollator):
             )
             for i, array in enumerate(arrays)
         )
+
+    def _pad_unexp_genes(
+        self,
+        *arrays: torch.Tensor,  # First tensor is genes, rest are  expressions respectively processed expressions, raw expressions (optional)
+        max_length: int,
+    ):
+        device = arrays[0].device
+
+        num_to_pad = max_length - len(arrays[0])
+
+        # get list of all valid gene ids
+        non_special_gene_ids = self.non_special_gene_ids.to(device)
+
+        # filter out the expressed gene ids
+        mask = ~torch.isin(non_special_gene_ids, arrays[0])
+        unexp_genes = non_special_gene_ids[mask]
+
+        # randomly sample from unexpressed gene ids
+        idx = torch.randperm(unexp_genes.shape[0])[:num_to_pad]
+        random_unexp_genes = unexp_genes[idx]
+
+        # Pad the first tensor(gene_ids) with random unexpressed gene ids and the rest (expressions) with zeros.
+        return tuple(
+            torch.cat(
+                [
+                    array,
+                    (
+                        random_unexp_genes
+                        if i == 0
+                        else torch.zeros(num_to_pad, dtype=array.dtype, device=device)
+                    ),
+                ],
+            )
+            for i, array in enumerate(arrays)
+        )
+
+
+@torch.no_grad()
+def log_transform(
+    row: Union[np.ndarray, torch.Tensor],
+    target_sum: int,
+    eps: float = 1e-9,
+) -> Union[np.ndarray, torch.Tensor]:
+    """Log transform the row.
+
+    Args:
+        row (Union[np.ndarray, torch.Tensor]):
+            The row to be log-1p-transformed.
+        target_sum (int, optional):
+            The target sum of the normalized row before log-1p transformation. Default to 10000.
+        eps (float, optional):
+            The epsilon value used for normalization.
+    Returns:
+        Union[np.ndarray, torch.Tensor]:
+            The log-1p-transformed row.
+    """
+    dtype = row.dtype
+    is_tensor = isinstance(row, torch.Tensor)
+    if not is_tensor:
+        row = torch.as_tensor(row)
+    row = (row / (row.sum(axis=-1, keepdims=True) + eps)) * target_sum
+    row = torch.log1p(row)
+    if not is_tensor:
+        return row.numpy().astype(dtype)
+    return row
 
 
 @torch.no_grad()
