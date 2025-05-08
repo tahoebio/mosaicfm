@@ -53,7 +53,11 @@ class CellClassification(Callback):
     def fit_end(self, state: State, logger: Logger):
 
         self.model = state.model
-        self.model.eval()
+        
+        # set model to eval mode
+        was_training = self.model.training
+        if was_training:
+            self.model.eval()
         self.model_config = self.model.model_config
         self.collator_config = self.model.collator_config
         self.vocab = state.train_dataloader.collate_fn.vocab
@@ -70,6 +74,10 @@ class CellClassification(Callback):
                 )
 
             self.cell_classfication(datast_name, logger)
+
+        # restore training mode
+        if was_training:
+            self.model.train()
 
     def cell_classfication(self, dataset: str, logger: Logger):
         # step 1: load data train, test

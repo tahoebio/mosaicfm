@@ -33,7 +33,12 @@ class MarginalEssentiality(Callback):
 
         # get variables from state
         self.model = state.model
-        self.model.eval()
+        
+        # set model to eval mode
+        was_training = self.model.training
+        if was_training:
+            self.model.eval()
+
         self.model_config = self.model.model_config
         self.collator_config = self.model.collator_config
         self.vocab = state.train_dataloader.collate_fn.vocab
@@ -80,6 +85,11 @@ class MarginalEssentiality(Callback):
                 return_gene_embeddings=True,
             )
 
+        # restore training mode
+        if was_training:
+            self.model.train()
+    
+    
         # load task DataFrame
         gene2idx = vocab.get_stoi()
         gene_names = np.array(list(gene2idx.keys()))
