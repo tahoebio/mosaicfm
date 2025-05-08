@@ -17,5 +17,5 @@ Experiments under `norman` directory:
 Experiments under `adamson` directory (early experiments):
 - `vevo_adamson_attn.ipynb`: attention-based method.
 - `vevo_adamson_gene_emb.ipynb`: embedding-based method.
-- `vevo_adamson_mask.py`: python script of `vevo_adamson_mask.ipynb` notebook.
+- `vevo_adamson_mask.py`: python script of `vevo_adamson_mask.ipynb` notebook (see [commit](https://github.com/tahoebio/mosaicfm/blob/dev_attn_rank/notebooks/adamson/vevo_adamson_mask.ipynb)).
 - `vevo_adamson_mask_null.py`: variation of `vevo_adamson_mask.py`, but report ranks of random genes.
