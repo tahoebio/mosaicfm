@@ -1,6 +1,7 @@
 # Copyright (C) Vevo Therapeutics 2025. All rights reserved.
 import io
 import json
+import torch
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,7 +15,7 @@ from sklearn.neighbors import kneighbors_graph
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 
 from mosaicfm.utils import download_file_from_s3_url
-
+from composer.utils import model_eval_mode
 
 # Custom Callback to run the cell classification after training
 class CellClassification(Callback):
@@ -54,7 +55,6 @@ class CellClassification(Callback):
 
         self.model = state.model
 
-        self.was_training = self.model.training
         self.model_config = self.model.model_config
         self.collator_config = self.model.collator_config
         self.vocab = state.train_dataloader.collate_fn.vocab
@@ -72,9 +72,6 @@ class CellClassification(Callback):
 
             self.cell_classfication(datast_name, logger)
 
-        # set model back to training mode
-        if self.was_training:
-            self.model.train()
         
     def cell_classfication(self, dataset: str, logger: Logger):
         # step 1: load data train, test
@@ -95,38 +92,33 @@ class CellClassification(Callback):
         # step 2: extract mosaicfm embeddings
         from mosaicfm.tasks import get_batch_embeddings
 
-        with FSDP.summon_full_params(self.model.model):
+        with model_eval_mode(self.model.model), torch.no_grad():
+        # Now model is in eval mode, no dropout, no grad
+            with FSDP.summon_full_params(self.model.model, writeback=False):
 
-            # set model to eval mode
-            if self.was_training:
-                self.model.model.eval()
+                cell_embeddings_train = get_batch_embeddings(
+                    adata=adata_train,
+                    model=self.model.model,
+                    vocab=self.vocab,
+                    gene_ids=gene_ids_train,
+                    model_cfg=self.model_config,
+                    collator_cfg=self.collator_config,
+                    batch_size=self.batch_size,
+                    max_length=self.seq_len,
+                    return_gene_embeddings=False,
+                )
+                cell_embeddings_test = get_batch_embeddings(
+                    adata=adata_test,
+                    model=self.model.model,
+                    vocab=self.vocab,
+                    gene_ids=gene_ids_test,
+                    model_cfg=self.model_config,
+                    collator_cfg=self.collator_config,
+                    batch_size=self.batch_size,
+                    max_length=self.seq_len,
+                    return_gene_embeddings=False,
+                )
 
-            cell_embeddings_train = get_batch_embeddings(
-                adata=adata_train,
-                model=self.model.model,
-                vocab=self.vocab,
-                gene_ids=gene_ids_train,
-                model_cfg=self.model_config,
-                collator_cfg=self.collator_config,
-                batch_size=self.batch_size,
-                max_length=self.seq_len,
-                return_gene_embeddings=False,
-            )
-            cell_embeddings_test = get_batch_embeddings(
-                adata=adata_test,
-                model=self.model.model,
-                vocab=self.vocab,
-                gene_ids=gene_ids_test,
-                model_cfg=self.model_config,
-                collator_cfg=self.collator_config,
-                batch_size=self.batch_size,
-                max_length=self.seq_len,
-                return_gene_embeddings=False,
-            )
-
-            # restore model to training mode
-            if self.was_training:
-                self.model.model.train()
 
         # step 3: train classifier
         clf = LogisticRegression(
