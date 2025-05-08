@@ -95,15 +95,15 @@ class CellClassification(Callback):
         # step 2: extract mosaicfm embeddings
         from mosaicfm.tasks import get_batch_embeddings
 
-        with FSDP.summon_full_params(self.model.model) as full_model:
+        with FSDP.summon_full_params(self.model.model):
 
             # set model to eval mode
             if self.was_training:
-                full_model.eval()
+                self.model.model.eval()
 
             cell_embeddings_train = get_batch_embeddings(
                 adata=adata_train,
-                model=full_model,
+                model=self.model.model,
                 vocab=self.vocab,
                 gene_ids=gene_ids_train,
                 model_cfg=self.model_config,
@@ -114,7 +114,7 @@ class CellClassification(Callback):
             )
             cell_embeddings_test = get_batch_embeddings(
                 adata=adata_test,
-                model=full_model,
+                model=self.model.model,
                 vocab=self.vocab,
                 gene_ids=gene_ids_test,
                 model_cfg=self.model_config,
@@ -126,7 +126,7 @@ class CellClassification(Callback):
 
             # restore model to training mode
             if self.was_training:
-                full_model.train()
+                self.model.model.train()
 
         # step 3: train classifier
         clf = LogisticRegression(
