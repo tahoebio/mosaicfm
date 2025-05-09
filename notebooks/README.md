@@ -19,3 +19,5 @@ Experiments under `adamson` directory (early experiments):
 - `vevo_adamson_gene_emb.ipynb`: embedding-based method.
 - `vevo_adamson_mask.py`: python script of `vevo_adamson_mask.ipynb` notebook (see [commit](https://github.com/tahoebio/mosaicfm/blob/dev_attn_rank/notebooks/adamson/vevo_adamson_mask.ipynb)).
 - `vevo_adamson_mask_null.py`: variation of `vevo_adamson_mask.py`, but report ranks of random genes.
+
+scGPT module is required. For embedding and attention-based methods without value masking, please use scGPT perceptual model from [main](https://github.com/bowang-lab/scGPT) branch. For value masking, use scGPT generative model from [dev-temp](https://github.com/bowang-lab/scGPT/tree/dev-temp) branch. Refer to previous [commit](https://github.com/tahoebio/mosaicfm/tree/3a3915ca38e2a1b5167633fd666a3af0ce4ac442) for model used.
