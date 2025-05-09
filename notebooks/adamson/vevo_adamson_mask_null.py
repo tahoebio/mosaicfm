@@ -1,36 +1,36 @@
+# Copyright (C) Vevo Therapeutics 2025. All rights reserved.
 # %%
 import json
 import os
-from pathlib import Path
+import random
 import sys
 import time
-from typing import Dict
 import warnings
-import random
-import torch
-import scanpy as sc
+from pathlib import Path
+from typing import Dict
+
 import numpy as np
 import pandas as pd
+import scanpy as sc
+import torch
 import wandb
 from scipy.sparse import issparse
-from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, Dataset
+from torchtext._torchtext import Vocab as VocabPybind
 from torchtext.vocab import Vocab
-from torchtext._torchtext import (
-    Vocab as VocabPybind,
-)
 
 sys.path.insert(0, "../")
+from scgpt import SubsetsBatchSampler
 from scgpt.model import TransformerModel
+from scgpt.preprocess import Preprocessor
 from scgpt.tokenizer import tokenize_and_pad_batch
 from scgpt.tokenizer.gene_tokenizer import GeneVocab
-from scgpt.preprocess import Preprocessor
-from scgpt import SubsetsBatchSampler
-from scgpt.utils import set_seed, load_pretrained
+from scgpt.utils import load_pretrained, set_seed
 
 sc.set_figure_params(figsize=(4, 4))
 os.environ["KMP_WARNINGS"] = "off"
-warnings.filterwarnings('ignore')
+warnings.filterwarnings("ignore")
 
 # %%
 hyperparameter_defaults = {
@@ -87,7 +87,9 @@ DSBN = False  # Domain-spec batchnorm
 explicit_zero_prob = True  # whether explicit bernoulli for zeros
 
 dataset_name = config.dataset_name
-save_dir = Path(f"/scratch/ssd004/scratch/chloexq/fibro/dev_{dataset_name}-{time.strftime('%b%d-%H-%M')}/")
+save_dir = Path(
+    f"/scratch/ssd004/scratch/chloexq/fibro/dev_{dataset_name}-{time.strftime('%b%d-%H-%M')}/"
+)
 save_dir.mkdir(parents=True, exist_ok=True)
 print(f"save to {save_dir}")
 
@@ -123,7 +125,7 @@ if config.load_model is not None:
         f"in vocabulary of size {len(vocab)}.",
     )
     adata = adata[:, adata.var["id_in_vocab"] >= 0]
-    
+
     # model
     with open(model_config_file, "r") as f:
         model_configs = json.load(f)
@@ -137,37 +139,37 @@ if config.load_model is not None:
     nlayers = model_configs["nlayers"]
     n_layers_cls = model_configs["n_layers_cls"]
 else:
-    embsize = config.layer_size 
+    embsize = config.layer_size
     nhead = config.nhead
-    nlayers = config.nlayers  
+    nlayers = config.nlayers
     d_hid = config.layer_size
 
 # %%
-gene_names_set = [i + '+ctrl' for i in adata.var.gene_name.values]
-[*gene_names_set, 'ctrl']
+gene_names_set = [i + "+ctrl" for i in adata.var.gene_name.values]
+[*gene_names_set, "ctrl"]
 
 # %%
 # Cap all conditions to 1000 cells
 sampled_df = (
-    adata.obs[adata.obs['condition'].isin(gene_names_set)]
-    .groupby('condition', group_keys=False)
+    adata.obs[adata.obs["condition"].isin(gene_names_set)]
+    .groupby("condition", group_keys=False)
     .apply(lambda x: x.sample(min(len(x), 1000), random_state=42))
 )
 adata = adata[sampled_df.index].copy()
-adata.obs.groupby('condition').count()
+adata.obs.groupby("condition").count()
 
 # %%
 # 5 conditions are capped, including ctrl
-condition_counts = adata.obs.groupby('condition').count()
+condition_counts = adata.obs.groupby("condition").count()
 
 # %%
 condition_names = set(adata.obs.condition.tolist())
 
 # %%
-condition_names.remove('ctrl')
+condition_names.remove("ctrl")
 
 # %%
-condition_names_gene = [i.split('+')[0] for i in list(condition_names)]
+condition_names_gene = [i.split("+")[0] for i in list(condition_names)]
 
 # %%
 condition_names_gene.sort()
@@ -199,12 +201,20 @@ sc.pp.highly_variable_genes(
 # %%
 add_counter = 0
 for g in condition_names_gene:
-    if not adata.var.loc[adata.var[adata.var.gene_name==g].index, 'highly_variable'].values[0]:
-        adata.var.loc[adata.var[adata.var.gene_name==g].index, 'highly_variable'] = True
+    if not adata.var.loc[
+        adata.var[adata.var.gene_name == g].index, "highly_variable"
+    ].values[0]:
+        adata.var.loc[adata.var[adata.var.gene_name == g].index, "highly_variable"] = (
+            True
+        )
         add_counter += 1
 
 # %%
-print('Manually add conditions: {}, {}'.format(add_counter, add_counter/len(condition_names_gene)))
+print(
+    "Manually add conditions: {}, {}".format(
+        add_counter, add_counter / len(condition_names_gene)
+    )
+)
 
 # %%
 random.seed(42)
@@ -233,7 +243,7 @@ print(adata)
 max_len = adata.shape[1] + 1
 
 # %%
-adata.obs['batch_id'] = adata.obs['condition'].copy()
+adata.obs["batch_id"] = adata.obs["condition"].copy()
 
 # %%
 null_genes = list(adata.var.gene_name.values).copy()
@@ -241,7 +251,7 @@ print(len(null_genes))
 null_genes.sort()
 random.seed(42)
 random.shuffle(null_genes)
-condition_names_gene_match = null_genes[:len(condition_names_gene)]
+condition_names_gene_match = null_genes[: len(condition_names_gene)]
 condition_names_gene_match
 
 # %%
@@ -269,7 +279,11 @@ batch_ids = np.array(batch_ids)
     train_batch_labels,
     valid_batch_labels,
 ) = train_test_split(
-    all_counts, celltypes_labels, batch_ids, test_size=0.1, shuffle=True,
+    all_counts,
+    celltypes_labels,
+    batch_ids,
+    test_size=0.1,
+    shuffle=True,
 )
 
 
@@ -280,6 +294,7 @@ if config.load_model is None:
     )  # bidirectional lookup [gene <-> int]
 vocab.set_default_index(vocab["<pad>"])
 gene_ids = np.array(vocab(genes), dtype=int)
+
 
 # dataset
 class SeqDataset(Dataset):
@@ -335,6 +350,7 @@ def prepare_dataloader(
     )
     return data_loader
 
+
 # %% [markdown]
 # # Step 3: Load the pre-trained scGPT model
 
@@ -374,10 +390,11 @@ wandb.watch(model)
 model.eval()
 adata_t = adata.copy()
 
+
 # %%
 def expand_cell(tokenized_all, key, k, select_gene_id):
     cell_k = tokenized_all[key][k]
-    # Repeat 
+    # Repeat
     cell_k_expand = cell_k.repeat(n_genes).view(n_genes, n_genes)
     new_column = torch.full((n_genes, 1), vocab([pad_token])[0])
     cell_k_expand = torch.cat((cell_k_expand, new_column), dim=1)
@@ -388,16 +405,21 @@ def expand_cell(tokenized_all, key, k, select_gene_id):
     mask[select_gene_id, n_genes] = True
     mask_select_expand = cell_k_expand[mask]
     select_ids_gen = mask_select_expand.view(n_genes, 2)
-    select_ids_pcpt = cell_k_expand[~mask].view(n_genes, n_genes-1)
+    select_ids_pcpt = cell_k_expand[~mask].view(n_genes, n_genes - 1)
     return select_ids_gen, select_ids_pcpt
 
+
 from tqdm import tqdm
+
+
 def collate_cell_by_key(tokenized_all, key, select_gene_id):
     print(key)
     select_ids_gen_list = []
     select_ids_pcpt_list = []
     for k in tqdm(range(n_cells)):
-        select_ids_gen, select_ids_pcpt = expand_cell(tokenized_all, key, k, select_gene_id)
+        select_ids_gen, select_ids_pcpt = expand_cell(
+            tokenized_all, key, k, select_gene_id
+        )
         select_ids_gen_list.append(select_ids_gen)
         select_ids_pcpt_list.append(select_ids_pcpt)
     select_ids_gen = torch.cat(select_ids_gen_list, dim=0)
@@ -405,22 +427,23 @@ def collate_cell_by_key(tokenized_all, key, select_gene_id):
     print(select_ids_gen.shape, select_ids_pcpt.shape)
     return select_ids_gen, select_ids_pcpt
 
-# %%
-select_gene_list = condition_names_gene
 
 # %%
-from torch.utils.data import DataLoader, TensorDataset
+select_gene_list = condition_names_gene
 
 # %%
 from sklearn.metrics.pairwise import cosine_distances
 
 # %%
+from torch.utils.data import DataLoader, TensorDataset
+
+# %%
 for select_gene in select_gene_list:
-    adata_t = adata[adata.obs['condition'].isin([select_gene+'+ctrl', 'ctrl'])].copy()
-    print(adata_t.obs['condition'])
+    adata_t = adata[adata.obs["condition"].isin([select_gene + "+ctrl", "ctrl"])].copy()
+    print(adata_t.obs["condition"])
     # Use a random gene from the list
     select_gene_match = condition_names_gene_match.pop(0)
-    select_gene_id = genes.index(select_gene_match)+1
+    select_gene_id = genes.index(select_gene_match) + 1
     print(select_gene_id)
     all_counts = (
         adata_t.layers[input_layer_key].A
@@ -445,36 +468,46 @@ for select_gene in select_gene_list:
     )
     all_gene_ids, all_values = tokenized_all["genes"], tokenized_all["values"]
     src_key_padding_mask = all_gene_ids.eq(vocab[pad_token])
-    print(tokenized_all['genes'].shape, tokenized_all['values'].shape)
-    n_cells = tokenized_all['genes'].shape[0]
-    n_genes = tokenized_all['genes'].shape[1]
-    
-    collate_genes_gen, collate_genes_pcpt = collate_cell_by_key(tokenized_all, 'genes', select_gene_id)
-    _, collate_values_pcpt = collate_cell_by_key(tokenized_all, 'values', select_gene_id)
-    
-    tokenized_all_expand = {'genes_pcpt': collate_genes_pcpt, 'genes_gen': collate_genes_gen, 'values_pcpt': collate_values_pcpt}
+    print(tokenized_all["genes"].shape, tokenized_all["values"].shape)
+    n_cells = tokenized_all["genes"].shape[0]
+    n_genes = tokenized_all["genes"].shape[1]
+
+    collate_genes_gen, collate_genes_pcpt = collate_cell_by_key(
+        tokenized_all, "genes", select_gene_id
+    )
+    _, collate_values_pcpt = collate_cell_by_key(
+        tokenized_all, "values", select_gene_id
+    )
+
+    tokenized_all_expand = {
+        "genes_pcpt": collate_genes_pcpt,
+        "genes_gen": collate_genes_gen,
+        "values_pcpt": collate_values_pcpt,
+    }
     print(tokenized_all_expand)
-    query_id = tokenized_all['genes'][0].repeat(n_cells)
-    
+    query_id = tokenized_all["genes"][0].repeat(n_cells)
+
     cell_counter = torch.arange(0, n_cells)
     cell_counter = cell_counter.repeat(n_genes).view(n_genes, n_cells).t().flatten()
     gene_counter = torch.arange(0, n_genes).repeat(n_cells)
 
     dataloader = DataLoader(
-        TensorDataset(tokenized_all_expand['genes_pcpt'], 
-                      tokenized_all_expand['genes_gen'], 
-                      tokenized_all_expand['values_pcpt'],
-                      query_id,
-                      cell_counter,
-                      gene_counter,
-                     ), 
-        batch_size=512, 
-        shuffle=False)
-    
+        TensorDataset(
+            tokenized_all_expand["genes_pcpt"],
+            tokenized_all_expand["genes_gen"],
+            tokenized_all_expand["values_pcpt"],
+            query_id,
+            cell_counter,
+            gene_counter,
+        ),
+        batch_size=512,
+        shuffle=False,
+    )
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     gene_embeddings = np.zeros((n_cells, n_genes, 512))
-    
+
     with torch.no_grad(), torch.cuda.amp.autocast(enabled=config.amp):
         for batch_idx, batch_data in enumerate(tqdm(dataloader)):
             pcpt_genes = batch_data[0].to(device)
@@ -493,27 +526,44 @@ for select_gene in select_gene_list:
                 gen_key_padding_mask=gen_key_padding_mask,
             )
             select_mask = (gen_genes == query_id_select.unsqueeze(1)).long()
-            selected_output = gen_output[torch.arange(gen_output.shape[0]), select_mask.argmax(dim=1), :]
+            selected_output = gen_output[
+                torch.arange(gen_output.shape[0]), select_mask.argmax(dim=1), :
+            ]
             selected_output_np = selected_output.detach().cpu().numpy()
-            gene_embeddings[cell_counter_batch.detach().cpu().numpy(), gene_counter_batch.detach().cpu().numpy(), :] = selected_output_np
-    
-    conditions = adata_t.obs['condition'].values
-    
+            gene_embeddings[
+                cell_counter_batch.detach().cpu().numpy(),
+                gene_counter_batch.detach().cpu().numpy(),
+                :,
+            ] = selected_output_np
+
+    conditions = adata_t.obs["condition"].values
+
     dict_sum_condition_mean = {}
     for c in np.unique(conditions):
-        dict_sum_condition_mean[c] = gene_embeddings[np.where(conditions == c)[0]].mean(0)
-    
+        dict_sum_condition_mean[c] = gene_embeddings[np.where(conditions == c)[0]].mean(
+            0
+        )
+
     print(dict_sum_condition_mean)
-        
-    celltype_0 = select_gene + '+ctrl'
-    celltype_1 = 'ctrl'
+
+    celltype_0 = select_gene + "+ctrl"
+    celltype_1 = "ctrl"
     gene_emb_celltype_0 = np.expand_dims(dict_sum_condition_mean[celltype_0][1:, 1:], 0)
     gene_emb_celltype_1 = np.expand_dims(dict_sum_condition_mean[celltype_1][1:, 1:], 0)
     gene_dist_dict = {}
     for i, g in tqdm(enumerate(genes)):
-        gene_dist_dict[g] = cosine_distances(gene_emb_celltype_0[:, i, :], gene_emb_celltype_1[:, i, :]).mean()
-    df_gene_emb_dist = pd.DataFrame.from_dict(gene_dist_dict, orient='index', columns=['cos_dist'])
-    df_deg = df_gene_emb_dist.sort_values(by='cos_dist', ascending=False)
-    rank_celltype_0 = np.where(df_deg.index==select_gene)[0][0]
-    print(select_gene, select_gene_match, rank_celltype_0) 
-    np.savez('/scratch/hdd001/home/haotian/perturb_data/vevo_adamson_mean_gene_emb/mean_gene_emb_{}_null_{}_{}.npz'.format(select_gene, select_gene_match, rank_celltype_0), **dict_sum_condition_mean)
+        gene_dist_dict[g] = cosine_distances(
+            gene_emb_celltype_0[:, i, :], gene_emb_celltype_1[:, i, :]
+        ).mean()
+    df_gene_emb_dist = pd.DataFrame.from_dict(
+        gene_dist_dict, orient="index", columns=["cos_dist"]
+    )
+    df_deg = df_gene_emb_dist.sort_values(by="cos_dist", ascending=False)
+    rank_celltype_0 = np.where(df_deg.index == select_gene)[0][0]
+    print(select_gene, select_gene_match, rank_celltype_0)
+    np.savez(
+        "/scratch/hdd001/home/haotian/perturb_data/vevo_adamson_mean_gene_emb/mean_gene_emb_{}_null_{}_{}.npz".format(
+            select_gene, select_gene_match, rank_celltype_0
+        ),
+        **dict_sum_condition_mean,
+    )

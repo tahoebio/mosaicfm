@@ -1,20 +1,20 @@
+# Copyright (C) Vevo Therapeutics 2025. All rights reserved.
 # %%
 import gc
 import json
 import os
-from pathlib import Path
 import sys
 import time
 import warnings
+from pathlib import Path
 
-import torch
-import scanpy as sc
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import scanpy as sc
+import torch
 import wandb
 from scipy.sparse import issparse
-import matplotlib.pyplot as plt
-
 
 # %%
 data_dir = Path("/datasets/Tahoe-100M/Tahoe/vevo_filter/plate2_demo_final.h5ad")
@@ -29,12 +29,13 @@ data_is_raw = True
 sc.pp.filter_genes(adata, min_cells=1)
 
 
-
 # %%
 adata
 
 # %%
-drug_df = pd.read_csv("/datasets/Tahoe-100M/Tahoe/vevo_filter/plate2_demo_final_targets.csv")
+drug_df = pd.read_csv(
+    "/datasets/Tahoe-100M/Tahoe/vevo_filter/plate2_demo_final_targets.csv"
+)
 drug_target_map = dict(zip(drug_df["compound"], drug_df["targets"]))
 
 perturb_conditions = list(drug_target_map.values())
@@ -45,11 +46,11 @@ drug_target_map["ctrl"] = "ctrl"
 # %%
 adata.obs["gene_target"] = adata.obs["condition"].map(drug_target_map)
 
+
 # %%
 def sample_cells_per_label(adata, column, n=75, random_state=None):
-    """
-    Randomly sample `n` cells per unique label in `adata.obs[column]`.
-    
+    """Randomly sample `n` cells per unique label in `adata.obs[column]`.
+
     Parameters:
         adata (AnnData): The AnnData object.
         column (str): Column in `adata.obs` to sample from.
@@ -64,8 +65,9 @@ def sample_cells_per_label(adata, column, n=75, random_state=None):
         .apply(lambda x: x.sample(n=min(n, len(x)), random_state=random_state))
         .index.get_level_values(1)
     )
-    
+
     return adata[sampled_indices].copy()
+
 
 # %%
 adata.obs["gene_target"]
@@ -73,10 +75,11 @@ adata.obs["gene_target"]
 # %%
 adata
 
+import pandas as pd
+
 # %%
 from sklearn.metrics.pairwise import cosine_distances
 from tqdm import tqdm
-import pandas as pd
 
 # %%
 max_len = adata.shape[1] + 1
@@ -93,11 +96,18 @@ sc.pp.log1p(adata)
 
 # %%
 # Wilcoxon rank
-sc.tl.rank_genes_groups(adata, 'gene_target', method='wilcoxon', key_added = "wilcoxon", n_genes=max_len-1, reference='ctrl')
-adata.uns['wilcoxon']['names']
+sc.tl.rank_genes_groups(
+    adata,
+    "gene_target",
+    method="wilcoxon",
+    key_added="wilcoxon",
+    n_genes=max_len - 1,
+    reference="ctrl",
+)
+adata.uns["wilcoxon"]["names"]
 
 # %%
-adata.uns['wilcoxon']
+adata.uns["wilcoxon"]
 
 # %%
 import pickle
@@ -107,20 +117,22 @@ with open("wilcoxon_filtered.pkl", "wb") as f:
     pickle.dump(adata.uns["wilcoxon"], f)
 
 # %%
-adata.uns['wilcoxon']['names']
+adata.uns["wilcoxon"]["names"]
 
 # %%
 baseline_rank = []
 
 for c in perturb_conditions:
-    hvg_list = adata.uns['wilcoxon']['names'][c]
-    p_val = adata.uns['wilcoxon']['pvals_adj'][c]
+    hvg_list = adata.uns["wilcoxon"]["names"][c]
+    p_val = adata.uns["wilcoxon"]["pvals_adj"][c]
     df_gene_emb_dist = pd.DataFrame()
-    df_gene_emb_dist['gene'] = hvg_list
-    df_gene_emb_dist['p_val'] = p_val
-    df_gene_emb_dist = df_gene_emb_dist.sort_values(by='p_val')
-    print(c, np.where(df_gene_emb_dist.gene.values==c.split('+')[0])[0][0])
-    baseline_rank.append(np.where(df_gene_emb_dist.gene.values==c.split('+')[0])[0][0])
+    df_gene_emb_dist["gene"] = hvg_list
+    df_gene_emb_dist["p_val"] = p_val
+    df_gene_emb_dist = df_gene_emb_dist.sort_values(by="p_val")
+    print(c, np.where(df_gene_emb_dist.gene.values == c.split("+")[0])[0][0])
+    baseline_rank.append(
+        np.where(df_gene_emb_dist.gene.values == c.split("+")[0])[0][0]
+    )
 
 # %%
 baseline_rank
@@ -147,21 +159,19 @@ plt.ylabel("Rank Value")
 # %%
 from pathlib import Path
 
+from torchtext._torchtext import Vocab as VocabPybind
 from torchtext.vocab import Vocab
-from torchtext._torchtext import (
-    Vocab as VocabPybind,
-)
 
 sys.path.insert(0, "../")
 from scgpt.model import TransformerModel
+from scgpt.preprocess import Preprocessor
 from scgpt.tokenizer import tokenize_and_pad_batch
 from scgpt.tokenizer.gene_tokenizer import GeneVocab
-from scgpt.preprocess import Preprocessor
-from scgpt.utils import set_seed, load_pretrained
+from scgpt.utils import load_pretrained, set_seed
 
 sc.set_figure_params(figsize=(4, 4))
 os.environ["KMP_WARNINGS"] = "off"
-warnings.filterwarnings('ignore')
+warnings.filterwarnings("ignore")
 
 # %%
 hyperparameter_defaults = {
@@ -215,7 +225,9 @@ DSBN = True  # Domain-spec batchnorm
 explicit_zero_prob = True  # whether explicit bernoulli for zeros
 
 dataset_name = config.dataset_name
-save_dir = Path(f"/scratch/ssd004/scratch/ahz/perturb/dev_{dataset_name}-{time.strftime('%b%d-%H-%M')}/")
+save_dir = Path(
+    f"/scratch/ssd004/scratch/ahz/perturb/dev_{dataset_name}-{time.strftime('%b%d-%H-%M')}/"
+)
 save_dir.mkdir(parents=True, exist_ok=True)
 print(f"save to {save_dir}")
 
@@ -231,16 +243,14 @@ if config.load_model is not None:
         if s not in vocab:
             vocab.append_token(s)
 
-    adata.var["id_in_vocab"] = [
-        1 if gene in vocab else -1 for gene in adata.var.index
-    ]
+    adata.var["id_in_vocab"] = [1 if gene in vocab else -1 for gene in adata.var.index]
     gene_ids_in_vocab = np.array(adata.var["id_in_vocab"])
     print(
         f"match {np.sum(gene_ids_in_vocab >= 0)}/{len(gene_ids_in_vocab)} genes "
         f"in vocabulary of size {len(vocab)}.",
     )
     adata = adata[:, adata.var["id_in_vocab"] >= 0]
-    
+
     # model
     with open(model_config_file, "r") as f:
         model_configs = json.load(f)
@@ -254,9 +264,9 @@ if config.load_model is not None:
     nlayers = model_configs["nlayers"]
     n_layers_cls = model_configs["n_layers_cls"]
 else:
-    embsize = config.layer_size 
+    embsize = config.layer_size
     nhead = config.nhead
-    nlayers = config.nlayers  
+    nlayers = config.nlayers
     d_hid = config.layer_size
 
 # %%
@@ -287,7 +297,7 @@ if config.load_model is None:
     )  # bidirectional lookup [gene <-> int]
 vocab.set_default_index(vocab["<pad>"])
 gene_ids = np.array(vocab(genes), dtype=int)
-adata.obs['batch_id'] = adata.obs['condition'].copy()
+adata.obs["batch_id"] = adata.obs["condition"].copy()
 batch_ids = adata.obs["batch_id"].tolist()
 num_batch_types = len(set(batch_ids))
 input_layer_key = "X_binned"
@@ -376,13 +386,16 @@ for i in tqdm(range(0, num_samples, sub_batch_size), desc="Random partitions"):
     gc.collect()
     # Get a batch of random indices
     batch_indices = random_indices[i : i + sub_batch_size]
-    
+
     # Index the arrays using the random batch indices
     batch_gene_ids = all_gene_ids[batch_indices]
     batch_values = all_values[batch_indices].float()  # assuming all_values is a tensor
-    batch_padding_mask = (src_key_padding_mask[batch_indices]
-                          if src_key_padding_mask is not None else None)
-    
+    batch_padding_mask = (
+        src_key_padding_mask[batch_indices]
+        if src_key_padding_mask is not None
+        else None
+    )
+
     # Compute embeddings for the current random sub-batch
     with torch.no_grad(), torch.cuda.amp.autocast(enabled=config.amp):
         gene_embeddings_batch = model.encode_batch(
@@ -393,7 +406,7 @@ for i in tqdm(range(0, num_samples, sub_batch_size), desc="Random partitions"):
             batch_labels=None,
             return_np=True,
         )
-    
+
     # Update cumulative sums and counts, then recalc the running mean per condition
     # Note: We index condition_ids with the original index from batch_indices.
     for idx, sample_idx in enumerate(batch_indices):
@@ -404,56 +417,70 @@ for i in tqdm(range(0, num_samples, sub_batch_size), desc="Random partitions"):
         else:
             dict_sum_condition[condition] = gene_embeddings_batch[idx, :, :]
             dict_count_condition[condition] = 1
-        
+
         # Update the running mean for this condition
-        dict_sum_condition_mean[condition] = dict_sum_condition[condition] / dict_count_condition[condition]
-    
+        dict_sum_condition_mean[condition] = (
+            dict_sum_condition[condition] / dict_count_condition[condition]
+        )
+
     # ----- Analysis for the batches processed so far -----
     # Map conditions to target genes via drug_target_map.
     dict_sum_target_gene_mean = {
         drug_target_map[drug]: dict_sum_condition_mean[drug]
-        for drug in dict_sum_condition_mean if drug in drug_target_map
+        for drug in dict_sum_condition_mean
+        if drug in drug_target_map
     }
-    
+
     # (Optional) Get the gene vocabulary index from the first element
     gene_vocab_idx = all_gene_ids[0].clone().detach().cpu().numpy()
-    
+
     # Create a list of perturbation targets, excluding control ('ctrl')
     perturb_targets = list(dict_sum_target_gene_mean.keys())
-    if 'ctrl' in perturb_targets:
-        perturb_targets.remove('ctrl')
-    assert 'ctrl' not in perturb_targets
-    
+    if "ctrl" in perturb_targets:
+        perturb_targets.remove("ctrl")
+    assert "ctrl" not in perturb_targets
+
     # For each perturbation target, compute cosine distances and determine a ranking.
     if "ctrl" in dict_sum_target_gene_mean:
         for t in perturb_targets:
             celltype_0 = t
-            celltype_1 = 'ctrl'
+            celltype_1 = "ctrl"
             # Expand dims so that cosine_distances receives 2D arrays.
-            gene_emb_celltype_0 = np.expand_dims(dict_sum_target_gene_mean[celltype_0][1:, :], axis=0)
-            gene_emb_celltype_1 = np.expand_dims(dict_sum_target_gene_mean[celltype_1][1:, :], axis=0)
+            gene_emb_celltype_0 = np.expand_dims(
+                dict_sum_target_gene_mean[celltype_0][1:, :], axis=0
+            )
+            gene_emb_celltype_1 = np.expand_dims(
+                dict_sum_target_gene_mean[celltype_1][1:, :], axis=0
+            )
             gene_dist_dict = {}
-            
-            for j, g in tqdm(enumerate(genes), total=len(genes), desc=f"Analyzing {t}", disable=True):
-                gene_dist = cosine_distances(gene_emb_celltype_0[:, j, :],
-                                            gene_emb_celltype_1[:, j, :]).mean()
+
+            for j, g in tqdm(
+                enumerate(genes), total=len(genes), desc=f"Analyzing {t}", disable=True
+            ):
+                gene_dist = cosine_distances(
+                    gene_emb_celltype_0[:, j, :], gene_emb_celltype_1[:, j, :]
+                ).mean()
                 gene_dist_dict[g] = gene_dist
-            
-            df_gene_emb_dist = pd.DataFrame.from_dict(gene_dist_dict, orient='index', columns=['cos_dist'])
-            df_deg = df_gene_emb_dist.sort_values(by='cos_dist', ascending=False)
+
+            df_gene_emb_dist = pd.DataFrame.from_dict(
+                gene_dist_dict, orient="index", columns=["cos_dist"]
+            )
+            df_deg = df_gene_emb_dist.sort_values(by="cos_dist", ascending=False)
             rank = np.where(df_deg.index == t)[0][0]
             print(f"Target {t} rank: {rank}")
             rank_list.append(rank)
         # ----- End Analysis -----
-        
+
         # Save a box and whisker plot of rank_list as a PNG file.
         if rank_list:
             rank_mean = np.mean(rank_list)
             plt.figure()
             plt.boxplot(rank_list)
-            plt.savefig(f"boxplot_{i + sub_batch_size}_samples_mean_{rank_mean:.2f}.png")
+            plt.savefig(
+                f"boxplot_{i + sub_batch_size}_samples_mean_{rank_mean:.2f}.png"
+            )
             plt.close()
-    
+
     # Free memory used by the current sub-batch
     del gene_embeddings_batch
     gc.collect()
@@ -461,51 +488,64 @@ for i in tqdm(range(0, num_samples, sub_batch_size), desc="Random partitions"):
 
 # %%
 dict_sum_condition_mean = {}
-groups = adata_t.obs.groupby('condition').groups
+groups = adata_t.obs.groupby("condition").groups
 for i in groups:
-    dict_sum_condition_mean[i] = dict_sum_condition[i]/len(groups[i])
+    dict_sum_condition_mean[i] = dict_sum_condition[i] / len(groups[i])
 
 # %%
-dict_sum_target_gene_mean = {drug_target_map[drug] : dict_sum_condition_mean[drug] for drug in dict_sum_condition_mean}
+dict_sum_target_gene_mean = {
+    drug_target_map[drug]: dict_sum_condition_mean[drug]
+    for drug in dict_sum_condition_mean
+}
 gene_vocab_idx = all_gene_ids[0].clone().detach().cpu().numpy()
 perturb_targets = list(dict_sum_target_gene_mean.keys())
-perturb_targets.remove('ctrl')
-assert 'ctrl' not in perturb_targets
+perturb_targets.remove("ctrl")
+assert "ctrl" not in perturb_targets
 rank_list = []
 
 for t in perturb_targets:
     celltype_0 = t
-    celltype_1 = 'ctrl'
-    gene_emb_celltype_0 = np.expand_dims(dict_sum_target_gene_mean[celltype_0][1:, :], 0)
-    gene_emb_celltype_1 = np.expand_dims(dict_sum_target_gene_mean[celltype_1][1:, :], 0)
+    celltype_1 = "ctrl"
+    gene_emb_celltype_0 = np.expand_dims(
+        dict_sum_target_gene_mean[celltype_0][1:, :], 0
+    )
+    gene_emb_celltype_1 = np.expand_dims(
+        dict_sum_target_gene_mean[celltype_1][1:, :], 0
+    )
     gene_dist_dict = {}
     for i, g in tqdm(enumerate(genes)):
-        gene_dist_dict[g] = cosine_distances(gene_emb_celltype_0[:, i, :], gene_emb_celltype_1[:, i, :]).mean()
-    df_gene_emb_dist = pd.DataFrame.from_dict(gene_dist_dict, orient='index', columns=['cos_dist'])
-    df_deg = df_gene_emb_dist.sort_values(by='cos_dist', ascending=False)
-    print(t, np.where(df_deg.index==t)[0][0])
-    rank_list.append(np.where(df_deg.index==t)[0][0])
+        gene_dist_dict[g] = cosine_distances(
+            gene_emb_celltype_0[:, i, :], gene_emb_celltype_1[:, i, :]
+        ).mean()
+    df_gene_emb_dist = pd.DataFrame.from_dict(
+        gene_dist_dict, orient="index", columns=["cos_dist"]
+    )
+    df_deg = df_gene_emb_dist.sort_values(by="cos_dist", ascending=False)
+    print(t, np.where(df_deg.index == t)[0][0])
+    rank_list.append(np.where(df_deg.index == t)[0][0])
+
 
 # %%
 def is_one_to_one_mapping(d):
-    """
-    Checks if a dictionary represents a one-to-one mapping.
-    Returns True if it is, otherwise returns False and a dictionary
-    of colliding values with their associated keys.
+    """Checks if a dictionary represents a one-to-one mapping.
+
+    Returns True if it is, otherwise returns False and a dictionary of colliding
+    values with their associated keys.
     """
     value_to_keys = {}
     collisions = {}
-    
+
     for key, value in d.items():
         if value in value_to_keys:
             value_to_keys[value].append(key)
             collisions[value] = value_to_keys[value]
         else:
             value_to_keys[value] = [key]
-    
+
     if collisions:
         return False, collisions
     return True, None
+
 
 # %%
 is_one_to_one_mapping(drug_target_map)
@@ -514,7 +554,7 @@ is_one_to_one_mapping(drug_target_map)
 # ## Save Results & Analysis
 
 # %%
-adata.uns['wilcoxon']['names']
+adata.uns["wilcoxon"]["names"]
 
 # %%
 perturb_targets
@@ -525,22 +565,24 @@ perturb_targets
 baseline_rank_t = []
 
 for t in perturb_targets:
-    hvg_list = adata.uns['wilcoxon']['names'][t]
-    p_val = adata.uns['wilcoxon']['pvals_adj'][t]
+    hvg_list = adata.uns["wilcoxon"]["names"][t]
+    p_val = adata.uns["wilcoxon"]["pvals_adj"][t]
     df_gene_emb_dist = pd.DataFrame()
-    df_gene_emb_dist['gene'] = hvg_list
-    df_gene_emb_dist['p_val'] = p_val
-    df_gene_emb_dist = df_gene_emb_dist.sort_values(by='p_val')
-    print(t, np.where(df_gene_emb_dist.gene.values==t)[0][0])
-    baseline_rank_t.append(np.where(df_gene_emb_dist.gene.values==t)[0][0])
+    df_gene_emb_dist["gene"] = hvg_list
+    df_gene_emb_dist["p_val"] = p_val
+    df_gene_emb_dist = df_gene_emb_dist.sort_values(by="p_val")
+    print(t, np.where(df_gene_emb_dist.gene.values == t)[0][0])
+    baseline_rank_t.append(np.where(df_gene_emb_dist.gene.values == t)[0][0])
 
 
 # %%
-df_results = df = pd.DataFrame({
-    'conditions': perturb_targets,
-    'wilcoxon': baseline_rank_t,
-    'scGPT_rank': rank_list,
-})
+df_results = df = pd.DataFrame(
+    {
+        "conditions": perturb_targets,
+        "wilcoxon": baseline_rank_t,
+        "scGPT_rank": rank_list,
+    }
+)
 
 # %%
 df_results
@@ -549,29 +591,29 @@ df_results
 df_results.mean()
 
 # %%
-df_results.to_csv('/scratch/ssd004/scratch/ahz/perturb/vevo_tahoe_ranks_Mar13.csv')
+df_results.to_csv("/scratch/ssd004/scratch/ahz/perturb/vevo_tahoe_ranks_Mar13.csv")
 
 # %%
 import seaborn as sns
+
 plt.figure(figsize=(10, 10))
 sns.boxplot(data=df_results)
 
 # Add titles and labels
-plt.title('Comparison of Methods Across Conditions')
-plt.xlabel('Method')
-plt.ylabel('Rank')
+plt.title("Comparison of Methods Across Conditions")
+plt.xlabel("Method")
+plt.ylabel("Rank")
 plt.xticks(rotation=-45)
 plt.tight_layout()
 
-plt.legend([],[], frameon=False)
+plt.legend([], [], frameon=False)
 
 # %%
 sns.scatterplot(data=df_results, x="wilcoxon", y="scGPT_rank")
 
 # %%
 from scipy.stats import pearsonr
-corr, p_value = pearsonr(df_results['wilcoxon'], df_results['scGPT_rank'])
 
-print(f'Pearson Correlation: {corr}, p-value: {p_value}')
+corr, p_value = pearsonr(df_results["wilcoxon"], df_results["scGPT_rank"])
 
-
+print(f"Pearson Correlation: {corr}, p-value: {p_value}")
