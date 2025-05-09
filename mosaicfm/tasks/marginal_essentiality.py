@@ -3,9 +3,11 @@
 import numpy as np
 import pandas as pd
 import scanpy as sc
+import torch
 from composer import State
 from composer.core.callback import Callback
 from composer.loggers import Logger
+from composer.utils import model_eval_mode
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
@@ -33,11 +35,6 @@ class MarginalEssentiality(Callback):
 
         # get variables from state
         self.model = state.model
-        
-        # set model to eval mode
-        was_training = self.model.training
-        if was_training:
-            self.model.eval()
 
         self.model_config = self.model.model_config
         self.collator_config = self.model.collator_config
@@ -72,7 +69,9 @@ class MarginalEssentiality(Callback):
         # get gene embeddings
         from mosaicfm.tasks import get_batch_embeddings
 
-        with FSDP.summon_full_params(self.model.model):
+        with model_eval_mode(
+            self.model.model,
+        ), torch.no_grad(), FSDP.summon_full_params(self.model.model, writeback=False):
             _, gene_embeddings = get_batch_embeddings(
                 adata=adata,
                 model=self.model.model,
@@ -84,11 +83,6 @@ class MarginalEssentiality(Callback):
                 max_length=self.seq_len,
                 return_gene_embeddings=True,
             )
-
-        # restore training mode
-        if was_training:
-            self.model.train()
-        print(f"Restored the model's {was_training} mode!")
 
         # load task DataFrame
         gene2idx = vocab.get_stoi()
