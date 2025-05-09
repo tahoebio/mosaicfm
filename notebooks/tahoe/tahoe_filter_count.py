@@ -1,25 +1,19 @@
 # %%
-import copy
 import gc
 import json
 import os
 from pathlib import Path
 import sys
 import time
-import traceback
-from typing import List, Tuple, Dict, Union, Optional
 import warnings
 
 import torch
-from anndata import AnnData
 import scanpy as sc
-#import scvi
 import numpy as np
 import pandas as pd
 import wandb
 from scipy.sparse import issparse
 import matplotlib.pyplot as plt
-from pathlib import Path
 
 
 # %%
@@ -32,14 +26,6 @@ adata.n_vars
 
 # %%
 data_is_raw = True
-# n_hvg = 1200
-# sc.pp.highly_variable_genes(
-#     adata,
-#     layer=None,
-#     n_top_genes=1200,
-#     flavor="seurat_v3" if data_is_raw else "cell_ranger",
-#     subset=False,
-# )
 sc.pp.filter_genes(adata, min_cells=1)
 
 
@@ -55,29 +41,6 @@ perturb_conditions = list(drug_target_map.values())
 condition_names_gene = perturb_conditions
 
 drug_target_map["ctrl"] = "ctrl"
-
-# %%
-len(condition_names_gene)
-
-# %%
-condition_names_gene
-
-# %%
-# add_counter = 0
-# for g in condition_names_gene:
-#     if not adata.var.loc[adata.var[adata.var.index==g].index, 'highly_variable'].values[0]:
-#         adata.var.loc[adata.var[adata.var.index==g].index, 'highly_variable'] = True
-#         add_counter += 1
-
-# %%
-# print('Manually add conditions: {}, {}'.format(add_counter, add_counter/len(condition_names_gene)))
-
-# %%
-# adata = adata[:, adata.var["highly_variable"]].copy()
-
-
-# %%
-adata
 
 # %%
 adata.obs["gene_target"] = adata.obs["condition"].map(drug_target_map)
@@ -103,8 +66,6 @@ def sample_cells_per_label(adata, column, n=75, random_state=None):
     )
     
     return adata[sampled_indices].copy()
-# adata = sample_cells_per_label(adata, column="gene_target", n=75, random_state=42)
-# adata
 
 # %%
 adata.obs["gene_target"]
@@ -152,7 +113,6 @@ adata.uns['wilcoxon']['names']
 baseline_rank = []
 
 for c in perturb_conditions:
-    # print(c)
     hvg_list = adata.uns['wilcoxon']['names'][c]
     p_val = adata.uns['wilcoxon']['pvals_adj'][c]
     df_gene_emb_dist = pd.DataFrame()
@@ -187,59 +147,49 @@ plt.ylabel("Rank Value")
 # %%
 from pathlib import Path
 
-from torch import nn
-from torch.nn import functional as F
-from torch.utils.data import Dataset, DataLoader
-from sklearn.model_selection import train_test_split
 from torchtext.vocab import Vocab
 from torchtext._torchtext import (
     Vocab as VocabPybind,
 )
 
 sys.path.insert(0, "../")
-#import scgpt as scg
-from scgpt.model import TransformerModel, AdversarialDiscriminator
-from scgpt.tokenizer import tokenize_and_pad_batch, random_mask_value
+from scgpt.model import TransformerModel
+from scgpt.tokenizer import tokenize_and_pad_batch
 from scgpt.tokenizer.gene_tokenizer import GeneVocab
-from scgpt.loss import (
-    masked_mse_loss,
-    masked_relative_error,
-    criterion_neg_log_bernoulli,
-)
 from scgpt.preprocess import Preprocessor
-from scgpt import SubsetsBatchSampler
-from scgpt.utils import set_seed, eval_scib_metrics, load_pretrained
+from scgpt.utils import set_seed, load_pretrained
 
 sc.set_figure_params(figsize=(4, 4))
 os.environ["KMP_WARNINGS"] = "off"
 warnings.filterwarnings('ignore')
 
 # %%
-hyperparameter_defaults = dict(
-    seed=42,
-    dataset_name="fibro", # Dataset name
-    do_train=True, # Flag to indicate whether to do update model parameters during training
-    load_model="/scratch/ssd004/scratch/chloexq/scGPT_models/scGPT_human_model",
-    model_name="best_model.pt",
-    GEPC=True,  # Gene expression modelling for cell objective
-    ecs_thres=0.8,  # Elastic cell similarity objective, 0.0 to 1.0, 0.0 to disable
-    dab_weight=1.0, # DAR objective weight for batch correction
-    mask_ratio=0.4, # Default mask ratio
-    epochs=15, # Default number of epochs for fine-tuning
-    n_bins=51, # Default number of bins for value binning in data pre-processing
-    lr=1e-4, # Default learning rate for fine-tuning
-    batch_size=64, # Default batch size for fine-tuning
-    layer_size=128,
-    nlayers=4,
-    nhead=4, # if load model, batch_size, layer_size, nlayers, nhead will be ignored
-    dropout=0.2, # Default dropout rate during model fine-tuning
-    schedule_ratio=0.9,  # Default rate for learning rate decay
-    save_eval_interval=5, # Default model evaluation interval
-    log_interval=100, # Default log interval
-    fast_transformer=True, # Default setting
-    pre_norm=False, # Default setting
-    amp=True,  # # Default setting: Automatic Mixed Precision
-)
+hyperparameter_defaults = {
+    "seed": 42,
+    "dataset_name": "fibro",  # Dataset name
+    "do_train": True,  # Flag to indicate whether to update model parameters during training
+    "load_model": "/scratch/ssd004/scratch/chloexq/scGPT_models/scGPT_human_model",
+    "model_name": "best_model.pt",
+    "GEPC": True,  # Gene expression modelling for cell objective
+    "ecs_thres": 0.8,  # Elastic cell similarity objective, 0.0 to 1.0, 0.0 to disable
+    "dab_weight": 1.0,  # DAR objective weight for batch correction
+    "mask_ratio": 0.4,  # Default mask ratio
+    "epochs": 15,  # Default number of epochs for fine-tuning
+    "n_bins": 51,  # Default number of bins for value binning in data pre-processing
+    "lr": 1e-4,  # Default learning rate for fine-tuning
+    "batch_size": 64,  # Default batch size for fine-tuning
+    "layer_size": 128,
+    "nlayers": 4,
+    "nhead": 4,  # If loading model, batch_size, layer_size, nlayers, nhead will be ignored
+    "dropout": 0.2,  # Default dropout rate during model fine-tuning
+    "schedule_ratio": 0.9,  # Default rate for learning rate decay
+    "save_eval_interval": 5,  # Default model evaluation interval
+    "log_interval": 100,  # Default log interval
+    "fast_transformer": True,  # Default setting
+    "pre_norm": False,  # Default setting
+    "amp": True,  # Default setting: Automatic Mixed Precision
+}
+
 run = wandb.init(
     config=hyperparameter_defaults,
     project="scGPT",
@@ -259,8 +209,6 @@ mask_ratio = config.mask_ratio
 mask_value = -1
 pad_value = -2
 n_input_bins = config.n_bins
-
-# n_hvg = 1200  # number of highly variable genes
 max_seq_len = adata.n_vars + 1
 per_seq_batch_sample = True
 DSBN = True  # Domain-spec batchnorm
@@ -289,7 +237,7 @@ if config.load_model is not None:
     gene_ids_in_vocab = np.array(adata.var["id_in_vocab"])
     print(
         f"match {np.sum(gene_ids_in_vocab >= 0)}/{len(gene_ids_in_vocab)} genes "
-        f"in vocabulary of size {len(vocab)}."
+        f"in vocabulary of size {len(vocab)}.",
     )
     adata = adata[:, adata.var["id_in_vocab"] >= 0]
     
@@ -298,7 +246,7 @@ if config.load_model is not None:
         model_configs = json.load(f)
     print(
         f"Resume model from {model_file}, the model args will be overriden by the "
-        f"config {model_config_file}."
+        f"config {model_config_file}.",
     )
     embsize = model_configs["embsize"]
     nhead = model_configs["nheads"]
@@ -335,7 +283,7 @@ preprocessor(adata, batch_key=None)
 genes = adata.var.index.tolist()
 if config.load_model is None:
     vocab = Vocab(
-        VocabPybind(genes + special_tokens, None)
+        VocabPybind(genes + special_tokens, None),
     )  # bidirectional lookup [gene <-> int]
 vocab.set_default_index(vocab["<pad>"])
 gene_ids = np.array(vocab(genes), dtype=int)
@@ -464,7 +412,7 @@ for i in tqdm(range(0, num_samples, sub_batch_size), desc="Random partitions"):
     # Map conditions to target genes via drug_target_map.
     dict_sum_target_gene_mean = {
         drug_target_map[drug]: dict_sum_condition_mean[drug]
-        for drug in dict_sum_condition_mean.keys() if drug in drug_target_map
+        for drug in dict_sum_condition_mean if drug in drug_target_map
     }
     
     # (Optional) Get the gene vocabulary index from the first element
@@ -477,7 +425,7 @@ for i in tqdm(range(0, num_samples, sub_batch_size), desc="Random partitions"):
     assert 'ctrl' not in perturb_targets
     
     # For each perturbation target, compute cosine distances and determine a ranking.
-    if "ctrl" in dict_sum_target_gene_mean.keys():
+    if "ctrl" in dict_sum_target_gene_mean:
         for t in perturb_targets:
             celltype_0 = t
             celltype_1 = 'ctrl'
@@ -503,7 +451,6 @@ for i in tqdm(range(0, num_samples, sub_batch_size), desc="Random partitions"):
             rank_mean = np.mean(rank_list)
             plt.figure()
             plt.boxplot(rank_list)
-            # plt.title(f"Boxplot after {i + sub_batch_size} random samples processed (mean: {rank_mean:.2f})")
             plt.savefig(f"boxplot_{i + sub_batch_size}_samples_mean_{rank_mean:.2f}.png")
             plt.close()
     
@@ -511,45 +458,15 @@ for i in tqdm(range(0, num_samples, sub_batch_size), desc="Random partitions"):
     del gene_embeddings_batch
     gc.collect()
 
-# %%
-dict_sum_target_gene_mean
-
-# %%
-# model.to(device)
-# wandb.watch(model)
-
-# with torch.no_grad(), torch.cuda.amp.autocast(enabled=config.amp):
-#     gene_embeddings = model.encode_batch(
-#         all_gene_ids,
-#         all_values.float(),
-#         src_key_padding_mask=src_key_padding_mask,
-#         batch_size=16,
-#         batch_labels=None,
-#         return_np=True,
-#     )
-
-# %%
-condition_ids
-
-# %%
-# dict_sum_condition = {}
-# for i, c in enumerate(condition_ids):
-#     if c in dict_sum_condition:
-#         dict_sum_condition[c]+=gene_embeddings[i, :, :]
-#     else:
-#         dict_sum_condition[c]=gene_embeddings[i, :, :]
-
-# %%
-dict_sum_condition
 
 # %%
 dict_sum_condition_mean = {}
 groups = adata_t.obs.groupby('condition').groups
-for i in groups.keys():
+for i in groups:
     dict_sum_condition_mean[i] = dict_sum_condition[i]/len(groups[i])
 
 # %%
-dict_sum_target_gene_mean = {drug_target_map[drug] : dict_sum_condition_mean[drug] for drug in dict_sum_condition_mean.keys()}
+dict_sum_target_gene_mean = {drug_target_map[drug] : dict_sum_condition_mean[drug] for drug in dict_sum_condition_mean}
 gene_vocab_idx = all_gene_ids[0].clone().detach().cpu().numpy()
 perturb_targets = list(dict_sum_target_gene_mean.keys())
 perturb_targets.remove('ctrl')
@@ -608,7 +525,6 @@ perturb_targets
 baseline_rank_t = []
 
 for t in perturb_targets:
-    # print(c)
     hvg_list = adata.uns['wilcoxon']['names'][t]
     p_val = adata.uns['wilcoxon']['pvals_adj'][t]
     df_gene_emb_dist = pd.DataFrame()
@@ -618,26 +534,12 @@ for t in perturb_targets:
     print(t, np.where(df_gene_emb_dist.gene.values==t)[0][0])
     baseline_rank_t.append(np.where(df_gene_emb_dist.gene.values==t)[0][0])
 
-# %%
-baseline_rank_t
-
-# %%
-perturb_targets
-
-# %%
-len(perturb_targets)
-
-# %%
-len(baseline_rank_t)
-
-# %%
-len(rank_list)
 
 # %%
 df_results = df = pd.DataFrame({
     'conditions': perturb_targets,
     'wilcoxon': baseline_rank_t,
-    'scGPT_rank': rank_list
+    'scGPT_rank': rank_list,
 })
 
 # %%
@@ -659,8 +561,6 @@ plt.title('Comparison of Methods Across Conditions')
 plt.xlabel('Method')
 plt.ylabel('Rank')
 plt.xticks(rotation=-45)
-# plt.yscale('log')
-# Display the plot
 plt.tight_layout()
 
 plt.legend([],[], frameon=False)
