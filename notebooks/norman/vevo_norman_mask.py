@@ -83,7 +83,7 @@ explicit_zero_prob = True  # whether explicit bernoulli for zeros
 
 dataset_name = config.dataset_name
 save_dir = Path(
-    f"/scratch/ssd004/scratch/ahz/perturb/dev_{dataset_name}-{time.strftime('%b%d-%H-%M')}/"
+    f"/scratch/ssd004/scratch/ahz/perturb/dev_{dataset_name}-{time.strftime('%b%d-%H-%M')}/",
 )
 save_dir.mkdir(parents=True, exist_ok=True)
 print(f"save to {save_dir}")
@@ -233,7 +233,8 @@ sc.pp.highly_variable_genes(
 add_counter = 0
 for g in condition_names_gene:
     if not adata.var.loc[
-        adata.var[adata.var.gene_name == g].index, "highly_variable"
+        adata.var[adata.var.gene_name == g].index, 
+        "highly_variable",
     ].values[0]:
         adata.var.loc[adata.var[adata.var.gene_name == g].index, "highly_variable"] = (
             True
@@ -243,7 +244,8 @@ for g in condition_names_gene:
 # %%
 print(
     "Manually add conditions: {}, {}".format(
-        add_counter, add_counter / len(condition_names_gene)
+        add_counter, 
+        add_counter / len(condition_names_gene),
     )
 )
 
@@ -412,7 +414,10 @@ def collate_cell_by_key(tokenized_all, key, select_gene_id):
     select_ids_pcpt_list = []
     for k in tqdm(range(n_cells)):
         select_ids_gen, select_ids_pcpt = expand_cell(
-            tokenized_all, key, k, select_gene_id
+            tokenized_all, 
+            key, 
+            k, 
+            select_gene_id,
         )
         select_ids_gen_list.append(select_ids_gen)
         select_ids_pcpt_list.append(select_ids_pcpt)
@@ -464,10 +469,14 @@ for select_gene in select_gene_list:
     n_genes = tokenized_all["genes"].shape[1]
 
     collate_genes_gen, collate_genes_pcpt = collate_cell_by_key(
-        tokenized_all, "genes", select_gene_id
+        tokenized_all, 
+        "genes", 
+        select_gene_id,
     )
     _, collate_values_pcpt = collate_cell_by_key(
-        tokenized_all, "values", select_gene_id
+        tokenized_all, 
+        "values", 
+        select_gene_id,
     )
 
     tokenized_all_expand = {
@@ -518,7 +527,9 @@ for select_gene in select_gene_list:
             )
             select_mask = (gen_genes == query_id_select.unsqueeze(1)).long()
             selected_output = gen_output[
-                torch.arange(gen_output.shape[0]), select_mask.argmax(dim=1), :
+                torch.arange(gen_output.shape[0]), 
+                select_mask.argmax(dim=1), 
+                :,
             ]
             selected_output_np = selected_output.detach().cpu().numpy()
             gene_embeddings[
@@ -532,7 +543,7 @@ for select_gene in select_gene_list:
     dict_sum_condition_mean = {}
     for c in np.unique(conditions):
         dict_sum_condition_mean[c] = gene_embeddings[np.where(conditions == c)[0]].mean(
-            0
+            0,
         )
 
     print(dict_sum_condition_mean)
@@ -544,10 +555,13 @@ for select_gene in select_gene_list:
     gene_dist_dict = {}
     for i, g in tqdm(enumerate(genes)):
         gene_dist_dict[g] = cosine_distances(
-            gene_emb_celltype_0[:, i, :], gene_emb_celltype_1[:, i, :]
+            gene_emb_celltype_0[:, i, :], 
+            gene_emb_celltype_1[:, i, :],
         ).mean()
     df_gene_emb_dist = pd.DataFrame.from_dict(
-        gene_dist_dict, orient="index", columns=["cos_dist"]
+        gene_dist_dict, 
+        orient="index", 
+        columns=["cos_dist"],
     )
     df_deg = df_gene_emb_dist.sort_values(by="cos_dist", ascending=False)
     rank_celltype_0 = np.where(df_deg.index == celltype_0.split("+")[0])[0][0]
@@ -557,5 +571,5 @@ for select_gene in select_gene_list:
         **dict_sum_condition_mean,
     )
     print(
-        f'Saved:\n{str(save_dir)+"/mean_gene_emb_{}_{}.npz".format(select_gene, rank_celltype_0)}'
+        f'Saved:\n{str(save_dir)+"/mean_gene_emb_{}_{}.npz".format(select_gene, rank_celltype_0)}',
     )

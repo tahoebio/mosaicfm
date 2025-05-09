@@ -34,7 +34,7 @@ adata
 
 # %%
 drug_df = pd.read_csv(
-    "/datasets/Tahoe-100M/Tahoe/vevo_filter/plate2_demo_final_targets.csv"
+    "/datasets/Tahoe-100M/Tahoe/vevo_filter/plate2_demo_final_targets.csv",
 )
 drug_target_map = dict(zip(drug_df["compound"], drug_df["targets"]))
 
@@ -131,7 +131,7 @@ for c in perturb_conditions:
     df_gene_emb_dist = df_gene_emb_dist.sort_values(by="p_val")
     print(c, np.where(df_gene_emb_dist.gene.values == c.split("+")[0])[0][0])
     baseline_rank.append(
-        np.where(df_gene_emb_dist.gene.values == c.split("+")[0])[0][0]
+        np.where(df_gene_emb_dist.gene.values == c.split("+")[0])[0][0],
     )
 
 # %%
@@ -226,7 +226,7 @@ explicit_zero_prob = True  # whether explicit bernoulli for zeros
 
 dataset_name = config.dataset_name
 save_dir = Path(
-    f"/scratch/ssd004/scratch/ahz/perturb/dev_{dataset_name}-{time.strftime('%b%d-%H-%M')}/"
+    f"/scratch/ssd004/scratch/ahz/perturb/dev_{dataset_name}-{time.strftime('%b%d-%H-%M')}/",
 )
 save_dir.mkdir(parents=True, exist_ok=True)
 print(f"save to {save_dir}")
@@ -447,23 +447,31 @@ for i in tqdm(range(0, num_samples, sub_batch_size), desc="Random partitions"):
             celltype_1 = "ctrl"
             # Expand dims so that cosine_distances receives 2D arrays.
             gene_emb_celltype_0 = np.expand_dims(
-                dict_sum_target_gene_mean[celltype_0][1:, :], axis=0
+                dict_sum_target_gene_mean[celltype_0][1:, :], 
+                axis=0,
             )
             gene_emb_celltype_1 = np.expand_dims(
-                dict_sum_target_gene_mean[celltype_1][1:, :], axis=0
+                dict_sum_target_gene_mean[celltype_1][1:, :], 
+                axis=0,
             )
             gene_dist_dict = {}
 
             for j, g in tqdm(
-                enumerate(genes), total=len(genes), desc=f"Analyzing {t}", disable=True
+                enumerate(genes), 
+                total=len(genes), 
+                desc=f"Analyzing {t}", 
+                disable=True
             ):
                 gene_dist = cosine_distances(
-                    gene_emb_celltype_0[:, j, :], gene_emb_celltype_1[:, j, :]
+                    gene_emb_celltype_0[:, j, :], 
+                    gene_emb_celltype_1[:, j, :],
                 ).mean()
                 gene_dist_dict[g] = gene_dist
 
             df_gene_emb_dist = pd.DataFrame.from_dict(
-                gene_dist_dict, orient="index", columns=["cos_dist"]
+                gene_dist_dict, 
+                orient="index", 
+                columns=["cos_dist"],
             )
             df_deg = df_gene_emb_dist.sort_values(by="cos_dist", ascending=False)
             rank = np.where(df_deg.index == t)[0][0]
@@ -477,7 +485,7 @@ for i in tqdm(range(0, num_samples, sub_batch_size), desc="Random partitions"):
             plt.figure()
             plt.boxplot(rank_list)
             plt.savefig(
-                f"boxplot_{i + sub_batch_size}_samples_mean_{rank_mean:.2f}.png"
+                f"boxplot_{i + sub_batch_size}_samples_mean_{rank_mean:.2f}.png",
             )
             plt.close()
 
@@ -507,18 +515,23 @@ for t in perturb_targets:
     celltype_0 = t
     celltype_1 = "ctrl"
     gene_emb_celltype_0 = np.expand_dims(
-        dict_sum_target_gene_mean[celltype_0][1:, :], 0
+        dict_sum_target_gene_mean[celltype_0][1:, :], 
+        0,
     )
     gene_emb_celltype_1 = np.expand_dims(
-        dict_sum_target_gene_mean[celltype_1][1:, :], 0
+        dict_sum_target_gene_mean[celltype_1][1:, :], 
+        0,
     )
     gene_dist_dict = {}
     for i, g in tqdm(enumerate(genes)):
         gene_dist_dict[g] = cosine_distances(
-            gene_emb_celltype_0[:, i, :], gene_emb_celltype_1[:, i, :]
+            gene_emb_celltype_0[:, i, :], 
+            gene_emb_celltype_1[:, i, :],
         ).mean()
     df_gene_emb_dist = pd.DataFrame.from_dict(
-        gene_dist_dict, orient="index", columns=["cos_dist"]
+        gene_dist_dict, 
+        orient="index", 
+        columns=["cos_dist"],
     )
     df_deg = df_gene_emb_dist.sort_values(by="cos_dist", ascending=False)
     print(t, np.where(df_deg.index == t)[0][0])
@@ -581,7 +594,7 @@ df_results = df = pd.DataFrame(
         "conditions": perturb_targets,
         "wilcoxon": baseline_rank_t,
         "scGPT_rank": rank_list,
-    }
+    },
 )
 
 # %%
