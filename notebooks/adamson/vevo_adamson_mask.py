@@ -1,26 +1,17 @@
 # %%
-import copy
-import gc
 import json
 import os
 from pathlib import Path
 import sys
 import time
-import traceback
-from typing import List, Tuple, Dict, Union, Optional
+from typing import Dict
 import warnings
-
 import torch
-from anndata import AnnData
 import scanpy as sc
-#import scvi
 import numpy as np
 import pandas as pd
 import wandb
 from scipy.sparse import issparse
-import matplotlib.pyplot as plt
-from torch import nn
-from torch.nn import functional as F
 from torch.utils.data import Dataset, DataLoader
 from sklearn.model_selection import train_test_split
 from torchtext.vocab import Vocab
@@ -28,53 +19,45 @@ from torchtext._torchtext import (
     Vocab as VocabPybind,
 )
 
-
 sys.path.insert(0, "../")
-#import scgpt as scg
-from scgpt.model import TransformerModel, AdversarialDiscriminator
-from scgpt.tokenizer import tokenize_and_pad_batch, random_mask_value
+from scgpt.model import TransformerModel
+from scgpt.tokenizer import tokenize_and_pad_batch
 from scgpt.tokenizer.gene_tokenizer import GeneVocab
-from scgpt.loss import (
-    masked_mse_loss,
-    masked_relative_error,
-    criterion_neg_log_bernoulli,
-)
 from scgpt.preprocess import Preprocessor
 from scgpt import SubsetsBatchSampler
-from scgpt.utils import set_seed, eval_scib_metrics, load_pretrained
+from scgpt.utils import set_seed, load_pretrained
 
 sc.set_figure_params(figsize=(4, 4))
 os.environ["KMP_WARNINGS"] = "off"
 warnings.filterwarnings('ignore')
 
 # %%
-hyperparameter_defaults = dict(
-    seed=42,
-    dataset_name="fibro", # Dataset name
-    do_train=True, # Flag to indicate whether to do update model parameters during training
-    load_model="/scratch/ssd004/scratch/chloexq/scGPT_models/scGPT_human_model",
-    model_name="best_model.pt",
-    #"/scratch/ssd004/scratch/chloexq/fibro/dev_fibro-Jun19-18-29",
-    #"/scratch/ssd004/scratch/chloexq/fibro/dev_fibro-Jun23-14-13", # Path to pre-trained model
-    GEPC=True,  # Gene expression modelling for cell objective
-    ecs_thres=0.8,  # Elastic cell similarity objective, 0.0 to 1.0, 0.0 to disable
-    dab_weight=1.0, # DAR objective weight for batch correction
-    mask_ratio=0.4, # Default mask ratio
-    epochs=15, # Default number of epochs for fine-tuning
-    n_bins=51, # Default number of bins for value binning in data pre-processing
-    lr=1e-4, # Default learning rate for fine-tuning
-    batch_size=64, # Default batch size for fine-tuning
-    layer_size=128,
-    nlayers=4,
-    nhead=4, # if load model, batch_size, layer_size, nlayers, nhead will be ignored
-    dropout=0.2, # Default dropout rate during model fine-tuning
-    schedule_ratio=0.9,  # Default rate for learning rate decay
-    save_eval_interval=5, # Default model evaluation interval
-    log_interval=100, # Default log interval
-    fast_transformer=True, # Default setting
-    pre_norm=False, # Default setting
-    amp=True,  # # Default setting: Automatic Mixed Precision
-)
+hyperparameter_defaults = {
+    "seed": 42,
+    "dataset_name": "fibro",  # Dataset name
+    "do_train": True,  # Flag to indicate whether to do update model parameters during training
+    "load_model": "/scratch/ssd004/scratch/chloexq/scGPT_models/scGPT_human_model",
+    "model_name": "best_model.pt",
+    "GEPC": True,  # Gene expression modelling for cell objective
+    "ecs_thres": 0.8,  # Elastic cell similarity objective, 0.0 to 1.0, 0.0 to disable
+    "dab_weight": 1.0,  # DAR objective weight for batch correction
+    "mask_ratio": 0.4,  # Default mask ratio
+    "epochs": 15,  # Default number of epochs for fine-tuning
+    "n_bins": 51,  # Default number of bins for value binning in data pre-processing
+    "lr": 1e-4,  # Default learning rate for fine-tuning
+    "batch_size": 64,  # Default batch size for fine-tuning
+    "layer_size": 128,
+    "nlayers": 4,
+    "nhead": 4,  # if load model, batch_size, layer_size, nlayers, nhead will be ignored
+    "dropout": 0.2,  # Default dropout rate during model fine-tuning
+    "schedule_ratio": 0.9,  # Default rate for learning rate decay
+    "save_eval_interval": 5,  # Default model evaluation interval
+    "log_interval": 100,  # Default log interval
+    "fast_transformer": True,  # Default setting
+    "pre_norm": False,  # Default setting
+    "amp": True,  # Default setting: Automatic Mixed Precision
+}
+
 run = wandb.init(
     config=hyperparameter_defaults,
     project="scGPT",
@@ -87,7 +70,6 @@ print(config)
 set_seed(config.seed)
 
 # %%
-from pathlib import Path
 # settings for input and preprocessing
 pad_token = "<pad>"
 special_tokens = [pad_token, "<cls>", "<eoc>"]
@@ -136,7 +118,7 @@ if config.load_model is not None:
     gene_ids_in_vocab = np.array(adata.var["id_in_vocab"])
     print(
         f"match {np.sum(gene_ids_in_vocab >= 0)}/{len(gene_ids_in_vocab)} genes "
-        f"in vocabulary of size {len(vocab)}."
+        f"in vocabulary of size {len(vocab)}.",
     )
     adata = adata[:, adata.var["id_in_vocab"] >= 0]
     
@@ -145,7 +127,7 @@ if config.load_model is not None:
         model_configs = json.load(f)
     print(
         f"Resume model from {model_file}, the model args will be overriden by the "
-        f"config {model_config_file}."
+        f"config {model_config_file}.",
     )
     embsize = model_configs["embsize"]
     nhead = model_configs["nheads"]
@@ -160,7 +142,7 @@ else:
 
 # %%
 gene_names_set = [i + '+ctrl' for i in adata.var.gene_name.values]
-gene_names_set = gene_names_set + ['ctrl']
+gene_names_set = [*gene_names_set, 'ctrl']
 
 # %%
 # Cap all conditions to 1000 cells
@@ -175,7 +157,6 @@ adata.obs.groupby('condition').count()
 # %%
 # 5 conditions are capped, including ctrl
 condition_counts = adata.obs.groupby('condition').count()
-#condition_counts[condition_counts == 1000].dropna()
 
 # %%
 condition_names = set(adata.obs.condition.tolist())
@@ -204,8 +185,6 @@ preprocessor = Preprocessor(
     result_log1p_key="X_log1p",
     subset_hvg=None,  # 5. whether to subset the raw data to highly variable genes
     hvg_flavor="seurat_v3" if data_is_raw else "cell_ranger",
-    #binning=config.n_bins,  # 6. whether to bin the raw data and to what number of bins
-    #result_binned_key="X_binned",  # the key in adata.layers to store the binned data
 )
 preprocessor(adata, batch_key=None)
 
@@ -287,84 +266,17 @@ batch_ids = np.array(batch_ids)
     train_batch_labels,
     valid_batch_labels,
 ) = train_test_split(
-    all_counts, celltypes_labels, batch_ids, test_size=0.1, shuffle=True
+    all_counts, celltypes_labels, batch_ids, test_size=0.1, shuffle=True,
 )
 
 
 # %%
 if config.load_model is None:
     vocab = Vocab(
-        VocabPybind(genes + special_tokens, None)
+        VocabPybind(genes + special_tokens, None),
     )  # bidirectional lookup [gene <-> int]
 vocab.set_default_index(vocab["<pad>"])
 gene_ids = np.array(vocab(genes), dtype=int)
-
-# %%
-len(gene_ids)
-
-# %%
-adata
-
-# %%
-def prepare_data(sort_seq_batch=False) -> Tuple[Dict[str, torch.Tensor]]:
-    masked_values_train = random_mask_value(
-        tokenized_train["values"],
-        mask_ratio=mask_ratio,
-        mask_value=mask_value,
-        pad_value=pad_value,
-    )
-    masked_values_valid = random_mask_value(
-        tokenized_valid["values"],
-        mask_ratio=mask_ratio,
-        mask_value=mask_value,
-        pad_value=pad_value,
-    )
-    print(
-        f"random masking at epoch {epoch:3d}, ratio of masked values in train: ",
-        f"{(masked_values_train == mask_value).sum() / (masked_values_train - pad_value).count_nonzero():.4f}",
-    )
-
-    input_gene_ids_train, input_gene_ids_valid = (
-        tokenized_train["genes"],
-        tokenized_valid["genes"],
-    )
-    input_values_train, input_values_valid = masked_values_train, masked_values_valid
-    target_values_train, target_values_valid = (
-        tokenized_train["values"],
-        tokenized_valid["values"],
-    )
-
-    tensor_batch_labels_train = torch.from_numpy(train_batch_labels).long()
-    tensor_batch_labels_valid = torch.from_numpy(valid_batch_labels).long()
-
-    if sort_seq_batch:
-        train_sort_ids = np.argsort(train_batch_labels)
-        input_gene_ids_train = input_gene_ids_train[train_sort_ids]
-        input_values_train = input_values_train[train_sort_ids]
-        target_values_train = target_values_train[train_sort_ids]
-        tensor_batch_labels_train = tensor_batch_labels_train[train_sort_ids]
-
-        valid_sort_ids = np.argsort(valid_batch_labels)
-        input_gene_ids_valid = input_gene_ids_valid[valid_sort_ids]
-        input_values_valid = input_values_valid[valid_sort_ids]
-        target_values_valid = target_values_valid[valid_sort_ids]
-        tensor_batch_labels_valid = tensor_batch_labels_valid[valid_sort_ids]
-
-    train_data_pt = {
-        "gene_ids": input_gene_ids_train,
-        "values": input_values_train,
-        "target_values": target_values_train,
-        "batch_labels": tensor_batch_labels_train,
-    }
-    valid_data_pt = {
-        "gene_ids": input_gene_ids_valid,
-        "values": input_values_valid,
-        "target_values": target_values_valid,
-        "batch_labels": tensor_batch_labels_valid,
-    }
-
-    return train_data_pt, valid_data_pt
-
 
 # dataset
 class SeqDataset(Dataset):
@@ -495,8 +407,6 @@ from torch.utils.data import DataLoader, TensorDataset
 
 # %%
 from sklearn.metrics.pairwise import cosine_distances
-from tqdm import tqdm
-import pandas as pd
 
 # %%
 select_gene_list = condition_names_gene
