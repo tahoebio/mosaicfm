@@ -447,30 +447,30 @@ for i in tqdm(range(0, num_samples, sub_batch_size), desc="Random partitions"):
             celltype_1 = "ctrl"
             # Expand dims so that cosine_distances receives 2D arrays.
             gene_emb_celltype_0 = np.expand_dims(
-                dict_sum_target_gene_mean[celltype_0][1:, :], 
+                dict_sum_target_gene_mean[celltype_0][1:, :],
                 axis=0,
             )
             gene_emb_celltype_1 = np.expand_dims(
-                dict_sum_target_gene_mean[celltype_1][1:, :], 
+                dict_sum_target_gene_mean[celltype_1][1:, :],
                 axis=0,
             )
             gene_dist_dict = {}
 
             for j, g in tqdm(
-                enumerate(genes), 
-                total=len(genes), 
-                desc=f"Analyzing {t}", 
-                disable=True
+                enumerate(genes),
+                total=len(genes),
+                desc=f"Analyzing {t}",
+                disable=True,
             ):
                 gene_dist = cosine_distances(
-                    gene_emb_celltype_0[:, j, :], 
+                    gene_emb_celltype_0[:, j, :],
                     gene_emb_celltype_1[:, j, :],
                 ).mean()
                 gene_dist_dict[g] = gene_dist
 
             df_gene_emb_dist = pd.DataFrame.from_dict(
-                gene_dist_dict, 
-                orient="index", 
+                gene_dist_dict,
+                orient="index",
                 columns=["cos_dist"],
             )
             df_deg = df_gene_emb_dist.sort_values(by="cos_dist", ascending=False)
@@ -515,22 +515,22 @@ for t in perturb_targets:
     celltype_0 = t
     celltype_1 = "ctrl"
     gene_emb_celltype_0 = np.expand_dims(
-        dict_sum_target_gene_mean[celltype_0][1:, :], 
+        dict_sum_target_gene_mean[celltype_0][1:, :],
         0,
     )
     gene_emb_celltype_1 = np.expand_dims(
-        dict_sum_target_gene_mean[celltype_1][1:, :], 
+        dict_sum_target_gene_mean[celltype_1][1:, :],
         0,
     )
     gene_dist_dict = {}
     for i, g in tqdm(enumerate(genes)):
         gene_dist_dict[g] = cosine_distances(
-            gene_emb_celltype_0[:, i, :], 
+            gene_emb_celltype_0[:, i, :],
             gene_emb_celltype_1[:, i, :],
         ).mean()
     df_gene_emb_dist = pd.DataFrame.from_dict(
-        gene_dist_dict, 
-        orient="index", 
+        gene_dist_dict,
+        orient="index",
         columns=["cos_dist"],
     )
     df_deg = df_gene_emb_dist.sort_values(by="cos_dist", ascending=False)

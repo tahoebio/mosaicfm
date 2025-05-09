@@ -202,7 +202,7 @@ sc.pp.highly_variable_genes(
 add_counter = 0
 for g in condition_names_gene:
     if not adata.var.loc[
-        adata.var[adata.var.gene_name == g].index, 
+        adata.var[adata.var.gene_name == g].index,
         "highly_variable",
     ].values[0]:
         adata.var.loc[adata.var[adata.var.gene_name == g].index, "highly_variable"] = (
@@ -213,9 +213,9 @@ for g in condition_names_gene:
 # %%
 print(
     "Manually add conditions: {}, {}".format(
-        add_counter, 
+        add_counter,
         add_counter / len(condition_names_gene),
-    )
+    ),
 )
 
 # %%
@@ -420,9 +420,9 @@ def collate_cell_by_key(tokenized_all, key, select_gene_id):
     select_ids_pcpt_list = []
     for k in tqdm(range(n_cells)):
         select_ids_gen, select_ids_pcpt = expand_cell(
-            tokenized_all, 
-            key, 
-            k, 
+            tokenized_all,
+            key,
+            k,
             select_gene_id,
         )
         select_ids_gen_list.append(select_ids_gen)
@@ -478,13 +478,13 @@ for select_gene in select_gene_list:
     n_genes = tokenized_all["genes"].shape[1]
 
     collate_genes_gen, collate_genes_pcpt = collate_cell_by_key(
-        tokenized_all, 
-        "genes", 
+        tokenized_all,
+        "genes",
         select_gene_id,
     )
     _, collate_values_pcpt = collate_cell_by_key(
-        tokenized_all, 
-        "values", 
+        tokenized_all,
+        "values",
         select_gene_id,
     )
 
@@ -536,8 +536,8 @@ for select_gene in select_gene_list:
             )
             select_mask = (gen_genes == query_id_select.unsqueeze(1)).long()
             selected_output = gen_output[
-                torch.arange(gen_output.shape[0]), 
-                select_mask.argmax(dim=1), 
+                torch.arange(gen_output.shape[0]),
+                select_mask.argmax(dim=1),
                 :,
             ]
             selected_output_np = selected_output.detach().cpu().numpy()
@@ -564,12 +564,12 @@ for select_gene in select_gene_list:
     gene_dist_dict = {}
     for i, g in tqdm(enumerate(genes)):
         gene_dist_dict[g] = cosine_distances(
-            gene_emb_celltype_0[:, i, :], 
+            gene_emb_celltype_0[:, i, :],
             gene_emb_celltype_1[:, i, :],
         ).mean()
     df_gene_emb_dist = pd.DataFrame.from_dict(
-        gene_dist_dict, 
-        orient="index", 
+        gene_dist_dict,
+        orient="index",
         columns=["cos_dist"],
     )
     df_deg = df_gene_emb_dist.sort_values(by="cos_dist", ascending=False)
@@ -577,8 +577,8 @@ for select_gene in select_gene_list:
     print(select_gene, select_gene_match, rank_celltype_0)
     np.savez(
         "/scratch/hdd001/home/haotian/perturb_data/vevo_adamson_mean_gene_emb/mean_gene_emb_{}_null_{}_{}.npz".format(
-            select_gene, 
-            select_gene_match, 
+            select_gene,
+            select_gene_match,
             rank_celltype_0,
         ),
         **dict_sum_condition_mean,
