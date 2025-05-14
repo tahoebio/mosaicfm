@@ -1,7 +1,6 @@
 # Copyright (C) Vevo Therapeutics 2025. All rights reserved.
 import io
 import json
-import torch
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -16,7 +15,7 @@ from sklearn.neighbors import kneighbors_graph
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 
 from mosaicfm.utils import download_file_from_s3_url
-from composer.utils import model_eval_mode
+
 
 # Custom Callback to run the cell classification after training
 class CellClassification(Callback):
@@ -73,7 +72,6 @@ class CellClassification(Callback):
 
             self.cell_classfication(datast_name, logger)
 
-        
     def cell_classfication(self, dataset: str, logger: Logger):
         # step 1: load data train, test
         class_idx_to_name = np.load(
@@ -97,29 +95,28 @@ class CellClassification(Callback):
             self.model.model,
         ), torch.no_grad(), FSDP.summon_full_params(self.model.model, writeback=False):
 
-                cell_embeddings_train = get_batch_embeddings(
-                    adata=adata_train,
-                    model=self.model.model,
-                    vocab=self.vocab,
-                    gene_ids=gene_ids_train,
-                    model_cfg=self.model_config,
-                    collator_cfg=self.collator_config,
-                    batch_size=self.batch_size,
-                    max_length=self.seq_len,
-                    return_gene_embeddings=False,
-                )
-                cell_embeddings_test = get_batch_embeddings(
-                    adata=adata_test,
-                    model=self.model.model,
-                    vocab=self.vocab,
-                    gene_ids=gene_ids_test,
-                    model_cfg=self.model_config,
-                    collator_cfg=self.collator_config,
-                    batch_size=self.batch_size,
-                    max_length=self.seq_len,
-                    return_gene_embeddings=False,
-                )
-
+            cell_embeddings_train = get_batch_embeddings(
+                adata=adata_train,
+                model=self.model.model,
+                vocab=self.vocab,
+                gene_ids=gene_ids_train,
+                model_cfg=self.model_config,
+                collator_cfg=self.collator_config,
+                batch_size=self.batch_size,
+                max_length=self.seq_len,
+                return_gene_embeddings=False,
+            )
+            cell_embeddings_test = get_batch_embeddings(
+                adata=adata_test,
+                model=self.model.model,
+                vocab=self.vocab,
+                gene_ids=gene_ids_test,
+                model_cfg=self.model_config,
+                collator_cfg=self.collator_config,
+                batch_size=self.batch_size,
+                max_length=self.seq_len,
+                return_gene_embeddings=False,
+            )
 
         # step 3: train classifier
         clf = LogisticRegression(
