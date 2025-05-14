@@ -431,6 +431,7 @@ def main(cfg: DictConfig) -> composer.Trainer:
         loader_cfg=train_loader_config,
         collator_cfg=collator_config,
         device_batch_size=device_train_batch_size,
+        train_mode=True,
     )
     log.info(f"train set number of samples: {(train_loader.dataloader.dataset.size)}")
     valid_loader = build_dataloader(
@@ -438,6 +439,8 @@ def main(cfg: DictConfig) -> composer.Trainer:
         loader_cfg=valid_loader_config,
         collator_cfg=collator_config,
         device_batch_size=device_eval_batch_size,
+        train_mode=False,
+
     )
     log.info(
         f"Validation set number of samples: {(valid_loader.dataloader.dataset.size)}",

@@ -27,6 +27,7 @@ def build_streams(streams: dict[str, Any]) -> List[Stream]:
 
 def build_dataloader(
     vocab: GeneVocab,
+    train_mode: bool,
     loader_cfg: DictConfig,
     collator_cfg: DictConfig,
     device_batch_size: int,
@@ -59,6 +60,11 @@ def build_dataloader(
     else:
         mlm_probability = collator_cfg.mlm_probability
 
+    # For evaluation always use a fix value consistent with other runs to make spearman comparable
+    if not train_mode:
+        mlm_probability = collator_cfg.get("mlm_probability_eval", 0.5)
+    
+    print(f"MLM probability: {mlm_probability}")
     collate_fn = DataCollator(
         vocab=vocab,
         do_padding=collator_cfg.get("do_padding", True),
