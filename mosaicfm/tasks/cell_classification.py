@@ -54,11 +54,6 @@ class CellClassification(Callback):
     def fit_end(self, state: State, logger: Logger):
 
         self.model = state.model
-<<<<<<< HEAD
-=======
-
-        self.was_training = self.model.training
->>>>>>> f195a9e (test!)
         self.model_config = self.model.model_config
         self.collator_config = self.model.collator_config
         self.vocab = state.train_dataloader.collate_fn.vocab
@@ -101,7 +96,7 @@ class CellClassification(Callback):
 
             cell_embeddings_train = get_batch_embeddings(
                 adata=adata_train,
-                model=full_model,
+                model=self.model.model,
                 vocab=self.vocab,
                 gene_ids=gene_ids_train,
                 model_cfg=self.model_config,
@@ -112,7 +107,7 @@ class CellClassification(Callback):
             )
             cell_embeddings_test = get_batch_embeddings(
                 adata=adata_test,
-                model=full_model,
+                model=self.model.model,
                 vocab=self.vocab,
                 gene_ids=gene_ids_test,
                 model_cfg=self.model_config,
@@ -124,7 +119,7 @@ class CellClassification(Callback):
 
             # restore model to training mode
             if self.was_training:
-                full_model.train()
+                self.model.model.train()
 
         # step 3: train classifier
         clf = LogisticRegression(
