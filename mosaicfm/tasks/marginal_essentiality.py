@@ -84,6 +84,7 @@ class MarginalEssentiality(Callback):
                 return_gene_embeddings=True,
             )
 
+    
         # load task DataFrame
         gene2idx = vocab.get_stoi()
         gene_names = np.array(list(gene2idx.keys()))
