@@ -71,7 +71,6 @@ class CellClassification(Callback):
 
             self.cell_classfication(datast_name, logger)
 
-
     def cell_classfication(self, dataset: str, logger: Logger):
         # step 1: load data train, test
         class_idx_to_name = np.load(
