@@ -413,6 +413,8 @@ class ChemEncoder(nn.Module):
         )
         self.fc = nn.Linear(embedding_dim, d_out)
         self.activation = resolve_ffn_act_fn({"name": activation})
+        self.proj = nn.Linear(d_out, d_out)
+
         self.use_norm = use_norm
         if self.use_norm:
             self.norm = nn.LayerNorm(d_out)
@@ -420,6 +422,8 @@ class ChemEncoder(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         x = self.embedding(x)  # (batch, d_out)
         x = self.activation(self.fc(x))
+        x = self.proj(x)  # (batch, d_out)
+        
         if self.use_norm:
             x = self.norm(x)
         return x
