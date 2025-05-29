@@ -12,13 +12,13 @@ image: vevotx/mosaicfm:1.1.0
 env_variables:
   MOSAICML_PLATFORM: False
   OPENBLAS_NUM_THREADS: 1
-name: mosaicfm-70m-evo2-concat-no-norm-scaled
+name: mosaicfm-70m-evo2-concat-no-norm-no-scale
 
 compute:
   gpus: 16 # Number of GPUs to use
   cluster: r15z1p1
 scheduling:
-  max_duration: 3 # Maximum duration of the run in hours
+  max_duration: 6 # Maximum duration of the run in hours
 
 parameters:
   global_seed: 777
@@ -66,8 +66,8 @@ parameters:
         combination_strategy: "concat_and_project"
         embeddings:
           evo2:
-            remote: "s3://vevo-ml-datasets/evo2-embeddings/gene_evo27b_250504_embeddings_vocab_aligned_scaled.pt"
-            local: "gene_evo27b_250504_embeddings_vocab_aligned_scaled.pt"
+            remote: "s3://vevo-ml-datasets/evo2-embeddings/gene_evo27b_250504_embeddings_vocab_aligned.pt"
+            local: "gene_evo27b_250504_embeddings_vocab_aligned.pt"
             use_norm: false
             fix_embedding: true
     mvc:
@@ -229,9 +229,9 @@ parameters:
     wandb:
       project: mosaicfm-dev-hamed-mcli
       group: evo2-embedding
-      name: mosaicfm-70m-evo2-concat-no-norm-scaled
+      name: mosaicfm-70m-evo2-concat-no-norm-no-scale
       log_artifacts: False
   save_folder: "s3://vevo-ml-datasets/vevo-scgpt/models/{run_name}"
   save_interval: "2000ba"
   autoresume: True
-  run_name: "mosaicfm-70m-evo2-concat-no-norm-scaled"
+  run_name: "mosaicfm-70m-evo2-concat-no-norm-no-scale"

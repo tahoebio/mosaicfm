@@ -1,24 +1,23 @@
 integrations:
 - integration_type: git_repo
   git_repo: vevotx/mosaicfm
-  git_branch: 80-use-evo2-pretrained-gene-embeddings
+  git_branch: add-evo2-embeddings-for-genes-in-vocabulary
   pip_install: -e . --no-deps
   ssh_clone: true  # Should be true if using a private repo
 
 command: |
   cd mosaicfm/scripts
   composer train.py /mnt/config/parameters.yaml
-image: vevotx/mosaicfm:1.1.0
+image: vevotx/mosaicfm:1.0.0
 env_variables:
   MOSAICML_PLATFORM: False
-  OPENBLAS_NUM_THREADS: 1
-name: mosaicfm-70m-evo2-concat-no-norm-scaled
+name: mosaicfm-70m-evo2
 
 compute:
   gpus: 16 # Number of GPUs to use
   cluster: r15z1p1
 scheduling:
-  max_duration: 3 # Maximum duration of the run in hours
+  max_duration: 0.5 # Maximum duration of the run in hours
 
 parameters:
   global_seed: 777
@@ -62,14 +61,13 @@ parameters:
     gene_encoder:
       use_norm: True
       gene_embedding:
-        trainable: true
-        combination_strategy: "concat_and_project"
+        trainable: true  # Whether to use primary trainable embeddings
         embeddings:
           evo2:
-            remote: "s3://vevo-ml-datasets/evo2-embeddings/gene_evo27b_250504_embeddings_vocab_aligned_scaled.pt"
-            local: "gene_evo27b_250504_embeddings_vocab_aligned_scaled.pt"
-            use_norm: false
-            fix_embedding: true
+            remote: "s3://vevo-ml-datasets/evo2-embeddings/gene_evo27b_250504_embeddings_vocab_aligned.pt"
+            local: "gene_evo27b_250504_embeddings_vocab_aligned.pt"
+            use_norm: true  # Whether to normalize this embedding after projection
+            fix_embedding: true  # True to keep Evo2 embeddings fixed
     mvc:
       arch_style: "inner product"
       query_activation: "sigmoid"
@@ -165,73 +163,12 @@ parameters:
     lr_monitor: {}
     memory_monitor: {}
     runtime_estimator: {}
-    marginal-essentiality:
-      cfg:
-        batch_size: 32
-        seq_len: 8192
-        adata:
-          remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/marginal-essentiality/ccle.h5ad"
-          local: "/vevo/data/download/marginal-essentiality/ccle.h5ad"
-          gene_column: "feature_id"
-        labels:
-          remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/marginal-essentiality/labels.csv"
-          local: "/vevo/data/download/marginal-essentiality/labels.csv"
-          gene_column: "gene_id"
-          label_column: "essential"
-        classifier:
-          n_jobs: 32
-          test_size: 0.2
-          random_state: 42
-    cell-classification:
-      cfg:
-        ensemble_to_gene_path:
-          remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/vevo_v2_ensembl_to_gene_name.json"
-          local: "/vevo/data/datasets/vevo_v2_ensembl_to_gene_name.json"
-        datasets:
-          kim:
-            train:
-              remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/kim2020/kim_train.h5ad"
-              local: "/vevo/data/datasets/kim2020_lung/kim_train.h5ad"
-            test:
-              remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/kim2020/kim_test.h5ad"
-              local: "/vevo/data/datasets/kim2020_lung/kim_test.h5ad"
-            class_names:
-              remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/kim2020/kim-str_label.npy"
-              local: "/vevo/data/datasets/kim2020_lung/kim-str_label.npy"
-          zheng:
-            train:
-              remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/zheng/zheng_train.h5ad"
-              local: "/vevo/data/datasets/zheng/zheng_train.h5ad"
-            test:
-              remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/zheng/zheng_test.h5ad"
-              local: "/vevo/data/datasets/zheng/zheng_test.h5ad"
-            class_names:
-              remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/zheng/zheng-str_label.npy"
-              local: "/vevo/data/datasets/zheng/zheng-str_label.npy"
-          Segerstolpe:
-            train:
-              remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/Segerstolpe/Segerstolpe_train.h5ad"
-              local: "/vevo/data/datasets/Segerstolpe/Segerstolpe_train.h5ad"
-            test:
-              remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/Segerstolpe/Segerstolpe_test.h5ad"
-              local: "/vevo/data/datasets/Segerstolpe/Segerstolpe_test.h5ad"
-            class_names:
-              remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/Segerstolpe/Segerstolpe-str_label.npy"
-              local: "/vevo/data/datasets/Segerstolpe/Segerstolpe-str_label.npy"
-        logistic:
-          max_iter: 5000
-          solver: "lbfgs"
-          multi_class: "multinomial"
-          random_state: 42
-        batch_size: 100
-        seq_len: 2048
   loggers:
     wandb:
-      project: mosaicfm-dev-hamed-mcli
+      project: mosaicfm-dev-evo2
       group: evo2-embedding
-      name: mosaicfm-70m-evo2-concat-no-norm-scaled
+      name: mosaicfm-70m-evo2-per-dim-mix
       log_artifacts: False
   save_folder: "s3://vevo-ml-datasets/vevo-scgpt/models/{run_name}"
   save_interval: "2000ba"
   autoresume: True
-  run_name: "mosaicfm-70m-evo2-concat-no-norm-scaled"

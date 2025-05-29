@@ -8,9 +8,10 @@ integrations:
 command: |
   cd mosaicfm/scripts
   composer train.py /mnt/config/parameters.yaml
-image: vevotx/mosaicfm:1.0.0
+image: vevotx/mosaicfm:1.1.0
 env_variables:
   MOSAICML_PLATFORM: False
+  OPENBLAS_NUM_THREADS: 1
 name: mosaicfm-70m-evo2-concat-no-norm-scaled-pca512
 
 compute:
