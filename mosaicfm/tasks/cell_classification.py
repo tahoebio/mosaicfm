@@ -2,6 +2,7 @@
 import io
 import json
 
+from typing import Union
 import matplotlib.pyplot as plt
 import numpy as np
 import scanpy as sc
@@ -65,27 +66,34 @@ class CellClassification(Callback):
 
             # download dataset splits
             for split in dataset_cfg:
-                download_file_from_s3_url(
-                    s3_url=dataset_cfg[split]["remote"],
-                    local_file_path=dataset_cfg[split]["local"],
-                )
+                if split in {'train', 'test', 'class_names'}:
+                    download_file_from_s3_url(
+                        s3_url=dataset_cfg[split]["remote"],
+                        local_file_path=dataset_cfg[split]["local"],
+                    )
 
             self.cell_classfication(datast_name, logger)
 
     def cell_classfication(self, dataset: str, logger: Logger):
         # step 1: load data train, test
-        class_idx_to_name = np.load(
-            self.dataset_registry[dataset]["class_names"]["local"],
-        )
-        adata_train, gene_ids_train, labels_train, _ = (
+        class_idx_to_name = None
+        if 'class_names' in self.dataset_registry[dataset]:
+            class_idx_to_name = np.load(
+                self.dataset_registry[dataset]["class_names"]["local"],
+            )
+        adata_train, gene_ids_train, labels_train = (
             self.prepare_cell_annotation_data(
                 self.dataset_registry[dataset]["train"]["local"],
                 class_idx_to_name,
+                cell_type_key= self.dataset_registry[dataset].get("cell_type_key"), 
+                gene_name_key= self.dataset_registry[dataset].get("gene_name_key"), 
             )
         )
-        adata_test, gene_ids_test, labels_test, _ = self.prepare_cell_annotation_data(
+        adata_test, gene_ids_test, labels_test = self.prepare_cell_annotation_data(
             self.dataset_registry[dataset]["test"]["local"],
             class_idx_to_name,
+            cell_type_key= self.dataset_registry[dataset].get("cell_type_key"), 
+            gene_name_key= self.dataset_registry[dataset].get("gene_name_key"), 
         )
 
         # step 2: extract mosaicfm embeddings
@@ -132,6 +140,10 @@ class CellClassification(Callback):
 
         labels_pred = clf.predict(cell_embeddings_test)
         f1 = f1_score(labels_test, labels_pred, average="macro")
+        per_class_f1 = f1_score(labels_test, labels_pred, average=None)
+        classes = np.unique(labels_test)   # or clf.classes_
+        print({cls: score for cls, score in zip(classes, per_class_f1)})
+
         logger.log_metrics({f"macro_f1_{dataset}": f1})
 
         # step 5: compute lisi
@@ -140,7 +152,7 @@ class CellClassification(Callback):
             adata_train.obs["cell_type_label"].values,
             20,
         )
-        logger.log_metrics({f"LISI {dataset}": lisi_score})
+        logger.log_metrics({f"LISI {dataset}": lisi_score})        
 
         # step 6: UMAP visualization and logging
         adata_train.obsm[dataset] = cell_embeddings_train
@@ -174,25 +186,35 @@ class CellClassification(Callback):
     def prepare_cell_annotation_data(
         self,
         data_path: str,
-        class_idx_to_name: np.ndarray,
+        class_idx_to_name: Union[np.ndarray, None] = None,
+        gene_name_key: str = "gene_symbols", 
+        cell_type_key: str = "cell_type_label"
     ):
 
         vocab = self.vocab
         adata = sc.read_h5ad(data_path)
 
-        gene_name_key = "gene_symbols"
         gene_col = "gene_id"
-        cell_type_key = "cell_type_label"
-
         adata.var[gene_col] = adata.var[gene_name_key].apply(
             lambda x: self.gene_to_id.get(x, "na"),
         )
 
         # filter the cell with NaN values in the cell_type_key
         adata = adata[~adata.obs[cell_type_key].isna(), :]
-        adata.obs["cell_type_names"] = [
-            class_idx_to_name[int(id)] for id in adata.obs[cell_type_key]
-        ]
+
+        if class_idx_to_name is None:
+            # it means provided cell_type_key is already class names, so directly use it as names
+            adata.obs.rename(columns={cell_type_key: 'cell_type_names'}, inplace=True)
+            # create column of indices for cell types
+            adata.obs["cell_type_label"] = adata.obs["cell_type_names"].astype(
+                "category",
+            ).cat.codes
+        else: #cell_type_key is already a class index
+            adata.obs["cell_type_names"] = [
+                class_idx_to_name[int(id)] for id in adata.obs[cell_type_key]
+            ]
+            adata.obs.rename(columns={cell_type_key: 'cell_type_label'}, inplace=True)
+
         adata.var["id_in_vocab"] = [vocab[gene] for gene in adata.var[gene_col]]
         gene_ids_in_vocab = np.array(adata.var["id_in_vocab"])
         print(
@@ -204,20 +226,11 @@ class CellClassification(Callback):
         genes = adata.var[gene_col].tolist()
         gene_ids = np.array([vocab[gene] for gene in genes], dtype=int)
 
-        # Extract labels from the AnnData object
-        labels = adata.obs[cell_type_key].values
-        unique_labels = np.unique(np.array(labels[~np.isnan(np.array(labels))]))
 
-        # Convert labels to numeric if they are not already
-        if labels.dtype.kind in "OU":  # Object or Unicode, meaning strings
-            label_names = labels
-            label_to_idx = {label: idx for idx, label in enumerate(unique_labels)}
-            labels = np.array([label_to_idx[label] for label in labels])
-        else:
-            labels = labels.astype(np.int64)
-            label_names = np.array([class_idx_to_name[label] for label in labels])
+        # Extract numeric labels from the AnnData object
+        labels = adata.obs["cell_type_label"].values.astype(np.int64)
 
         adata = adata.copy()
         adata.X = adata.X.todense()
 
-        return adata, gene_ids, labels, label_names
+        return adata, gene_ids, labels
