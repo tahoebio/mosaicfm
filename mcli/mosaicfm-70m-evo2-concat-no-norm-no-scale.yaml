@@ -16,7 +16,7 @@ name: mosaicfm-70m-evo2-concat-no-norm-no-scale
 
 compute:
   gpus: 16 # Number of GPUs to use
-  cluster: r15z1p1
+  cluster: r15z10p1
 scheduling:
   max_duration: 6 # Maximum duration of the run in hours
 
@@ -132,9 +132,7 @@ parameters:
   optimizer:
     name: decoupled_adamw
     lr: 3.0e-4
-    betas:
-      - 0.9
-      - 0.95
+    betas: [0.9, 0.95]
     eps: 1.0e-08
     weight_decay: 1.0e-05
   scheduler:

@@ -16,7 +16,7 @@ name: mosaicfm-70m-evo2-concat-no-norm-scaled-pca512
 
 compute:
   gpus: 16 # Number of GPUs to use
-  cluster: r15z1p1
+  cluster: r15z10p1
 scheduling:
   max_duration: 2.5 # Maximum duration of the run in hours
 
