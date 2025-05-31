@@ -188,7 +188,7 @@ class RxRxKnownRels(Callback):
         # subset to genes used in the original RxRx benchmark
         rxrx_perturbations = pd.read_csv(self.rxrx_perturbations_cfg["local"])
         rows_to_keep = gene_metadata["gene_symbol"].isin(
-            rxrx_perturbations["perturbation"].unique()
+            rxrx_perturbations["perturbation"].unique(),
         )
         metadata = gene_metadata[rows_to_keep]
         features = pd.DataFrame(gene_embs[rows_to_keep])
