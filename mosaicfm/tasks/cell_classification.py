@@ -85,15 +85,15 @@ class CellClassification(Callback):
             self.prepare_cell_annotation_data(
                 self.dataset_registry[dataset]["train"]["local"],
                 class_idx_to_name,
-                cell_type_key= self.dataset_registry[dataset].get("cell_type_key"), 
-                gene_name_key= self.dataset_registry[dataset].get("gene_name_key"), 
+                cell_type_key= self.dataset_registry[dataset].get("cell_type_key", "cell_type_label"), 
+                gene_name_key= self.dataset_registry[dataset].get("gene_name_key", "gene_symbols"), 
             )
         )
         adata_test, gene_ids_test, labels_test = self.prepare_cell_annotation_data(
             self.dataset_registry[dataset]["test"]["local"],
             class_idx_to_name,
-            cell_type_key= self.dataset_registry[dataset].get("cell_type_key"), 
-            gene_name_key= self.dataset_registry[dataset].get("gene_name_key"), 
+            cell_type_key= self.dataset_registry[dataset].get("cell_type_key","cell_type_label"), 
+            gene_name_key= self.dataset_registry[dataset].get("gene_name_key", "gene_symbols"), 
         )
 
         # step 2: extract mosaicfm embeddings
