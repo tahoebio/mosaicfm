@@ -213,7 +213,8 @@ class CellClassification(Callback):
         adata = adata[~adata.obs[cell_type_key].isna(), :]
 
         if class_idx_to_name is None:
-            # it means provided cell_type_key is already class names, so directly use it as names
+            # We add two columns to the AnnData object: 1.cell_type_names (having class names) and 2.cell_type_label (having class indices)
+            # it means provided cell_type_key column already includes class names, so directly use it as the cell_type_name column
             adata.obs.rename(columns={cell_type_key: "cell_type_names"}, inplace=True)
             # create column of indices for cell types
             adata.obs["cell_type_label"] = (
@@ -223,7 +224,7 @@ class CellClassification(Callback):
                 )
                 .cat.codes
             )
-        else:  # cell_type_key is already a class index
+        else:  # cell_type_key colummn already refers to class indices, so directly use it as the cell_type_label column
             adata.obs["cell_type_names"] = [
                 class_idx_to_name[int(id)] for id in adata.obs[cell_type_key]
             ]
