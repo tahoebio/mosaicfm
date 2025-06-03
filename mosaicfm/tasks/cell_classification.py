@@ -1,8 +1,8 @@
 # Copyright (C) Vevo Therapeutics 2025. All rights reserved.
 import io
 import json
-
 from typing import Union
+
 import matplotlib.pyplot as plt
 import numpy as np
 import scanpy as sc
@@ -66,7 +66,7 @@ class CellClassification(Callback):
 
             # download dataset splits
             for split in dataset_cfg:
-                if split in {'train', 'test', 'class_names'}:
+                if split in {"train", "test", "class_names"}:
                     download_file_from_s3_url(
                         s3_url=dataset_cfg[split]["remote"],
                         local_file_path=dataset_cfg[split]["local"],
@@ -75,25 +75,38 @@ class CellClassification(Callback):
             self.cell_classfication(datast_name, logger)
 
     def cell_classfication(self, dataset: str, logger: Logger):
+
+        skip_clustering = self.dataset_registry[dataset].get("skip_clustering", False)
+
         # step 1: load data train, test
         class_idx_to_name = None
-        if 'class_names' in self.dataset_registry[dataset]:
+        if "class_names" in self.dataset_registry[dataset]:
             class_idx_to_name = np.load(
                 self.dataset_registry[dataset]["class_names"]["local"],
             )
-        adata_train, gene_ids_train, labels_train = (
-            self.prepare_cell_annotation_data(
-                self.dataset_registry[dataset]["train"]["local"],
-                class_idx_to_name,
-                cell_type_key= self.dataset_registry[dataset].get("cell_type_key", "cell_type_label"), 
-                gene_name_key= self.dataset_registry[dataset].get("gene_name_key", "gene_symbols"), 
-            )
+        adata_train, gene_ids_train, labels_train = self.prepare_cell_annotation_data(
+            self.dataset_registry[dataset]["train"]["local"],
+            class_idx_to_name,
+            cell_type_key=self.dataset_registry[dataset].get(
+                "cell_type_key",
+                "cell_type_label",
+            ),
+            gene_name_key=self.dataset_registry[dataset].get(
+                "gene_name_key",
+                "gene_symbols",
+            ),
         )
         adata_test, gene_ids_test, labels_test = self.prepare_cell_annotation_data(
             self.dataset_registry[dataset]["test"]["local"],
             class_idx_to_name,
-            cell_type_key= self.dataset_registry[dataset].get("cell_type_key","cell_type_label"), 
-            gene_name_key= self.dataset_registry[dataset].get("gene_name_key", "gene_symbols"), 
+            cell_type_key=self.dataset_registry[dataset].get(
+                "cell_type_key",
+                "cell_type_label",
+            ),
+            gene_name_key=self.dataset_registry[dataset].get(
+                "gene_name_key",
+                "gene_symbols",
+            ),
         )
 
         # step 2: extract mosaicfm embeddings
@@ -140,38 +153,35 @@ class CellClassification(Callback):
 
         labels_pred = clf.predict(cell_embeddings_test)
         f1 = f1_score(labels_test, labels_pred, average="macro")
-        per_class_f1 = f1_score(labels_test, labels_pred, average=None)
-        classes = np.unique(labels_test)   # or clf.classes_
-        print({cls: score for cls, score in zip(classes, per_class_f1)})
-
         logger.log_metrics({f"macro_f1_{dataset}": f1})
 
-        # step 5: compute lisi
-        lisi_score = self.compute_lisi_scores(
-            cell_embeddings_train,
-            adata_train.obs["cell_type_label"].values,
-            20,
-        )
-        logger.log_metrics({f"LISI {dataset}": lisi_score})        
+        if not skip_clustering:
+            # step 5: compute lisi
+            lisi_score = self.compute_lisi_scores(
+                cell_embeddings_train,
+                adata_train.obs["cell_type_label"].values,
+                20,
+            )
+            logger.log_metrics({f"LISI {dataset}": lisi_score})
 
-        # step 6: UMAP visualization and logging
-        adata_train.obsm[dataset] = cell_embeddings_train
-        sc.pp.neighbors(adata_train, use_rep=dataset)
-        sc.tl.umap(adata_train)
-        fig = sc.pl.umap(
-            adata_train,
-            color=["cell_type_names"],
-            frameon=False,
-            title=[f"{self.run_name} LISI:{lisi_score:.2f} \n {dataset} Dataset"],
-            return_fig=True,
-        )
+            # step 6: UMAP visualization and logging
+            adata_train.obsm[dataset] = cell_embeddings_train
+            sc.pp.neighbors(adata_train, use_rep=dataset)
+            sc.tl.umap(adata_train)
+            fig = sc.pl.umap(
+                adata_train,
+                color=["cell_type_names"],
+                frameon=False,
+                title=[f"{self.run_name} LISI:{lisi_score:.2f} \n {dataset} Dataset"],
+                return_fig=True,
+            )
 
-        # convert fig to ndarray
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png")
-        buf.seek(0)
-        img = np.array(plt.imread(buf))
-        logger.log_images(img, name=f"clustering_{dataset}", channels_last=True)
+            # convert fig to ndarray
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png")
+            buf.seek(0)
+            img = np.array(plt.imread(buf))
+            logger.log_images(img, name=f"clustering_{dataset}", channels_last=True)
 
     def compute_lisi_scores(self, emb: np.ndarray, labels: np.ndarray, k: int):
         nng = kneighbors_graph(emb, n_neighbors=k).tocoo()
@@ -187,8 +197,8 @@ class CellClassification(Callback):
         self,
         data_path: str,
         class_idx_to_name: Union[np.ndarray, None] = None,
-        gene_name_key: str = "gene_symbols", 
-        cell_type_key: str = "cell_type_label"
+        gene_name_key: str = "gene_symbols",
+        cell_type_key: str = "cell_type_label",
     ):
 
         vocab = self.vocab
@@ -204,16 +214,20 @@ class CellClassification(Callback):
 
         if class_idx_to_name is None:
             # it means provided cell_type_key is already class names, so directly use it as names
-            adata.obs.rename(columns={cell_type_key: 'cell_type_names'}, inplace=True)
+            adata.obs.rename(columns={cell_type_key: "cell_type_names"}, inplace=True)
             # create column of indices for cell types
-            adata.obs["cell_type_label"] = adata.obs["cell_type_names"].astype(
-                "category",
-            ).cat.codes
-        else: #cell_type_key is already a class index
+            adata.obs["cell_type_label"] = (
+                adata.obs["cell_type_names"]
+                .astype(
+                    "category",
+                )
+                .cat.codes
+            )
+        else:  # cell_type_key is already a class index
             adata.obs["cell_type_names"] = [
                 class_idx_to_name[int(id)] for id in adata.obs[cell_type_key]
             ]
-            adata.obs.rename(columns={cell_type_key: 'cell_type_label'}, inplace=True)
+            adata.obs.rename(columns={cell_type_key: "cell_type_label"}, inplace=True)
 
         adata.var["id_in_vocab"] = [vocab[gene] for gene in adata.var[gene_col]]
         gene_ids_in_vocab = np.array(adata.var["id_in_vocab"])
@@ -225,7 +239,6 @@ class CellClassification(Callback):
         vocab.default_index = vocab["<pad>"]
         genes = adata.var[gene_col].tolist()
         gene_ids = np.array([vocab[gene] for gene in genes], dtype=int)
-
 
         # Extract numeric labels from the AnnData object
         labels = adata.obs["cell_type_label"].values.astype(np.int64)
