@@ -139,6 +139,24 @@ callbacks:
         remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/vevo_v2_ensembl_to_gene_name.json"
         local: "/vevo/data/datasets/vevo_v2_ensembl_to_gene_name.json"
       datasets:  
+        tabula:
+          train:
+            remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/Tabula50k/Tabula50k_train.h5ad"
+            local: "/tahoe/gits/z_mosaicfm/debug_notebooks/cell-classification/Tabula50k_train.h5ad"
+          test:
+            remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/Tabula50k/Tabula50k_test.h5ad"
+            local: "/tahoe/gits/z_mosaicfm/debug_notebooks/cell-classification/Tabula50k_test.h5ad"
+          cell_type_key: "cell_ontology_class"
+          gene_name_key: "gene_symbol"
+        tahoe:
+          train:
+            remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/Tahoe50k/Tahoe50k_train.h5ad"
+            local: "/tahoe/gits/z_mosaicfm/debug_notebooks/cell-classification/Tahoe50k_train.h5ad"
+          test:
+            remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/Tahoe50k/Tahoe50k_test.h5ad"
+            local: "/tahoe/gits/z_mosaicfm/debug_notebooks/cell-classification/Tahoe50k_test.h5ad"
+          cell_type_key: "cell_line"
+          gene_name_key: "gene_symbol"
         kim: 
           train:
             remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/kim2020/kim_train.h5ad"
@@ -146,9 +164,7 @@ callbacks:
           test:
             remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/kim2020/kim_test.h5ad"
             local: "/vevo/data/datasets/kim2020_lung/kim_test.h5ad"
-          class_names:
-            remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/kim2020/kim-str_label.npy"
-            local: "/vevo/data/datasets/kim2020_lung/kim-str_label.npy"
+          cell_type_key: "cell_type"
         zheng:
           train: 
             remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/zheng/zheng_train.h5ad"
@@ -159,6 +175,7 @@ callbacks:
           class_names:
             remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/zheng/zheng-str_label.npy"
             local: "/vevo/data/datasets/zheng/zheng-str_label.npy"
+          skip_clustering: True
         Segerstolpe: 
           train:
             remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/Segerstolpe/Segerstolpe_train.h5ad"
@@ -169,6 +186,7 @@ callbacks:
           class_names:
             remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/Segerstolpe/Segerstolpe-str_label.npy"
             local: "/vevo/data/datasets/Segerstolpe/Segerstolpe-str_label.npy"
+          skip_clustering: True
       logistic:
         max_iter: 5000
         solver: "lbfgs"
