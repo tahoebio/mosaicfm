@@ -423,7 +423,7 @@ class ChemEncoder(nn.Module):
         x = self.embedding(x)  # (batch, d_out)
         x = self.activation(self.fc(x))
         x = self.proj(x)  # (batch, d_out)
-        
+
         if self.use_norm:
             x = self.norm(x)
         return x
