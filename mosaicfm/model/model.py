@@ -46,6 +46,14 @@ class SCGPTModel(nn.Module):
         self.norm_scheme = model_config.get("norm_scheme", "pre")
         self.transformer_activation = model_config.get("transformer_activation", "gelu")
         self.use_generative_training = model_config.get("use_generative_training", True)
+        self.use_chem_token = collator_config.get("use_chem_token", False)
+        assert (
+            not self.use_chem_token or "chemical_encoder" in model_config
+        ), "If use_chem_token is set to True, chemical_encoder submodule needs to be specified!"
+        assert (
+            "chemical_encoder" not in model_config or self.use_chem_token
+        ), "If chemical_encoder submodule is specified, use_chem_token needs to be set to True!"
+
         self.init_device = model_config.get("init_device", "cpu")
         if self.init_device == "mixed":
             if dist.get_local_rank() == 0:
@@ -104,18 +112,20 @@ class SCGPTModel(nn.Module):
         else:
             raise ValueError(f"Unknown input_emb_style: {self.input_emb_style}")
 
-        chem_encoder_config = model_config.chemical_encoder
-        self.chem_encoder = ChemEncoder(
-            drug_fps_path=chem_encoder_config.get("drug_fps_path"),
-            d_out=self.d_model,
-            padding_idx=chem_encoder_config.get("padding_idx", 0),
-            activation=chem_encoder_config.get("activate", "leaky_relu"),
-            freeze=chem_encoder_config.get("freeze", False),
-        )
+        if self.use_chem_token:
+            chem_encoder_config = model_config.chemical_encoder
+            self.chem_encoder = ChemEncoder(
+                drug_fps_path=chem_encoder_config.get("drug_fps_path"),
+                d_out=self.d_model,
+                padding_idx=chem_encoder_config.get("padding_idx", 0),
+                activation=chem_encoder_config.get("activate", "leaky_relu"),
+                freeze=chem_encoder_config.get("freeze", False),
+            )
 
-        # Disable re-inititialization for the entire subtree of chem_encoder
-        for module in self.chem_encoder.modules():
-            module.skip_init = True
+            # Disable re-inititialization for the entire subtree of chem_encoder
+            # so that the Embedding layer is correctly initialized with morgan/ibm embeddings.
+            for module in self.chem_encoder.modules():
+                module.skip_init = True
 
         encoder_layers = SCGPTBlock(
             d_model=self.d_model,
@@ -195,19 +205,22 @@ class SCGPTModel(nn.Module):
         pcpt_genes: Tensor,
         pcpt_values: Tensor,
         pcpt_key_padding_mask: Tensor,
-        drug_ids: Tensor,
         gen_genes: Tensor,
         gen_key_padding_mask: Tensor,
         input_cell_emb: Optional[Tensor] = None,  # (batch, seq_len, embsize)
+        drug_ids: Optional[
+            Tensor
+        ] = None,  # drug_ids is None if use_chem_token is set to False
     ) -> Tuple[Tensor, Tensor]:
 
         pcpt_token_embs = self.gene_encoder(pcpt_genes)  # (batch, pcpt_len, embsize)
         pcpt_values = self.expression_encoder(pcpt_values)  # (batch, pcpt_len, embsize)
         pcpt_total_embs = pcpt_token_embs + pcpt_values  # (batch, pcpt_len, embsize)
 
-        # calculate chemical embedding and put it in its correct place (after <cls>)
-        drug_embs = self.chem_encoder(drug_ids)  # (batch, embsize)
-        pcpt_total_embs[:, 1, :] = drug_embs  # (batch, pcpt_len, embsize)
+        if self.use_chem_token:
+            # calculate chemical embedding and put it in its correct place (after <cls>)
+            drug_embs = self.chem_encoder(drug_ids)  # (batch, embsize)
+            pcpt_total_embs[:, 1, :] = drug_embs  # (batch, pcpt_len, embsize)
 
         if gen_genes is not None:
             gen_token_embs = self.gene_encoder(gen_genes)  # (batch, gen_len, embsize)
@@ -307,12 +320,12 @@ class SCGPTModel(nn.Module):
         pcpt_genes: Tensor,
         pcpt_values: Tensor,
         pcpt_key_padding_mask: Tensor,
-        drug_ids: Tensor,
         gen_genes: Tensor,
         gen_key_padding_mask: Tensor,
         CLS: bool = False,
         MVC: bool = False,
         input_cell_emb: Optional[Tensor] = None,
+        drug_ids: Optional[Tensor] = None,
     ) -> Mapping[str, Tensor]:
         """
         Args:
@@ -322,14 +335,14 @@ class SCGPTModel(nn.Module):
                 [batch_size, seq_len]
             pcpt_key_padding_mask (:obj:`Tensor`): mask for pcpt_genes, shape
                 [batch_size, seq_len]
-            drug_ids (:obj:`Tensor`): drug ids corresponding to chem_encoder embedding layer, shape
-                [batch_size]
             gen_genes (:obj:`Tensor`): token ids of the generative part, shape
                 [batch_size, seq_len]
             gen_key_padding_mask (:obj:`Tensor`): mask for gen_genes, shape
                 [batch_size, seq_len]
             input_cell_emb (:obj:`Tensor`): cell embeddings, shape [batch_size,
                 embsize]
+            drug_ids (:obj:`Tensor`): drug ids corresponding to chem_encoder embedding layer, shape
+                [batch_size]
 
         Returns:
             :obj:`Mapping[str, Tensor]`:
@@ -342,10 +355,10 @@ class SCGPTModel(nn.Module):
             pcpt_genes,
             pcpt_values,
             pcpt_key_padding_mask,
-            drug_ids,
             gen_genes,
             gen_key_padding_mask,
             input_cell_emb=input_cell_emb,
+            drug_ids=drug_ids,
         )
         if gen_output is None:  # type: ignore
             transformer_output = pcpt_output
@@ -451,16 +464,18 @@ class ComposerSCGPTModel(ComposerModel):
         pcpt_gene = batch["pcpt_gene"]
         pcpt_expr = batch["pcpt_expr"]
         pcpt_key_padding_mask = ~pcpt_gene.eq(self.pad_token_id)
-        drug_ids = batch["drug_ids"]
+        drug_ids = (
+            batch["drug_ids"] if "drug_ids" in batch else None
+        )  # drug_ids is None if use_chem_token is set to False
         gen_gene = batch["gen_gene"]
         gen_key_padding_mask = ~gen_gene.eq(self.pad_token_id)
         output_dict = self.model(
             pcpt_gene,
             pcpt_expr,
             pcpt_key_padding_mask,
-            drug_ids,
             gen_gene,
             gen_key_padding_mask,
+            drug_ids=drug_ids,
             MVC=True,
             generative_training=True,
         )
@@ -470,9 +485,9 @@ class ComposerSCGPTModel(ComposerModel):
                 pcpt_gene,
                 pcpt_expr,
                 pcpt_key_padding_mask,
-                drug_ids,
                 gen_gene,
                 gen_key_padding_mask,
+                drug_ids=drug_ids,
                 MVC=False,
                 input_cell_emb=previous_cell_embs,
                 generative_training=True,
