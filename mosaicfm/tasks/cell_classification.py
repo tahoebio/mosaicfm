@@ -12,7 +12,6 @@ from composer.core.callback import Callback
 from composer.loggers import Logger
 from composer.utils import dist, model_eval_mode
 from sklearn.linear_model import LogisticRegression
-from sklearn.neighbors import kneighbors_graph
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 
 from mosaicfm.utils import download_file_from_s3_url
@@ -183,15 +182,42 @@ class CellClassification(Callback):
             img = np.array(plt.imread(buf))
             logger.log_images(img, name=f"clustering_{dataset}", channels_last=True)
 
-    def compute_lisi_scores(self, emb: np.ndarray, labels: np.ndarray, k: int):
-        nng = kneighbors_graph(emb, n_neighbors=k).tocoo()
-        labels = np.unique(labels, return_inverse=True)[1]
-        self_id = labels[nng.row]
-        ne_id = labels[nng.col]
+    def compute_lisi_scores(self, emb: np.ndarray, labels: np.ndarray, k: int) -> float:
+        """Computes a LISI-like score using PyTorch. Accepts numpy arrays or
+        torch tensors.
 
-        _, c = np.unique(labels, return_counts=True)
-        theoretic_score = ((c / c.sum()) ** 2).sum()
-        return (self_id == ne_id).mean() / theoretic_score
+        Args:
+            emb (Union[np.ndarray, torch.Tensor]): (n_samples, n_features) embedding matrix.
+            labels (Union[np.ndarray, torch.Tensor]): (n_samples,) label vector, can be strings or ints.
+            k (int): Number of neighbors.
+
+        Returns:
+            float: The LISI-like score.
+        """
+        # Convert to torch tensors
+        emb = torch.from_numpy(emb).float()
+        _, inverse_labels = np.unique(labels, return_inverse=True)
+        labels = torch.from_numpy(inverse_labels).long()
+
+        # Compute pairwise distances
+        distances = torch.cdist(emb, emb, p=2)
+
+        # Get k nearest neighbors for each point (excluding itself)
+        _, knn_indices = torch.topk(distances, k + 1, largest=False)
+        knn_indices = knn_indices[:, 1:]  # exclude self
+
+        # Self vs neighbor labels
+        self_labels = labels.unsqueeze(1).expand(-1, k)
+        neighbor_labels = labels[knn_indices]
+
+        # Compute label agreement
+        same_label = (self_labels == neighbor_labels).float().mean()
+
+        # Theoretical LISI normalization
+        label_counts = torch.bincount(labels)
+        theoretic_score = ((label_counts / label_counts.sum()) ** 2).sum()
+
+        return (same_label / theoretic_score).item()
 
     def prepare_cell_annotation_data(
         self,
@@ -230,21 +256,20 @@ class CellClassification(Callback):
             ]
             adata.obs.rename(columns={cell_type_key: "cell_type_label"}, inplace=True)
 
-        adata.var["id_in_vocab"] = [vocab[gene] for gene in adata.var[gene_col]]
+        adata.var["id_in_vocab"] = [
+            vocab[gene] if gene in vocab else -1 for gene in adata.var[gene_col]
+        ]
         gene_ids_in_vocab = np.array(adata.var["id_in_vocab"])
         print(
             f"match {np.sum(gene_ids_in_vocab >= 0)}/{len(gene_ids_in_vocab)} genes "
             f"in vocabulary of size {len(vocab)}.",
         )
         adata = adata[:, adata.var["id_in_vocab"] >= 0]
-        vocab.default_index = vocab["<pad>"]
+
         genes = adata.var[gene_col].tolist()
         gene_ids = np.array([vocab[gene] for gene in genes], dtype=int)
 
         # Extract numeric labels from the AnnData object
         labels = adata.obs["cell_type_label"].values.astype(np.int64)
-
-        adata = adata.copy()
-        adata.X = adata.X.todense()
 
         return adata, gene_ids, labels

@@ -139,6 +139,15 @@ callbacks:
         remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/vevo_v2_ensembl_to_gene_name.json"
         local: "/vevo/data/datasets/vevo_v2_ensembl_to_gene_name.json"
       datasets:  
+        ccle:
+          train:
+            remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/CCLE/CCLE_train.h5ad"
+            local: "/tahoe/gits/z_mosaicfm/debug_notebooks/cell-classification/ccle.h5ad"
+          test:
+            remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/CCLE/CCLE_test.h5ad"
+            local: "/tahoe/gits/z_mosaicfm/debug_notebooks/cell-classification/ccle.h5ad"
+          cell_type_key: "OncotreeLineage"
+          gene_name_key: "feature_name"
         tabula:
           train:
             remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/Tabula50k/Tabula50k_train.h5ad"
