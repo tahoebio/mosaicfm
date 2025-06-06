@@ -1,6 +1,7 @@
 # Copyright (C) Vevo Therapeutics 2025. All rights reserved.
 import io
 import json
+from typing import Union
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,7 +12,6 @@ from composer.core.callback import Callback
 from composer.loggers import Logger
 from composer.utils import dist, model_eval_mode
 from sklearn.linear_model import LogisticRegression
-from sklearn.neighbors import kneighbors_graph
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 
 from mosaicfm.utils import download_file_from_s3_url
@@ -65,27 +65,47 @@ class CellClassification(Callback):
 
             # download dataset splits
             for split in dataset_cfg:
-                download_file_from_s3_url(
-                    s3_url=dataset_cfg[split]["remote"],
-                    local_file_path=dataset_cfg[split]["local"],
-                )
+                if split in {"train", "test", "class_names"}:
+                    download_file_from_s3_url(
+                        s3_url=dataset_cfg[split]["remote"],
+                        local_file_path=dataset_cfg[split]["local"],
+                    )
 
             self.cell_classfication(datast_name, logger)
 
     def cell_classfication(self, dataset: str, logger: Logger):
+
+        skip_clustering = self.dataset_registry[dataset].get("skip_clustering", False)
+
         # step 1: load data train, test
-        class_idx_to_name = np.load(
-            self.dataset_registry[dataset]["class_names"]["local"],
-        )
-        adata_train, gene_ids_train, labels_train, _ = (
-            self.prepare_cell_annotation_data(
-                self.dataset_registry[dataset]["train"]["local"],
-                class_idx_to_name,
+        class_idx_to_name = None
+        if "class_names" in self.dataset_registry[dataset]:
+            class_idx_to_name = np.load(
+                self.dataset_registry[dataset]["class_names"]["local"],
             )
+        adata_train, gene_ids_train, labels_train = self.prepare_cell_annotation_data(
+            self.dataset_registry[dataset]["train"]["local"],
+            class_idx_to_name,
+            cell_type_key=self.dataset_registry[dataset].get(
+                "cell_type_key",
+                "cell_type_label",
+            ),
+            gene_name_key=self.dataset_registry[dataset].get(
+                "gene_name_key",
+                "gene_symbols",
+            ),
         )
-        adata_test, gene_ids_test, labels_test, _ = self.prepare_cell_annotation_data(
+        adata_test, gene_ids_test, labels_test = self.prepare_cell_annotation_data(
             self.dataset_registry[dataset]["test"]["local"],
             class_idx_to_name,
+            cell_type_key=self.dataset_registry[dataset].get(
+                "cell_type_key",
+                "cell_type_label",
+            ),
+            gene_name_key=self.dataset_registry[dataset].get(
+                "gene_name_key",
+                "gene_symbols",
+            ),
         )
 
         # step 2: extract mosaicfm embeddings
@@ -134,90 +154,122 @@ class CellClassification(Callback):
         f1 = f1_score(labels_test, labels_pred, average="macro")
         logger.log_metrics({f"macro_f1_{dataset}": f1})
 
-        # step 5: compute lisi
-        lisi_score = self.compute_lisi_scores(
-            cell_embeddings_train,
-            adata_train.obs["cell_type_label"].values,
-            20,
-        )
-        logger.log_metrics({f"LISI {dataset}": lisi_score})
+        if not skip_clustering:
+            # step 5: compute lisi
+            lisi_score = self.compute_lisi_scores(
+                cell_embeddings_train,
+                adata_train.obs["cell_type_label"].values,
+                20,
+            )
+            logger.log_metrics({f"LISI {dataset}": lisi_score})
 
-        # step 6: UMAP visualization and logging
-        adata_train.obsm[dataset] = cell_embeddings_train
-        sc.pp.neighbors(adata_train, use_rep=dataset)
-        sc.tl.umap(adata_train)
-        fig = sc.pl.umap(
-            adata_train,
-            color=["cell_type_names"],
-            frameon=False,
-            title=[f"{self.run_name} LISI:{lisi_score:.2f} \n {dataset} Dataset"],
-            return_fig=True,
-        )
+            # step 6: UMAP visualization and logging
+            adata_train.obsm[dataset] = cell_embeddings_train
+            sc.pp.neighbors(adata_train, use_rep=dataset)
+            sc.tl.umap(adata_train)
+            fig = sc.pl.umap(
+                adata_train,
+                color=["cell_type_names"],
+                frameon=False,
+                title=[f"{self.run_name} LISI:{lisi_score:.2f} \n {dataset} Dataset"],
+                return_fig=True,
+            )
 
-        # convert fig to ndarray
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png")
-        buf.seek(0)
-        img = np.array(plt.imread(buf))
-        logger.log_images(img, name=f"clustering_{dataset}", channels_last=True)
+            # convert fig to ndarray
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png")
+            buf.seek(0)
+            img = np.array(plt.imread(buf))
+            logger.log_images(img, name=f"clustering_{dataset}", channels_last=True)
 
-    def compute_lisi_scores(self, emb: np.ndarray, labels: np.ndarray, k: int):
-        nng = kneighbors_graph(emb, n_neighbors=k).tocoo()
-        labels = np.unique(labels, return_inverse=True)[1]
-        self_id = labels[nng.row]
-        ne_id = labels[nng.col]
+    def compute_lisi_scores(self, emb: np.ndarray, labels: np.ndarray, k: int) -> float:
+        """Computes a LISI-like score using PyTorch. Accepts numpy arrays or
+        torch tensors.
 
-        _, c = np.unique(labels, return_counts=True)
-        theoretic_score = ((c / c.sum()) ** 2).sum()
-        return (self_id == ne_id).mean() / theoretic_score
+        Args:
+            emb (Union[np.ndarray, torch.Tensor]): (n_samples, n_features) embedding matrix.
+            labels (Union[np.ndarray, torch.Tensor]): (n_samples,) label vector, can be strings or ints.
+            k (int): Number of neighbors.
+
+        Returns:
+            float: The LISI-like score.
+        """
+        # Convert to torch tensors
+        emb = torch.from_numpy(emb).float()
+        _, inverse_labels = np.unique(labels, return_inverse=True)
+        labels = torch.from_numpy(inverse_labels).long()
+
+        # Compute pairwise distances
+        distances = torch.cdist(emb, emb, p=2)
+
+        # Get k nearest neighbors for each point (excluding itself)
+        _, knn_indices = torch.topk(distances, k + 1, largest=False)
+        knn_indices = knn_indices[:, 1:]  # exclude self
+
+        # Self vs neighbor labels
+        self_labels = labels.unsqueeze(1).expand(-1, k)
+        neighbor_labels = labels[knn_indices]
+
+        # Compute label agreement
+        same_label = (self_labels == neighbor_labels).float().mean()
+
+        # Theoretical LISI normalization
+        label_counts = torch.bincount(labels)
+        theoretic_score = ((label_counts / label_counts.sum()) ** 2).sum()
+
+        return (same_label / theoretic_score).item()
 
     def prepare_cell_annotation_data(
         self,
         data_path: str,
-        class_idx_to_name: np.ndarray,
+        class_idx_to_name: Union[np.ndarray, None] = None,
+        gene_name_key: str = "gene_symbols",
+        cell_type_key: str = "cell_type_label",
     ):
 
         vocab = self.vocab
         adata = sc.read_h5ad(data_path)
 
-        gene_name_key = "gene_symbols"
         gene_col = "gene_id"
-        cell_type_key = "cell_type_label"
-
         adata.var[gene_col] = adata.var[gene_name_key].apply(
             lambda x: self.gene_to_id.get(x, "na"),
         )
 
         # filter the cell with NaN values in the cell_type_key
         adata = adata[~adata.obs[cell_type_key].isna(), :]
-        adata.obs["cell_type_names"] = [
-            class_idx_to_name[int(id)] for id in adata.obs[cell_type_key]
+
+        if class_idx_to_name is None:
+            # We add two columns to the AnnData object: 1.cell_type_names (having class names) and 2.cell_type_label (having class indices)
+            # it means provided cell_type_key column already includes class names, so directly use it as the cell_type_name column
+            adata.obs.rename(columns={cell_type_key: "cell_type_names"}, inplace=True)
+            # create column of indices for cell types
+            adata.obs["cell_type_label"] = (
+                adata.obs["cell_type_names"]
+                .astype(
+                    "category",
+                )
+                .cat.codes
+            )
+        else:  # cell_type_key colummn already refers to class indices, so directly use it as the cell_type_label column
+            adata.obs["cell_type_names"] = [
+                class_idx_to_name[int(id)] for id in adata.obs[cell_type_key]
+            ]
+            adata.obs.rename(columns={cell_type_key: "cell_type_label"}, inplace=True)
+
+        adata.var["id_in_vocab"] = [
+            vocab[gene] if gene in vocab else -1 for gene in adata.var[gene_col]
         ]
-        adata.var["id_in_vocab"] = [vocab[gene] for gene in adata.var[gene_col]]
         gene_ids_in_vocab = np.array(adata.var["id_in_vocab"])
         print(
             f"match {np.sum(gene_ids_in_vocab >= 0)}/{len(gene_ids_in_vocab)} genes "
             f"in vocabulary of size {len(vocab)}.",
         )
         adata = adata[:, adata.var["id_in_vocab"] >= 0]
-        vocab.default_index = vocab["<pad>"]
+
         genes = adata.var[gene_col].tolist()
         gene_ids = np.array([vocab[gene] for gene in genes], dtype=int)
 
-        # Extract labels from the AnnData object
-        labels = adata.obs[cell_type_key].values
-        unique_labels = np.unique(np.array(labels[~np.isnan(np.array(labels))]))
+        # Extract numeric labels from the AnnData object
+        labels = adata.obs["cell_type_label"].values.astype(np.int64)
 
-        # Convert labels to numeric if they are not already
-        if labels.dtype.kind in "OU":  # Object or Unicode, meaning strings
-            label_names = labels
-            label_to_idx = {label: idx for idx, label in enumerate(unique_labels)}
-            labels = np.array([label_to_idx[label] for label in labels])
-        else:
-            labels = labels.astype(np.int64)
-            label_names = np.array([class_idx_to_name[label] for label in labels])
-
-        adata = adata.copy()
-        adata.X = adata.X.todense()
-
-        return adata, gene_ids, labels, label_names
+        return adata, gene_ids, labels
