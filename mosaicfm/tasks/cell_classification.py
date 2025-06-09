@@ -119,7 +119,7 @@ class CellClassification(Callback):
             # step 4: calculate and log metrics
             labels_pred = clf.predict(cell_embeddings_test)
             f1 = f1_score(
-                adata_test[cell_type_key].values,
+                adata_test.obs[cell_type_key].values,
                 labels_pred,
                 average="macro",
             )
