@@ -1,4 +1,5 @@
 # Copyright (C) Vevo Therapeutics 2024-2025. All rights reserved.
+import logging
 from functools import lru_cache
 from typing import Any, Dict, Optional, Tuple, Union
 
@@ -42,6 +43,8 @@ init_config_defaults: Dict = {
 gene_encoder_defaults: Dict = {
     "use_norm": False,
 }
+
+log = logging.getLogger(__name__)
 
 
 class SCGPTBlock(nn.Module):
@@ -354,26 +357,82 @@ class GeneEncoder(nn.Module):
     def __init__(
         self,
         num_embeddings: int,
-        embedding_dim: int,
+        target_dim: int,
         padding_idx: Optional[int] = None,
         use_norm: bool = False,
+        pretrained_config: Optional[Dict] = None,
     ):
         super().__init__()
-        self.embedding = nn.Embedding(
-            num_embeddings,
-            embedding_dim,
-            padding_idx=padding_idx,
-        )
         self.use_norm = use_norm
+
+        if pretrained_config is not None:
+            try:
+                # Load the gene encoder state dict
+                pretrained_path = pretrained_config["local"]
+                state_dict = torch.load(pretrained_path, weights_only=True)
+
+                # Get embedding weight and its dimension
+                if "embedding.weight" in state_dict:
+                    pretrained_dim = state_dict["embedding.weight"].shape[1]
+                    log.info(
+                        f"Loaded pretrained gene embeddings with dimension {pretrained_dim}",
+                    )
+
+                    # Create embedding with pretrained dimension
+                    self.embedding = nn.Embedding(
+                        num_embeddings,
+                        pretrained_dim,
+                        padding_idx=padding_idx,
+                    )
+
+                    # Add projection if dimensions don't match
+                    if pretrained_dim != target_dim:
+                        log.info(
+                            f"Adding projection from dim {pretrained_dim} to {target_dim}",
+                        )
+                        self.proj = nn.Linear(pretrained_dim, target_dim, bias=False)
+
+                    # Load the state dict (will set weights)
+                    self.embedding.load_state_dict(
+                        {"weight": state_dict["embedding.weight"]},
+                    )
+
+                    # Optionally freeze the weights
+                    fix = bool(pretrained_config.get("fix_embedding", False))
+                    self.embedding.weight.requires_grad = not fix
+                    log.info(f"Gene embeddings are {'fixed' if fix else 'trainable'}")
+
+                    # Mark to skip initialization
+                    self.embedding.skip_init = True
+                else:
+                    raise KeyError(f"No embedding.weight found in {pretrained_path}")
+
+            except Exception as e:
+                log.error(f"Failed to load pretrained embeddings: {e}")
+                # Fall back to random initialization
+                self.embedding = nn.Embedding(
+                    num_embeddings,
+                    target_dim,
+                    padding_idx=padding_idx,
+                )
+        else:
+            # Random initialization
+            self.embedding = nn.Embedding(
+                num_embeddings,
+                target_dim,
+                padding_idx=padding_idx,
+            )
+
+        # Layer norm on the output dimension (always target_dim)
         if self.use_norm:
-            self.enc_norm = nn.LayerNorm(embedding_dim)
+            self.enc_norm = nn.LayerNorm(target_dim)
 
     def forward(self, x: Tensor) -> Tensor:
-        x = self.embedding(x)  # (batch, seq_len, embsize)
+        x = self.embedding(x)  # (batch, seq_len, emb_dim)
+        if hasattr(self, "proj"):
+            x = self.proj(x)  # project to target dim
         if self.use_norm:
-            x = self.enc_norm(
-                x,
-            )  # Norm for embedding is not used when using pre-norm transformer.
+            x = self.enc_norm(x)
         return x
 
 
