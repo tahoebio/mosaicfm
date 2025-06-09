@@ -39,12 +39,12 @@ class CellClassification(Callback):
         self.run_name = state.run_name
 
         for dataset_name, dataset_cfg in self.dataset_registry.items():
-            for split in dataset_cfg:
-                download_file_from_s3_url(
-                    s3_url=dataset_cfg[split]["remote"],
-                    local_file_path=dataset_cfg[split]["local"],
-                )
-
+            for split in ["train", "test"]:
+                if split in dataset_cfg:
+                    download_file_from_s3_url(
+                        s3_url=dataset_cfg[split]["remote"],
+                        local_file_path=dataset_cfg[split]["local"],
+                    )
             self.cell_classfication(dataset_name, logger)
 
     def cell_classfication(self, dataset: str, logger: Logger):
@@ -128,7 +128,7 @@ class CellClassification(Callback):
         # Step 5: compute LISI score for train split
         lisi_score = self.compute_lisi_scores(
             cell_embeddings_train,
-            adata_train.obs["cell_type_label"].values.to_numpy(dtype="str"),
+            adata_train.obs[cell_type_key].values.to_numpy(dtype="str"),
             20,
         )
         logger.log_metrics({f"LISI {dataset}": lisi_score})
