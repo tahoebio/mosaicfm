@@ -139,7 +139,7 @@ class CellClassification(Callback):
         sc.tl.umap(adata_train)
         fig = sc.pl.umap(
             adata_train,
-            color=["cell_type_names"],
+            color=[cell_type_key],
             frameon=False,
             title=[f"{self.run_name} LISI:{lisi_score:.2f} \n {dataset} Dataset"],
             return_fig=True,
