@@ -118,7 +118,7 @@ class SCGPTModel(nn.Module):
                 drug_fps_path=chem_encoder_config.get("drug_fps_path"),
                 d_out=self.d_model,
                 padding_idx=chem_encoder_config.get("padding_idx", 0),
-                activation=chem_encoder_config.get("activate", "leaky_relu"),
+                activation=chem_encoder_config.get("activation", "leaky_relu"),
                 freeze=chem_encoder_config.get("freeze", False),
             )
 
