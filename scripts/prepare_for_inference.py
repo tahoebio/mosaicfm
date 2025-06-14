@@ -1,9 +1,9 @@
 # Copyright (C) Vevo Therapeutics 2024-2025. All rights reserved.
 import os
 
-import wandb
 from omegaconf import OmegaConf as om
 
+import wandb
 from mosaicfm.tokenizer import GeneVocab
 from mosaicfm.utils import download_file_from_s3_url
 
