@@ -11,11 +11,12 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 import torch
-import wandb
 from scipy.sparse import issparse
 from torch.utils.data import DataLoader
 from torchtext._torchtext import Vocab as VocabPybind
 from torchtext.vocab import Vocab
+
+import wandb
 
 sys.path.insert(0, "../")
 from scgpt.model import TransformerModel

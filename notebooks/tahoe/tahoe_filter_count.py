@@ -13,8 +13,9 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 import torch
-import wandb
 from scipy.sparse import issparse
+
+import wandb
 
 # %%
 data_dir = Path("/datasets/Tahoe-100M/Tahoe/vevo_filter/plate2_demo_final.h5ad")

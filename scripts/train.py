@@ -390,6 +390,36 @@ def main(cfg: DictConfig) -> composer.Trainer:
     log.info(f"Setting vocab size to: {len(vocab)}")
     logged_cfg.update({"vocab_size": len(vocab)})
 
+    # Pretrained Gene Embeddings
+    gene_embed_config = model_config.gene_encoder.get("gene_embedding", None)
+    if gene_embed_config is None:
+        log.info(
+            "No gene embeddings provided. Continuing with random initialization of gene embedding.",
+        )
+    # Process embeddings if present in the config
+    elif "embeddings" in gene_embed_config:
+        embeddings_config = gene_embed_config.get("embeddings", {})
+        log.info(f"Found {len(embeddings_config)} gene embeddings to download")
+
+        for emb_name, emb_config in embeddings_config.items():
+            if "remote" in emb_config and "local" in emb_config:
+                log.info(f"Downloading {emb_name} embedding...")
+                if dist.get_local_rank() == 0:
+                    download_file_from_s3_url(
+                        s3_url=emb_config["remote"],
+                        local_file_path=emb_config["local"],
+                    )
+                with dist.local_rank_zero_download_and_wait(emb_config["local"]):
+                    dist.barrier()
+            else:
+                log.warning(
+                    f"Skipping {emb_name} embedding: missing remote or local path",
+                )
+    else:
+        log.info(
+            "Gene embedding configuration found but no embeddings specified to download",
+        )
+
     # Scheduler
     scheduler_name: str = scheduler_config.pop("name")
     scheduler = build_scheduler(scheduler_name, scheduler_config)
