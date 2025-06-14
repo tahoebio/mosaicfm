@@ -700,6 +700,7 @@ class GeneEncoder(nn.Module):
 
         return result
 
+
 class ChemEncoder(nn.Module):
     def __init__(
         self,
