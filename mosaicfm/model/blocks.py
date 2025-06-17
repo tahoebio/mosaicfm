@@ -455,13 +455,13 @@ class ConcatAndProjectCombination(nn.Module):
                     f"Falling back to simple linear projection.",
                 )
                 # Fall back to simple linear projection
-                self.projection = nn.Linear(concat_dim, target_dim, bias=False)
+                self.projection = nn.Linear(concat_dim, target_dim, bias=True)
             else:
                 # Build MLP
                 self.projection = self._build_mlp(concat_dim, target_dim, mlp_config)
         else:
             # No MLP config, use simple linear projection (backward compatible)
-            self.projection = nn.Linear(concat_dim, target_dim, bias=False)
+            self.projection = nn.Linear(concat_dim, target_dim, bias=True)
 
     def _build_mlp(
         self,
