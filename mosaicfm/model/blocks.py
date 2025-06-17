@@ -431,12 +431,83 @@ class SoftmaxWeightedCombination(nn.Module):
 class ConcatAndProjectCombination(nn.Module):
     """Combines embeddings by concatenation followed by projection."""
 
-    def __init__(self, target_dim: int, num_embedding_types: int):
+    def __init__(
+        self,
+        target_dim: int,
+        num_embedding_types: int,
+        mlp_config: Optional[Dict] = None,
+    ):
         super().__init__()
         # Calculate concatenated dimension (all embeddings are target_dim)
         concat_dim = num_embedding_types * target_dim
-        self.projection = nn.Linear(concat_dim, target_dim, bias=False)
-        # Let param_init_fn initialize this projection layer
+
+        # Check if MLP configuration is provided
+        if mlp_config is not None:
+            # Validate MLP config
+            required_fields = ["hidden_layers", "activation", "use_layer_norm"]
+            missing_fields = [
+                field for field in required_fields if field not in mlp_config
+            ]
+
+            if missing_fields:
+                log.warning(
+                    f"MLP config missing required fields: {missing_fields}. "
+                    f"Falling back to simple linear projection.",
+                )
+                # Fall back to simple linear projection
+                self.projection = nn.Linear(concat_dim, target_dim, bias=False)
+            else:
+                # Build MLP
+                self.projection = self._build_mlp(concat_dim, target_dim, mlp_config)
+        else:
+            # No MLP config, use simple linear projection (backward compatible)
+            self.projection = nn.Linear(concat_dim, target_dim, bias=False)
+
+    def _build_mlp(
+        self,
+        input_dim: int,
+        output_dim: int,
+        mlp_config: Dict,
+    ) -> nn.Sequential:
+        """Build MLP based on configuration."""
+        layers = []
+
+        # Parse hidden layers
+        hidden_layers_spec = mlp_config["hidden_layers"]
+        if isinstance(hidden_layers_spec, int):
+            hidden_dims = [hidden_layers_spec]
+        elif isinstance(hidden_layers_spec, str):
+            hidden_dims = [int(x.strip()) for x in hidden_layers_spec.split(",")]
+        else:
+            log.warning(
+                f"Invalid hidden_layers specification: {hidden_layers_spec}. "
+                f"Expected int or comma-separated string. Falling back to simple projection.",
+            )
+            return nn.Linear(input_dim, output_dim, bias=False)
+
+        # Get activation function
+        activation_name = mlp_config["activation"]
+        activation_fn = resolve_ffn_act_fn({"name": activation_name})
+
+        # Get layer norm flag
+        use_layer_norm = mlp_config["use_layer_norm"]
+
+        # Build layers
+        current_dim = input_dim
+        for hidden_dim in hidden_dims:
+            # Linear layer
+            layers.append(nn.Linear(current_dim, hidden_dim, bias=False))
+            # Activation
+            layers.append(activation_fn)
+            # Layer norm if requested
+            if use_layer_norm:
+                layers.append(nn.LayerNorm(hidden_dim))
+            current_dim = hidden_dim
+
+        # Final projection to output dimension (no activation or norm after this)
+        layers.append(nn.Linear(current_dim, output_dim, bias=False))
+
+        return nn.Sequential(*layers)
 
     def forward(self, embeddings_list: List[Tensor]) -> Tensor:
         """Concatenate embeddings and project back to target dimension."""
@@ -638,9 +709,12 @@ class GeneEncoder(nn.Module):
                     num_embeddings_total,
                 )
             elif combination_strategy == "concat_and_project":
+                # Extract MLP config if it exists
+                mlp_config = gene_embedding_config.get("mlp", None)
                 self.combiner = ConcatAndProjectCombination(
                     target_dim,
                     num_embeddings_total,
+                    mlp_config=mlp_config,
                 )
             elif combination_strategy == "gate_and_sum":
                 self.combiner = GateAndSumCombination(target_dim, num_embeddings_total)
