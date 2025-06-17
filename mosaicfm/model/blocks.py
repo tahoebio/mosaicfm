@@ -435,7 +435,7 @@ class ConcatAndProjectCombination(nn.Module):
         super().__init__()
         # Calculate concatenated dimension (all embeddings are target_dim)
         concat_dim = num_embedding_types * target_dim
-        self.projection = nn.Linear(concat_dim, target_dim, bias=True)
+        self.projection = nn.Linear(concat_dim, target_dim, bias=False)
         # Let param_init_fn initialize this projection layer
 
     def forward(self, embeddings_list: List[Tensor]) -> Tensor:
