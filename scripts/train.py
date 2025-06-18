@@ -367,10 +367,11 @@ def main(cfg: DictConfig) -> composer.Trainer:
 
     # Build vocab
     vocab = GeneVocab.from_file(vocab_config["local"])
+    n_token_original = len(vocab)
     special_tokens = ["<pad>", "<cls>", "<eoc>", "<drug>"]
-
     for s in special_tokens:
         if s not in vocab:
+            log.info(f"Adding token {s} to vocab.")
             vocab.append_token(s)
     if collator_config.get("use_junk_tokens", False):
         # Based on Karpathy's observation that 64 is a good number for performance
@@ -389,6 +390,9 @@ def main(cfg: DictConfig) -> composer.Trainer:
     model_config.vocab_size = len(vocab)
     log.info(f"Setting vocab size to: {len(vocab)}")
     logged_cfg.update({"vocab_size": len(vocab)})
+    n_token_added = len(vocab) - n_token_original
+    log.info(f"Number of new tokens added: {n_token_added}")
+    logged_cfg.update({"n_token_added": n_token_added})
 
     # Pretrained Gene Embeddings
     gene_embed_config = model_config.gene_encoder.get("gene_embedding", None)
@@ -400,7 +404,6 @@ def main(cfg: DictConfig) -> composer.Trainer:
     elif "embeddings" in gene_embed_config:
         embeddings_config = gene_embed_config.get("embeddings", {})
         log.info(f"Found {len(embeddings_config)} gene embeddings to download")
-
         for emb_name, emb_config in embeddings_config.items():
             if "remote" in emb_config and "local" in emb_config:
                 log.info(f"Downloading {emb_name} embedding...")

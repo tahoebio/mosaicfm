@@ -602,7 +602,9 @@ class GeneEncoder(nn.Module):
                     state_dict = torch.load(emb_path, weights_only=True)
 
                     if "embedding.weight" in state_dict:
-                        emb_dim = state_dict["embedding.weight"].shape[1]
+                        pretrained_weight = state_dict["embedding.weight"]
+                        emb_dim = pretrained_weight.shape[1]
+                        pretrained_vocab_size = pretrained_weight.shape[0]
                         log.info(
                             f"Loaded {emb_name} embeddings with dimension {emb_dim}",
                         )
@@ -616,12 +618,60 @@ class GeneEncoder(nn.Module):
                             )
                         )
 
-                        # Load the weights
-                        self.additional_embeddings[
-                            f"{emb_name}_embedding"
-                        ].load_state_dict(
-                            {"weight": state_dict["embedding.weight"]},
-                        )
+                        # Load the weights and handle dimension mismatch
+                        if pretrained_vocab_size != num_embeddings:
+                            log.info(
+                                f"{emb_name} embedding size mismatch: pretrained has {pretrained_vocab_size} tokens, "
+                                f"but model expects {num_embeddings} tokens. Loading pretrained weights to top rows.",
+                            )
+                            # Create new weight tensor with correct size
+                            new_weight = torch.zeros(
+                                num_embeddings,
+                                emb_dim,
+                                dtype=pretrained_weight.dtype,
+                            )
+                            # Copy pretrained weights to top portion
+                            min_vocab = min(pretrained_vocab_size, num_embeddings)
+                            new_weight[:min_vocab] = pretrained_weight[:min_vocab]
+                            # Load the adjusted weights
+                            self.additional_embeddings[
+                                f"{emb_name}_embedding"
+                            ].load_state_dict(
+                                {"weight": new_weight},
+                            )
+                        else:
+                            # Load the weights directly
+                            self.additional_embeddings[
+                                f"{emb_name}_embedding"
+                            ].load_state_dict(
+                                {"weight": pretrained_weight},
+                            )
+
+                        # Debug: Verify that extra rows are zero
+                        if pretrained_vocab_size != num_embeddings:
+                            loaded_weight = self.additional_embeddings[
+                                f"{emb_name}_embedding"
+                            ].weight.data
+                            # Check if bottom rows are zero
+                            if pretrained_vocab_size < num_embeddings:
+                                extra_rows = loaded_weight[pretrained_vocab_size:]
+                                log.info(
+                                    f"{emb_name}: Extra {num_embeddings - pretrained_vocab_size} rows - "
+                                    f"all zeros: {torch.all(extra_rows == 0).item()}, "
+                                    f"max value: {extra_rows.abs().max().item()}",
+                                )
+                            # Log a sample of indices around the boundary
+                            log.info(
+                                f"{emb_name}: Sample embeddings around vocab boundary:",
+                            )
+                            for idx in range(
+                                max(0, pretrained_vocab_size - 2),
+                                min(num_embeddings, pretrained_vocab_size + 3),
+                            ):
+                                if idx < num_embeddings:
+                                    log.info(
+                                        f"  Token {idx}: norm={loaded_weight[idx].norm().item():.4f}",
+                                    )
 
                         # Set trainable/fixed
                         fix_embedding = emb_config.get("fix_embedding", True)
