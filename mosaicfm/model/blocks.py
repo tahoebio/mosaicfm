@@ -463,6 +463,9 @@ class ConcatAndProjectCombination(nn.Module):
             # No MLP config, use simple linear projection (backward compatible)
             self.projection = nn.Linear(concat_dim, target_dim, bias=True)
 
+        log.info("Architectue of ConcatAndProjectCombination:")
+        log.info(self.projection)
+
     def _build_mlp(
         self,
         input_dim: int,
@@ -487,7 +490,7 @@ class ConcatAndProjectCombination(nn.Module):
 
         # Get activation function
         activation_name = mlp_config["activation"]
-        activation_fn = resolve_ffn_act_fn({"name": activation_name})
+        activation_fn = resolve_ffn_act_fn({"name": activation_name})()
 
         # Get layer norm flag
         use_layer_norm = mlp_config["use_layer_norm"]
