@@ -472,43 +472,65 @@ class ConcatAndProjectCombination(nn.Module):
         output_dim: int,
         mlp_config: Dict,
     ) -> nn.Sequential:
-        """Build MLP based on configuration."""
-        layers = []
+        """Build an MLP according to `mlp_config`.
 
-        # Parse hidden layers
-        hidden_layers_spec = mlp_config["hidden_layers"]
-        if isinstance(hidden_layers_spec, int):
-            hidden_dims = [hidden_layers_spec]
-        elif isinstance(hidden_layers_spec, str):
-            hidden_dims = [int(x.strip()) for x in hidden_layers_spec.split(",")]
+        * If `resolve_ffn_act_fn` returns an `nn.Module`, we append it directly.
+        * If it returns a functional op (e.g. `F.relu`), we wrap it in a tiny
+          `nn.Module` so it plays nicely inside `nn.Sequential`.
+        """
+        layers: list[nn.Module] = []
+
+        # Parse hidden layer spec (int or "512,256,128")
+        hidden_spec = mlp_config["hidden_layers"]
+        if isinstance(hidden_spec, int):
+            hidden_dims = [hidden_spec]
+        elif isinstance(hidden_spec, str):
+            hidden_dims = [int(x) for x in hidden_spec.split(",") if x.strip()]
         else:
             log.warning(
-                f"Invalid hidden_layers specification: {hidden_layers_spec}. "
-                f"Expected int or comma-separated string. Falling back to simple projection.",
+                f"Invalid hidden_layers spec {hidden_spec!r}; "
+                "falling back to a single Linear projection.",
             )
-            return nn.Linear(input_dim, output_dim, bias=False)
+            return nn.Sequential(nn.Linear(input_dim, output_dim, bias=False))
 
-        # Get activation function
         activation_name = mlp_config["activation"]
-
-        # Get layer norm flag
         use_layer_norm = mlp_config["use_layer_norm"]
 
-        # Build layers
         current_dim = input_dim
         for hidden_dim in hidden_dims:
-            # Linear layer
+            # Linear
             layers.append(nn.Linear(current_dim, hidden_dim, bias=False))
+
             # Activation
-            layers.append(resolve_ffn_act_fn({"name": activation_name})())
-            # Layer norm if requested
+            act_obj = resolve_ffn_act_fn({"name": activation_name})
+
+            if isinstance(act_obj, nn.Module):
+                layers.append(act_obj)
+            elif callable(act_obj):
+
+                class _FunctionalAct(nn.Module):
+                    def __init__(self, fn):
+                        super().__init__()
+                        self.fn = fn
+
+                    def forward(self, x):
+                        return self.fn(x)
+
+                layers.append(_FunctionalAct(act_obj))
+            else:
+                raise TypeError(
+                    f"Unsupported activation object returned for "
+                    f"'{activation_name}': {type(act_obj)}",
+                )
+
+            # Optional layer norm
             if use_layer_norm:
                 layers.append(nn.LayerNorm(hidden_dim))
+
             current_dim = hidden_dim
 
-        # Final projection to output dimension (no activation or norm after this)
+        # Final projection to `output_dim`
         layers.append(nn.Linear(current_dim, output_dim, bias=False))
-
         return nn.Sequential(*layers)
 
     def forward(self, embeddings_list: List[Tensor]) -> Tensor:
