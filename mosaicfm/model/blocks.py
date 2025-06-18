@@ -457,30 +457,33 @@ class ConcatAndProjectCombination(nn.Module):
                 # Fall back to simple linear projection
                 self.projection = nn.Linear(concat_dim, target_dim, bias=True)
             else:
-                # Build MLP
-                self.projection = self._build_mlp(concat_dim, target_dim, mlp_config)
+                # Build MLP with input concatenation
+                self.projection = self._build_mlp_with_concat(
+                    concat_dim,
+                    target_dim,
+                    mlp_config,
+                )
         else:
             # No MLP config, use simple linear projection (backward compatible)
             self.projection = nn.Linear(concat_dim, target_dim, bias=True)
 
-        log.info("Architectue of ConcatAndProjectCombination:")
+        log.info("Architecture of ConcatAndProjectCombination:")
         log.info(self.projection)
 
-    def _build_mlp(
+    def _build_mlp_with_concat(
         self,
         input_dim: int,
         output_dim: int,
         mlp_config: Dict,
-    ) -> nn.Sequential:
-        """Build an MLP according to `mlp_config`.
+    ) -> nn.Module:
+        """Build an MLP that concatenates input with hidden output before final
+        projection.
 
-        * If `resolve_ffn_act_fn` returns an `nn.Module`, we append it directly.
-        * If it returns a functional op (e.g. `F.relu`), we wrap it in a tiny
-          `nn.Module` so it plays nicely inside `nn.Sequential`.
+        Architecture:
+        input -> hidden layers -> [input, hidden_output] -> final projection
         """
-        layers: list[nn.Module] = []
 
-        # Parse hidden layer spec (int or "512,256,128")
+        # Parse configuration
         hidden_spec = mlp_config["hidden_layers"]
         if isinstance(hidden_spec, int):
             hidden_dims = [hidden_spec]
@@ -491,47 +494,71 @@ class ConcatAndProjectCombination(nn.Module):
                 f"Invalid hidden_layers spec {hidden_spec!r}; "
                 "falling back to a single Linear projection.",
             )
-            return nn.Sequential(nn.Linear(input_dim, output_dim, bias=False))
+            return nn.Linear(input_dim, output_dim, bias=False)
 
         activation_name = mlp_config["activation"]
         use_layer_norm = mlp_config["use_layer_norm"]
 
-        current_dim = input_dim
-        for hidden_dim in hidden_dims:
-            # Linear
-            layers.append(nn.Linear(current_dim, hidden_dim, bias=False))
+        # Create a custom module that implements input concatenation
+        class MLPWithInputConcat(nn.Module):
+            def __init__(self):
+                super().__init__()
+                layers = []
+                current_dim = input_dim
 
-            # Activation
-            act_obj = resolve_ffn_act_fn({"name": activation_name})
+                # Build hidden layers
+                for hidden_dim in hidden_dims:
+                    # Linear
+                    layers.append(nn.Linear(current_dim, hidden_dim, bias=False))
 
-            if isinstance(act_obj, nn.Module):
-                layers.append(act_obj)
-            elif callable(act_obj):
+                    # Activation
+                    act_obj = resolve_ffn_act_fn({"name": activation_name})
+                    if isinstance(act_obj, nn.Module):
+                        layers.append(act_obj)
+                    elif callable(act_obj):
 
-                class _FunctionalAct(nn.Module):
-                    def __init__(self, fn):
-                        super().__init__()
-                        self.fn = fn
+                        class _FunctionalAct(nn.Module):
+                            def __init__(self, fn):
+                                super().__init__()
+                                self.fn = fn
 
-                    def forward(self, x):
-                        return self.fn(x)
+                            def forward(self, x):
+                                return self.fn(x)
 
-                layers.append(_FunctionalAct(act_obj))
-            else:
-                raise TypeError(
-                    f"Unsupported activation object returned for "
-                    f"'{activation_name}': {type(act_obj)}",
+                        layers.append(_FunctionalAct(act_obj))
+                    else:
+                        raise TypeError(
+                            f"Unsupported activation object returned for "
+                            f"'{activation_name}': {type(act_obj)}",
+                        )
+
+                    # Optional layer norm
+                    if use_layer_norm:
+                        layers.append(nn.LayerNorm(hidden_dim))
+
+                    current_dim = hidden_dim
+
+                self.hidden_layers = nn.Sequential(*layers)
+
+                # Final projection takes concatenated input: [original_input, hidden_output]
+                # Dimensions: input_dim + last_hidden_dim -> output_dim
+                self.final_proj = nn.Linear(
+                    input_dim + current_dim,
+                    output_dim,
+                    bias=False,
                 )
 
-            # Optional layer norm
-            if use_layer_norm:
-                layers.append(nn.LayerNorm(hidden_dim))
+            def forward(self, x):
+                # Pass through hidden layers
+                hidden_out = self.hidden_layers(x)
 
-            current_dim = hidden_dim
+                # Concatenate input with hidden output
+                concat_out = torch.cat([x, hidden_out], dim=-1)
 
-        # Final projection to `output_dim`
-        layers.append(nn.Linear(current_dim, output_dim, bias=False))
-        return nn.Sequential(*layers)
+                # Final projection
+                return self.final_proj(concat_out)
+
+        return MLPWithInputConcat()
 
     def forward(self, embeddings_list: List[Tensor]) -> Tensor:
         """Concatenate embeddings and project back to target dimension."""
