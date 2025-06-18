@@ -13,13 +13,12 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 import torch
+import wandb
 from scipy.sparse import issparse
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset
 from torchtext._torchtext import Vocab as VocabPybind
 from torchtext.vocab import Vocab
-
-import wandb
 
 sys.path.insert(0, "../")
 from scgpt import SubsetsBatchSampler
