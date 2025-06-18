@@ -490,7 +490,6 @@ class ConcatAndProjectCombination(nn.Module):
 
         # Get activation function
         activation_name = mlp_config["activation"]
-        activation_fn = resolve_ffn_act_fn({"name": activation_name})()
 
         # Get layer norm flag
         use_layer_norm = mlp_config["use_layer_norm"]
@@ -501,7 +500,7 @@ class ConcatAndProjectCombination(nn.Module):
             # Linear layer
             layers.append(nn.Linear(current_dim, hidden_dim, bias=False))
             # Activation
-            layers.append(activation_fn)
+            layers.append(resolve_ffn_act_fn({"name": activation_name})())
             # Layer norm if requested
             if use_layer_norm:
                 layers.append(nn.LayerNorm(hidden_dim))
