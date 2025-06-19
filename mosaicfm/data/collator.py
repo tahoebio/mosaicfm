@@ -243,9 +243,7 @@ class DataCollator(DefaultDataCollator):
             raise NotImplementedError
 
         device = examples[0]["genes"].device
-
-        max_ori_len = max(len(example["genes"]) for example in examples)
-        _max_length = self.max_length if max_ori_len >= self.max_length else max_ori_len
+        _max_length = self.max_length
 
         # pad and truncate
         padded_genes = []
@@ -324,10 +322,7 @@ class DataCollator(DefaultDataCollator):
             return NotImplementedError
 
         device = examples[0]["genes"].device
-
-        max_ori_len = max(len(example["genes"]) for example in examples)
-        _max_length = self.max_length if max_ori_len >= self.max_length else max_ori_len
-
+        _max_length = self.max_length
         # pad and truncate
         padded_pcpt_genes = []
         padded_pcpt_expressions = []
