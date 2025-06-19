@@ -440,10 +440,26 @@ class DataCollator(DefaultDataCollator):
             if self.use_chem_token:
                 # add drug token <drug>, and pad_value=-2 expression at location 1  (after <cls>) of genes and expressions
                 genes = torch.cat(
-                    (genes[:1], torch.tensor([self.drug_token_id], device=genes.device, dtype=genes.dtype), genes[1:]),
+                    (
+                        genes[:1],
+                        torch.tensor(
+                            [self.drug_token_id],
+                            device=genes.device,
+                            dtype=genes.dtype,
+                        ),
+                        genes[1:],
+                    ),
                 )
                 expressions = torch.cat(
-                    (expressions[:1], torch.tensor([self.pad_value], device=expressions.device, dtype=expressions.dtype), expressions[1:]),
+                    (
+                        expressions[:1],
+                        torch.tensor(
+                            [self.pad_value],
+                            device=expressions.device,
+                            dtype=expressions.dtype,
+                        ),
+                        expressions[1:],
+                    ),
                 )
 
             original_expressions = expressions.detach().clone()
