@@ -372,11 +372,11 @@ class GeneEncoder(nn.Module):
         self.use_norm = use_norm
         if not gene_encoder_cfg:
             gene_encoder_cfg = {}
-        additional_cfg = gene_encoder_cfg.get("additional_embeddings", {})
+        additional_embedding_cfg = gene_encoder_cfg.get("embeddings", {})
         self.extra_embeddings = nn.ModuleDict()
         self.extra_norms = nn.ModuleDict()
 
-        for name, e_cfg in additional_cfg.items():
+        for name, e_cfg in additional_embedding_cfg.items():
             local, remote = e_cfg["local"], e_cfg["remote"]
             if dist.get_local_rank() == 0:
                 download_file_from_s3_url(remote, local)

@@ -74,6 +74,7 @@ class SCGPTModel(nn.Module):
             self.gene_encoder_config = gene_encoder_defaults
         if self.cell_emb_style not in ["cls", "avg-pool", "w-pool"]:
             raise ValueError(f"Unknown cell_emb_style: {self.cell_emb_style}")
+
         self.gene_encoder = GeneEncoder(
             self.vocab_size,
             self.d_model,
