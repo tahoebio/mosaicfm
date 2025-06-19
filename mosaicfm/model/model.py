@@ -80,7 +80,7 @@ class SCGPTModel(nn.Module):
             self.d_model,
             padding_idx=self.pad_token_id,
             use_norm=self.gene_encoder_config["use_norm"],
-            gene_embedding_config=self.gene_encoder_config,
+            gene_encoder_cfg=self.gene_encoder_config,
         )
         self.flag_encoder = nn.Embedding(2, self.d_model)
 
