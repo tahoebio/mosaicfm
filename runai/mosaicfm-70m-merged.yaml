@@ -259,5 +259,4 @@ loggers:
     log_artifacts: False
 save_folder: "s3://vevo-ml-datasets/mosaicfm_v2/models/{run_name}"
 save_interval: "2000ba"
-compile_args: {}
 save_num_checkpoints_to_keep: 0
