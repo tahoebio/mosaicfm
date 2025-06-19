@@ -83,12 +83,11 @@ repos:
 #    args: [--warnings]
 #    additional_dependencies: ["pyright@1.1.256"]
 - repo: https://github.com/trufflesecurity/trufflehog.git
-  rev: v3.88.11
+  rev: v3.88.26
   hooks:
-    - id: trufflehog
-      name: secret scan
-      entry: trufflehog filesystem          # 1. filesystem mode
-      pass_filenames: true                  # 2. scan only the files pre-commit hands you
-      args:
-        - --only-verified
-        - --fail
+  - id: trufflehog
+    name: secret scan
+    entry: trufflehog filesystem ./
+    args:
+    - --only-verified
+    - --fail

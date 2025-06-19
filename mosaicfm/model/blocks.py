@@ -1,7 +1,6 @@
 # Copyright (C) Vevo Therapeutics 2024-2025. All rights reserved.
-import logging
 from functools import lru_cache
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -47,8 +46,6 @@ init_config_defaults: Dict = {
 gene_encoder_defaults: Dict = {
     "use_norm": False,
 }
-
-log = logging.getLogger(__name__)
 
 
 class SCGPTBlock(nn.Module):
@@ -357,523 +354,71 @@ class SCGPTEncoder(nn.Module):
         return attention_mask
 
 
-# Various combination strategies for embedding combination
-class ElementwiseSumCombination(nn.Module):
-    """Combines embeddings with simple element-wise summation."""
-
-    def __init__(self, target_dim: int, num_embedding_types: int):
-        super().__init__()
-        self.skip_init = True  # No parameters to initialize
-
-    def forward(self, embeddings_list: List[Tensor]) -> Tensor:
-        """Simply sum all embeddings element-wise."""
-        if len(embeddings_list) == 1:
-            return embeddings_list[0]
-
-        return torch.stack(embeddings_list).sum(dim=0)
-
-
-class LearnedWeightedCombination(nn.Module):
-    """Combines embeddings using learned per-dimension weights."""
-
-    def __init__(self, target_dim: int, num_embedding_types: int):
-        super().__init__()
-        # Initialize with equal weights (1/N for each embedding type)
-        self.weights = nn.Parameter(
-            torch.ones(target_dim, num_embedding_types) / num_embedding_types,
-        )
-        self.skip_init = True  # Skip initialization in param_init_fn
-
-    def forward(self, embeddings_list: List[Tensor]) -> Tensor:
-        """Apply learned per-dimension weights to combine embeddings."""
-        if len(embeddings_list) == 1:
-            return embeddings_list[0]
-
-        # Stack embeddings along a new dimension
-        # [batch_size, seq_len, embed_dim] → [batch_size, seq_len, num_embeddings, embed_dim]
-        stacked_embeddings = torch.stack(embeddings_list, dim=2)
-
-        # Apply per-dimension weighting
-        # Einsum notation: b=batch, s=sequence, e=embedding_type, d=dimension
-        # [b,s,e,d] x [d,e] → [b,s,d]
-        result = torch.einsum("bsed,de->bsd", stacked_embeddings, self.weights)
-
-        return result
-
-
-class SoftmaxWeightedCombination(nn.Module):
-    """Combines embeddings using softmax-normalized weights per dimension."""
-
-    def __init__(self, target_dim: int, num_embedding_types: int):
-        super().__init__()
-        # Initialize logits for softmax to zeros (equal weighting initially)
-        self.weight_logits = nn.Parameter(torch.zeros(target_dim, num_embedding_types))
-        self.skip_init = True  # Skip initialization in param_init_fn
-
-    def forward(self, embeddings_list: List[Tensor]) -> Tensor:
-        """Apply softmax-normalized weights to combine embeddings."""
-        if len(embeddings_list) == 1:
-            return embeddings_list[0]
-
-        # Stack embeddings along a new dimension
-        stacked_embeddings = torch.stack(embeddings_list, dim=2)
-
-        # Apply softmax to weights across embedding types for each dimension
-        # This ensures weights for each dimension sum to 1
-        softmax_weights = torch.nn.functional.softmax(self.weight_logits, dim=1)
-
-        # Apply weighted combination
-        result = torch.einsum("bsed,de->bsd", stacked_embeddings, softmax_weights)
-
-        return result
-
-
-class ConcatAndProjectCombination(nn.Module):
-    """Combines embeddings by concatenation followed by projection."""
-
-    def __init__(
-        self,
-        target_dim: int,
-        num_embedding_types: int,
-        mlp_config: Optional[Dict] = None,
-    ):
-        super().__init__()
-        # Calculate concatenated dimension (all embeddings are target_dim)
-        concat_dim = num_embedding_types * target_dim
-
-        # Check if MLP configuration is provided
-        if mlp_config is not None:
-            # Validate MLP config
-            required_fields = ["hidden_layers", "activation", "use_layer_norm"]
-            missing_fields = [
-                field for field in required_fields if field not in mlp_config
-            ]
-
-            if missing_fields:
-                log.warning(
-                    f"MLP config missing required fields: {missing_fields}. "
-                    f"Falling back to simple linear projection.",
-                )
-                # Fall back to simple linear projection
-                self.projection = nn.Linear(concat_dim, target_dim, bias=True)
-            else:
-                # Build MLP with input concatenation
-                self.projection = self._build_mlp_with_concat(
-                    concat_dim,
-                    target_dim,
-                    mlp_config,
-                )
-        else:
-            # No MLP config, use simple linear projection (backward compatible)
-            self.projection = nn.Linear(concat_dim, target_dim, bias=True)
-
-        log.info("Architecture of ConcatAndProjectCombination:")
-        log.info(self.projection)
-
-    def _build_mlp_with_concat(
-        self,
-        input_dim: int,
-        output_dim: int,
-        mlp_config: Dict,
-    ) -> nn.Module:
-        """Build an MLP that concatenates input with hidden output before final
-        projection.
-
-        Architecture:
-        input -> hidden layers -> [input, hidden_output] -> final projection
-        """
-
-        # Parse configuration
-        hidden_spec = mlp_config["hidden_layers"]
-        if isinstance(hidden_spec, int):
-            hidden_dims = [hidden_spec]
-        elif isinstance(hidden_spec, str):
-            hidden_dims = [int(x) for x in hidden_spec.split(",") if x.strip()]
-        else:
-            log.warning(
-                f"Invalid hidden_layers spec {hidden_spec!r}; "
-                "falling back to a single Linear projection.",
-            )
-            return nn.Linear(input_dim, output_dim, bias=False)
-
-        activation_name = mlp_config["activation"]
-        use_layer_norm = mlp_config["use_layer_norm"]
-
-        # Create a custom module that implements input concatenation
-        class MLPWithInputConcat(nn.Module):
-            def __init__(self):
-                super().__init__()
-                layers = []
-                current_dim = input_dim
-
-                # Build hidden layers
-                for hidden_dim in hidden_dims:
-                    # Linear
-                    layers.append(nn.Linear(current_dim, hidden_dim, bias=False))
-
-                    # Activation
-                    act_obj = resolve_ffn_act_fn({"name": activation_name})
-                    if isinstance(act_obj, nn.Module):
-                        layers.append(act_obj)
-                    elif callable(act_obj):
-
-                        class _FunctionalAct(nn.Module):
-                            def __init__(self, fn):
-                                super().__init__()
-                                self.fn = fn
-
-                            def forward(self, x):
-                                return self.fn(x)
-
-                        layers.append(_FunctionalAct(act_obj))
-                    else:
-                        raise TypeError(
-                            f"Unsupported activation object returned for "
-                            f"'{activation_name}': {type(act_obj)}",
-                        )
-
-                    # Optional layer norm
-                    if use_layer_norm:
-                        layers.append(nn.LayerNorm(hidden_dim))
-
-                    current_dim = hidden_dim
-
-                self.hidden_layers = nn.Sequential(*layers)
-
-                # Final projection takes concatenated input: [original_input, hidden_output]
-                # Dimensions: input_dim + last_hidden_dim -> output_dim
-                self.final_proj = nn.Linear(
-                    input_dim + current_dim,
-                    output_dim,
-                    bias=False,
-                )
-
-            def forward(self, x):
-                # Pass through hidden layers
-                hidden_out = self.hidden_layers(x)
-
-                # Concatenate input with hidden output
-                concat_out = torch.cat([x, hidden_out], dim=-1)
-
-                # Final projection
-                return self.final_proj(concat_out)
-
-        return MLPWithInputConcat()
-
-    def forward(self, embeddings_list: List[Tensor]) -> Tensor:
-        """Concatenate embeddings and project back to target dimension."""
-        if len(embeddings_list) == 1:
-            return embeddings_list[0]
-
-        # Concatenate along the feature dimension
-        concatenated = torch.cat(embeddings_list, dim=-1)
-
-        # Project back to target_dim
-        return self.projection(concatenated)
-
-
-class GateAndSumCombination(nn.Module):
-    """Combines embeddings using learned gating values."""
-
-    def __init__(self, target_dim: int, num_embedding_types: int):
-        super().__init__()
-        # Create a gate generator - produces values between 0 and 1
-        self.gate_generator = nn.Sequential(
-            nn.Linear(target_dim, num_embedding_types),
-            nn.Sigmoid(),
-        )
-
-    def forward(self, embeddings_list: List[Tensor]) -> Tensor:
-        """Apply dynamic gates based on content to combine embeddings."""
-        if len(embeddings_list) == 1:
-            return embeddings_list[0]
-
-        # Stack embeddings: [B, S, num_emb, D]
-        stacked = torch.stack(embeddings_list, dim=2)
-        batch_size, seq_len, num_emb, dim = stacked.shape
-
-        # Use the first embedding to generate gates
-        gates = self.gate_generator(embeddings_list[0])  # [B, S, num_emb]
-        gates = gates.unsqueeze(-1)  # [B, S, num_emb, 1]
-
-        # Apply gates and sum
-        gated_embeddings = stacked * gates
-        result = gated_embeddings.sum(dim=2)  # [B, S, D]
-
-        return result
-
-
 class GeneEncoder(nn.Module):
     def __init__(
         self,
         num_embeddings: int,
-        target_dim: int,
+        embedding_dim: int,
         padding_idx: Optional[int] = None,
         use_norm: bool = False,
-        gene_embedding_config: Optional[Dict] = None,
+        gene_encoder_cfg: Optional[Dict] = None,
     ):
         super().__init__()
+        self.embedding = nn.Embedding(
+            num_embeddings,
+            embedding_dim,
+            padding_idx=padding_idx,
+        )
         self.use_norm = use_norm
-        self.target_dim = target_dim
+        if not gene_encoder_cfg:
+            gene_encoder_cfg = {}
+        additional_cfg = gene_encoder_cfg.get("additional_embeddings", {})
+        self.extra_embeddings = nn.ModuleDict()
+        self.extra_norms = nn.ModuleDict()
 
-        # Track embeddings and their types
-        self.embedding_types = []
+        for name, e_cfg in additional_cfg.items():
+            local, remote = e_cfg["local"], e_cfg["remote"]
+            if dist.get_local_rank() == 0:
+                download_file_from_s3_url(remote, local)
+            with dist.local_rank_zero_download_and_wait(local):
+                dist.barrier()
 
-        # Initialize the primary trainable embedding if specified
-        use_trainable = True
-        if gene_embedding_config is not None:
-            use_trainable = gene_embedding_config.get("trainable", True)
-
-        if use_trainable:
-            self.primary_embedding = nn.Embedding(
-                num_embeddings,
-                target_dim,
+            weight = torch.load(local, weights_only=True)["embedding.weight"]
+            emb = nn.Embedding.from_pretrained(
+                weight,
                 padding_idx=padding_idx,
+                freeze=e_cfg.get("freeze", True),
             )
-            self.embedding_types.append("primary")
-            log.info(
-                f"Initialized trainable primary embedding with dimension {target_dim}",
+            for m in emb.modules():
+                m.skip_init = True
+            self.extra_embeddings[name] = emb
+
+            if e_cfg.get("use_norm", False):
+                self.extra_norms[name] = nn.LayerNorm(emb.embedding_dim)
+
+        if self.extra_embeddings:
+            concat_dim = embedding_dim + sum(
+                emb.embedding_dim for emb in self.extra_embeddings.values()
             )
+            self.project = nn.Linear(concat_dim, embedding_dim, bias=False)
         else:
-            self.primary_embedding = None
+            self.project = nn.Identity()
 
-        # Initialize additional embeddings if specified
-        self.additional_embeddings = nn.ModuleDict()
-
-        if gene_embedding_config is not None and "embeddings" in gene_embedding_config:
-            embeddings_config = gene_embedding_config.get("embeddings", {})
-            for emb_name, emb_config in embeddings_config.items():
-                try:
-                    # Load the embedding file
-                    emb_path = emb_config.get("local")
-                    if emb_path is None:
-                        log.warning(f"No local path specified for {emb_name}, skipping")
-                        continue
-
-                    state_dict = torch.load(emb_path, weights_only=True)
-
-                    if "embedding.weight" in state_dict:
-                        pretrained_weight = state_dict["embedding.weight"]
-                        emb_dim = pretrained_weight.shape[1]
-                        pretrained_vocab_size = pretrained_weight.shape[0]
-                        log.info(
-                            f"Loaded {emb_name} embeddings with dimension {emb_dim}",
-                        )
-
-                        # Create embedding layer
-                        self.additional_embeddings[f"{emb_name}_embedding"] = (
-                            nn.Embedding(
-                                num_embeddings,
-                                emb_dim,
-                                padding_idx=padding_idx,
-                            )
-                        )
-
-                        # Load the weights and handle dimension mismatch
-                        if pretrained_vocab_size != num_embeddings:
-                            log.info(
-                                f"{emb_name} embedding size mismatch: pretrained has {pretrained_vocab_size} tokens, "
-                                f"but model expects {num_embeddings} tokens. Loading pretrained weights to top rows.",
-                            )
-                            # Create new weight tensor with correct size
-                            new_weight = torch.zeros(
-                                num_embeddings,
-                                emb_dim,
-                                dtype=pretrained_weight.dtype,
-                            )
-                            # Copy pretrained weights to top portion
-                            min_vocab = min(pretrained_vocab_size, num_embeddings)
-                            new_weight[:min_vocab] = pretrained_weight[:min_vocab]
-                            # Load the adjusted weights
-                            self.additional_embeddings[
-                                f"{emb_name}_embedding"
-                            ].load_state_dict(
-                                {"weight": new_weight},
-                            )
-                        else:
-                            # Load the weights directly
-                            self.additional_embeddings[
-                                f"{emb_name}_embedding"
-                            ].load_state_dict(
-                                {"weight": pretrained_weight},
-                            )
-
-                        # Debug: Verify that extra rows are zero
-                        if pretrained_vocab_size != num_embeddings:
-                            loaded_weight = self.additional_embeddings[
-                                f"{emb_name}_embedding"
-                            ].weight.data
-                            # Check if bottom rows are zero
-                            if pretrained_vocab_size < num_embeddings:
-                                extra_rows = loaded_weight[pretrained_vocab_size:]
-                                log.info(
-                                    f"{emb_name}: Extra {num_embeddings - pretrained_vocab_size} rows - "
-                                    f"all zeros: {torch.all(extra_rows == 0).item()}, "
-                                    f"max value: {extra_rows.abs().max().item()}",
-                                )
-                            # Log a sample of indices around the boundary
-                            log.info(
-                                f"{emb_name}: Sample embeddings around vocab boundary:",
-                            )
-                            for idx in range(
-                                max(0, pretrained_vocab_size - 2),
-                                min(num_embeddings, pretrained_vocab_size + 3),
-                            ):
-                                if idx < num_embeddings:
-                                    log.info(
-                                        f"  Token {idx}: norm={loaded_weight[idx].norm().item():.4f}",
-                                    )
-
-                        # Set trainable/fixed
-                        fix_embedding = emb_config.get("fix_embedding", True)
-                        self.additional_embeddings[
-                            f"{emb_name}_embedding"
-                        ].weight.requires_grad = not fix_embedding
-                        log.info(
-                            f"{emb_name} embeddings are {'fixed' if fix_embedding else 'trainable'}",
-                        )
-
-                        # Always add a projection (linear rotation even if they match)
-                        self.additional_embeddings[f"{emb_name}_proj"] = nn.Linear(
-                            emb_dim,
-                            target_dim,
-                            bias=False,
-                        )
-                        log.info(
-                            f"Added projection for {emb_name} from {emb_dim} to {target_dim}",
-                        )
-
-                        # Add normalization if requested
-                        use_emb_norm = emb_config.get("use_norm", False)
-                        if use_emb_norm:
-                            self.additional_embeddings[f"{emb_name}_norm"] = (
-                                nn.LayerNorm(target_dim)
-                            )
-                            log.info(f"Added layer normalization for {emb_name}")
-
-                        # Mark to skip initialization
-                        self.additional_embeddings[
-                            f"{emb_name}_embedding"
-                        ].skip_init = True
-
-                        # Track this embedding type
-                        self.embedding_types.append(emb_name)
-                    else:
-                        log.warning(
-                            f"No embedding.weight found in {emb_path} for {emb_name}",
-                        )
-                except Exception as e:
-                    log.error(f"Failed to load {emb_name} embeddings: {e!s}")
-
-        # Check if we have any embeddings at all
-        if not self.primary_embedding and not self.embedding_types:
-            log.warning("No embeddings configured, falling back to trainable embedding")
-            self.primary_embedding = nn.Embedding(
-                num_embeddings,
-                target_dim,
-                padding_idx=padding_idx,
-            )
-            self.embedding_types.append("primary")
-
-        # Create the combination strategy based on configuration
-        num_embeddings_total = len(self.embedding_types)
-
-        # Default combination strategy
-        combination_strategy = "learned_weighted"
-
-        # Get combination strategy from config if provided
-        if (
-            gene_embedding_config is not None
-            and "combination_strategy" in gene_embedding_config
-        ):
-            combination_strategy = gene_embedding_config["combination_strategy"]
-
-        if num_embeddings_total > 1:
-            log.info(
-                f"Using '{combination_strategy}' combination strategy for {num_embeddings_total} embeddings",
-            )
-
-            # Create the appropriate combiner based on the strategy
-            if combination_strategy == "elementwise_sum":
-                self.combiner = ElementwiseSumCombination(
-                    target_dim,
-                    num_embeddings_total,
-                )
-            elif combination_strategy == "learned_weighted":
-                self.combiner = LearnedWeightedCombination(
-                    target_dim,
-                    num_embeddings_total,
-                )
-            elif combination_strategy == "softmax_weighted":
-                self.combiner = SoftmaxWeightedCombination(
-                    target_dim,
-                    num_embeddings_total,
-                )
-            elif combination_strategy == "concat_and_project":
-                # Extract MLP config if it exists
-                mlp_config = gene_embedding_config.get("mlp", None)
-                self.combiner = ConcatAndProjectCombination(
-                    target_dim,
-                    num_embeddings_total,
-                    mlp_config=mlp_config,
-                )
-            elif combination_strategy == "gate_and_sum":
-                self.combiner = GateAndSumCombination(target_dim, num_embeddings_total)
-            else:
-                log.warning(
-                    f"Unknown combination strategy '{combination_strategy}', falling back to learned_weighted",
-                )
-                self.combiner = LearnedWeightedCombination(
-                    target_dim,
-                    num_embeddings_total,
-                )
-        else:
-            self.combiner = None
-            log.info("Only one embedding type, no combination needed")
-
-        # Global normalization
         if self.use_norm:
-            self.enc_norm = nn.LayerNorm(target_dim)
+            self.enc_norm = nn.LayerNorm(embedding_dim)
 
     def forward(self, x: Tensor) -> Tensor:
-        # Collect all embeddings
-        all_embeddings = []
-
-        # Process each embedding type
-        for i, emb_type in enumerate(self.embedding_types):
-            if emb_type == "primary":
-                if self.primary_embedding is not None:
-                    emb_tensor = self.primary_embedding(x)
-                    all_embeddings.append(emb_tensor)
-            else:
-                emb_tensor = self.additional_embeddings[f"{emb_type}_embedding"](x)
-
-                # Apply projection if it exists
-                if f"{emb_type}_proj" in self.additional_embeddings:
-                    emb_tensor = self.additional_embeddings[f"{emb_type}_proj"](
-                        emb_tensor,
-                    )
-
-                # Apply normalization if it exists
-                if f"{emb_type}_norm" in self.additional_embeddings:
-                    emb_tensor = self.additional_embeddings[f"{emb_type}_norm"](
-                        emb_tensor,
-                    )
-
-                all_embeddings.append(emb_tensor)
-
-        # If only one embedding, return it directly
-        if len(all_embeddings) == 1:
-            result = all_embeddings[0]
-        else:
-            # Combine embeddings using the selected strategy
-            result = self.combiner(all_embeddings)
-
-        # Apply global normalization if specified
+        reps = [self.embedding(x)]
+        for name, emb in self.extra_embeddings.items():
+            y = emb(x)
+            if name in self.extra_norms:
+                y = self.extra_norms[name](y)
+            reps.append(y)
+        x = torch.cat(reps, dim=-1) if len(reps) > 1 else reps[0]
+        x = self.project(x)
         if self.use_norm:
-            result = self.enc_norm(result)
-
-        return result
+            x = self.enc_norm(x)
+        return x
 
 
 class ChemEncoder(nn.Module):
@@ -905,6 +450,8 @@ class ChemEncoder(nn.Module):
             padding_idx=padding_idx,
             freeze=freeze,
         )
+        for m in self.embedding.modules():
+            m.skip_init = True
         self.fc = nn.Linear(embedding_dim, d_out)
         self.activation = resolve_ffn_act_fn({"name": activation})
         self.proj = nn.Linear(d_out, d_out)

@@ -74,14 +74,12 @@ class SCGPTModel(nn.Module):
             self.gene_encoder_config = gene_encoder_defaults
         if self.cell_emb_style not in ["cls", "avg-pool", "w-pool"]:
             raise ValueError(f"Unknown cell_emb_style: {self.cell_emb_style}")
-
-        gene_embedding_config = self.gene_encoder_config.get("gene_embedding", None)
         self.gene_encoder = GeneEncoder(
             self.vocab_size,
             self.d_model,
             padding_idx=self.pad_token_id,
             use_norm=self.gene_encoder_config["use_norm"],
-            gene_embedding_config=gene_embedding_config,
+            gene_embedding_config=self.gene_encoder_config,
         )
         self.flag_encoder = nn.Embedding(2, self.d_model)
 
@@ -124,11 +122,6 @@ class SCGPTModel(nn.Module):
                 freeze=chem_encoder_config.get("freeze", False),
             )
 
-            # Disable re-inititialization for the entire subtree of chem_encoder
-            # so that the Embedding layer is correctly initialized with morgan/ibm embeddings.
-            for module in self.chem_encoder.modules():
-                module.skip_init = True
-
         encoder_layers = SCGPTBlock(
             d_model=self.d_model,
             n_heads=self.n_heads,
@@ -170,8 +163,6 @@ class SCGPTModel(nn.Module):
                 'MosaicML recommends using config.init_device="meta" with Composer + FSDP for faster initialization.',
             )
             self.apply(self.param_init_fn)
-
-        print(self.gene_encoder)
 
     def param_init_fn(self, module: nn.Module):
         # skip initialization for modules that has skip_init=True

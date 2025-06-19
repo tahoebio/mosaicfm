@@ -367,11 +367,12 @@ def main(cfg: DictConfig) -> composer.Trainer:
 
     # Build vocab
     vocab = GeneVocab.from_file(vocab_config["local"])
-    n_token_original = len(vocab)
-    special_tokens = ["<pad>", "<cls>", "<eoc>", "<drug>"]
+    special_tokens = ["<pad>", "<cls>", "<eoc>"]
+    if cfg.get("use_chem_token", False):
+        special_tokens.append("<drug>")
+
     for s in special_tokens:
         if s not in vocab:
-            log.info(f"Adding token {s} to vocab.")
             vocab.append_token(s)
     if collator_config.get("use_junk_tokens", False):
         # Based on Karpathy's observation that 64 is a good number for performance
@@ -390,38 +391,6 @@ def main(cfg: DictConfig) -> composer.Trainer:
     model_config.vocab_size = len(vocab)
     log.info(f"Setting vocab size to: {len(vocab)}")
     logged_cfg.update({"vocab_size": len(vocab)})
-    n_token_added = len(vocab) - n_token_original
-    log.info(f"Number of new tokens added: {n_token_added}")
-    logged_cfg.update({"n_token_added": n_token_added})
-
-    # Pretrained Gene Embeddings
-    gene_embed_config = model_config.gene_encoder.get("gene_embedding", None)
-    if gene_embed_config is None:
-        log.info(
-            "No gene embeddings provided. Continuing with random initialization of gene embedding.",
-        )
-    # Process embeddings if present in the config
-    elif "embeddings" in gene_embed_config:
-        embeddings_config = gene_embed_config.get("embeddings", {})
-        log.info(f"Found {len(embeddings_config)} gene embeddings to download")
-        for emb_name, emb_config in embeddings_config.items():
-            if "remote" in emb_config and "local" in emb_config:
-                log.info(f"Downloading {emb_name} embedding...")
-                if dist.get_local_rank() == 0:
-                    download_file_from_s3_url(
-                        s3_url=emb_config["remote"],
-                        local_file_path=emb_config["local"],
-                    )
-                with dist.local_rank_zero_download_and_wait(emb_config["local"]):
-                    dist.barrier()
-            else:
-                log.warning(
-                    f"Skipping {emb_name} embedding: missing remote or local path",
-                )
-    else:
-        log.info(
-            "Gene embedding configuration found but no embeddings specified to download",
-        )
 
     # Scheduler
     scheduler_name: str = scheduler_config.pop("name")
