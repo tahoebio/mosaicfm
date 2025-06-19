@@ -1,9 +1,9 @@
 global_seed: 777
 seed: ${global_seed}
-device_train_batch_size: 400
-global_train_batch_size: 400
-device_eval_batch_size: 400
-device_train_microbatch_size: "auto"
+device_train_batch_size: 300
+global_train_batch_size: 300
+device_eval_batch_size: 300
+device_train_microbatch_size: 300
 vocabulary:
   remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/vevo_v2_vocab.json"
   local: "vocab.json"
@@ -259,5 +259,5 @@ loggers:
     log_artifacts: False
 save_folder: "s3://vevo-ml-datasets/mosaicfm_v2/models/{run_name}"
 save_interval: "2000ba"
-compile_args: {}
+compile_config: {}
 save_num_checkpoints_to_keep: 0
