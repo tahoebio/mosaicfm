@@ -6,7 +6,6 @@ from typing import Any, Dict, Optional, Tuple, Union
 import numpy as np
 import torch
 from composer.utils import dist
-from flash_attn.bert_padding import pad_input, unpad_input
 from llmfoundry.layers_registry import attention_classes, norms
 from llmfoundry.models.layers.ffn import (
     resolve_ffn_act_fn,
@@ -166,10 +165,7 @@ class SCGPTBlock(nn.Module):
                 attn_bias=attn_bias,
                 flash_attn_padding_info=flash_attn_padding_info,
             )
-            x = x + self._ff_block(
-                self.norm2(x),
-                attention_mask=flash_attn_padding_info["attention_mask"],
-            )
+            x = x + self._ff_block(self.norm2(x))
         else:
             x = self.norm1(
                 x
@@ -179,13 +175,7 @@ class SCGPTBlock(nn.Module):
                     flash_attn_padding_info=flash_attn_padding_info,
                 ),
             )
-            x = self.norm2(
-                x
-                + self._ff_block(
-                    x,
-                    attention_mask=flash_attn_padding_info["attention_mask"],
-                ),
-            )
+            x = self.norm2(x + self._ff_block(x))
         return x
 
     def _sa_block(
@@ -202,16 +192,12 @@ class SCGPTBlock(nn.Module):
         )
         return self.post_sa_dropout(x)
 
-    def _ff_block(self, x: Tensor, attention_mask: Tensor) -> Tensor:
-        batch_size, seq_len = x.size()[:2]
-        x, indices, *_ = unpad_input(x, attention_mask)
+    def _ff_block(self, x: Tensor) -> Tensor:
         if self.use_glu:
             x = self.down_proj(self.activation(self.gate_proj(x)) * self.up_proj(x))
         else:
             x = self.down_proj(self.activation(self.up_proj(x)))
-        output = self.post_ffn_dropout(x)
-        output = pad_input(output, indices, batch_size, seq_len)
-        return output
+        return self.post_ffn_dropout(x)
 
 
 class SCGPTEncoder(nn.Module):
@@ -303,7 +289,6 @@ class SCGPTEncoder(nn.Module):
             attention_mask=key_padding_mask,
             device=total_embs.device,
         )
-        flash_attn_padding_info["attention_mask"] = key_padding_mask
         attn_bias = None
         if self.use_attn_mask:
             attention_mask = self._make_mask(p_len, g_len, total_embs.device)
