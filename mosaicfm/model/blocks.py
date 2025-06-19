@@ -1,4 +1,5 @@
 # Copyright (C) Vevo Therapeutics 2024-2025. All rights reserved.
+import logging
 from functools import lru_cache
 from typing import Any, Dict, Optional, Tuple, Union
 
@@ -46,6 +47,8 @@ init_config_defaults: Dict = {
 gene_encoder_defaults: Dict = {
     "use_norm": False,
 }
+
+log = logging.getLogger(__name__)
 
 
 class SCGPTBlock(nn.Module):
@@ -383,7 +386,19 @@ class GeneEncoder(nn.Module):
             with dist.local_rank_zero_download_and_wait(local):
                 dist.barrier()
 
-            weight = torch.load(local, weights_only=True)["embedding.weight"]
+            pretrained_weight = torch.load(local, weights_only=True)["embedding.weight"]
+            pretrained_vocab_size, pretrained_dim = pretrained_weight.shape
+            if pretrained_vocab_size < num_embeddings:
+                log.warning(
+                    f"[{name}] Pretrained embedding size ({pretrained_vocab_size}) is smaller than vocab size ({num_embeddings}). "
+                    f"Filling remaining {num_embeddings - pretrained_vocab_size} rows with zeros.",
+                )
+            weight = torch.zeros(
+                num_embeddings,
+                pretrained_dim,
+                dtype=pretrained_weight.dtype,
+            )
+            weight[:pretrained_vocab_size, :] = pretrained_weight
             emb = nn.Embedding.from_pretrained(
                 weight,
                 padding_idx=padding_idx,

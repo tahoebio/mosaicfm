@@ -434,7 +434,9 @@ class ComposerSCGPTModel(ComposerModel):
             collator_config=collator_config,
             device=device,
         )
-        self.n_active_params = sum(p.numel() for p in self.model.parameters())
+        self.n_active_params = sum(
+            p.numel() for p in self.model.parameters() if p.requires_grad
+        )
         self.train_metrics = {
             "MSE": MaskedMseMetric(name="MSE"),
             "MVC": MaskedMseMetric(name="MVC"),
