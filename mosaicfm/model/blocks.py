@@ -376,13 +376,6 @@ class GeneEncoder(nn.Module):
         if not gene_encoder_cfg:
             gene_encoder_cfg = {}
         additional_embedding_cfg = gene_encoder_cfg.get("embeddings", {})
-        combo_cfg = gene_encoder_cfg.get(
-            "combination_strategy",
-            {
-                "hidden_layer": False,
-                "expansion_ratio": 1.0,
-            },
-        )
         self.extra_embeddings = nn.ModuleDict()
         self.extra_norms = nn.ModuleDict()
 
@@ -422,16 +415,7 @@ class GeneEncoder(nn.Module):
             concat_dim = embedding_dim + sum(
                 emb.embedding_dim for emb in self.extra_embeddings.values()
             )
-            if combo_cfg.get("hidden_layer", False):
-                expansion_ratio = combo_cfg.get("expansion_ratio", 1.0)
-                proj_dim = int(concat_dim * expansion_ratio)
-                self.project = nn.Sequential(
-                    nn.Linear(concat_dim, proj_dim),
-                    nn.ReLU(),
-                    nn.Linear(proj_dim, embedding_dim, bias=False),
-                )
-            else:
-                self.project = nn.Linear(concat_dim, embedding_dim, bias=False)
+            self.project = nn.Linear(concat_dim, embedding_dim, bias=False)
         else:
             self.project = nn.Identity()
 

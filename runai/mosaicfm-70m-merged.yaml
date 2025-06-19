@@ -49,9 +49,6 @@ model:
         local: "gene_evo27b_250504_embeddings_vocab_aligned.pt"
         use_norm: False
         freeze: True
-    combination_strategy:
-      hidden_layer: True
-      expansion_ratio: 4
   mvc:
     arch_style: "inner product"
     query_activation: "sigmoid"
