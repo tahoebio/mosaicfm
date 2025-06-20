@@ -157,6 +157,7 @@ class CountDataset(torch.utils.data.Dataset):
         add_cls_token: bool = True,
         cls_token_id: Optional[int] = None,
         pad_value: Optional[float] = None,
+        drug: Optional[str] = None,
     ):
         """
         Args:
@@ -177,6 +178,7 @@ class CountDataset(torch.utils.data.Dataset):
             )
         self.count_matrix = count_matrix
         self.gene_ids = gene_ids
+        self.drug = drug
 
         self.add_cls_token = add_cls_token
         if self.add_cls_token:
@@ -195,11 +197,14 @@ class CountDataset(torch.utils.data.Dataset):
         nonzero_idx = row.indices
         values = row.data
         genes = self.gene_ids[nonzero_idx]
+        drug = self.drug[idx] if self.drug is not None else None
         if self.add_cls_token:
             genes = np.insert(genes, 0, self.cls_token_id)
             values = np.insert(values, 0, self.pad_value)
+
         return {
             "id": idx,
             "genes": torch.tensor(genes, dtype=torch.long),
             "expressions": torch.tensor(values, dtype=torch.float),
+            "drug": drug,
         }
