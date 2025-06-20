@@ -187,11 +187,21 @@ class SCGPTModel(nn.Module):
         src: Tensor,
         values: Tensor,
         src_key_padding_mask: Tensor,
+        drug_ids: Optional[Tensor] = None,
     ) -> Tensor:
         src = self.gene_encoder(src)  # (batch, seq_len, embsize)
         self.cur_gene_token_embs = src
         values = self.expression_encoder(values)  # (batch, seq_len, embsize)
         total_embs = src + values
+
+        if self.use_chem_token:
+            assert (
+                drug_ids is not None
+            ), "drug_ids should not be None if use_chem_token is set to True"
+            # calculate chemical embedding and put it in its correct place (after <cls>)
+            drug_embs = self.chem_encoder(drug_ids)  # (batch, embsize)
+            total_embs[:, 1, :] = drug_embs  # (batch, pcpt_len, embsize)
+
         output = self.transformer_encoder(
             pcpt_total_embs=total_embs,
             gen_total_embs=None,
@@ -218,6 +228,9 @@ class SCGPTModel(nn.Module):
         pcpt_total_embs = pcpt_token_embs + pcpt_values  # (batch, pcpt_len, embsize)
 
         if self.use_chem_token:
+            assert (
+                drug_ids is not None
+            ), "drug_ids should not be None if use_chem_token is set to True"
             # calculate chemical embedding and put it in its correct place (after <cls>)
             drug_embs = self.chem_encoder(drug_ids)  # (batch, embsize)
             pcpt_total_embs[:, 1, :] = drug_embs  # (batch, pcpt_len, embsize)

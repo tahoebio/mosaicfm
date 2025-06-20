@@ -250,9 +250,21 @@ class DataCollator(DefaultDataCollator):
         # pad and truncate
         padded_genes = []
         padded_expressions = []
+        drug_ids = [] if self.use_chem_token else None
+
         for i in range(len(examples)):
             genes = examples[i]["genes"]
             expressions = examples[i]["expressions"]
+
+            if self.use_chem_token:
+                # add drug token <drug>, and pad_value=-2 expression at location 1  (after <cls>) of genes and expressions
+                genes = torch.cat(
+                    (genes[:1], torch.tensor([self.drug_token]), genes[1:]),
+                )
+                expressions = torch.cat(
+                    (expressions[:1], torch.tensor([self.pad_value]), expressions[1:]),
+                )
+
             if self.do_binning:
                 expressions[self.keep_first_n_tokens :] = binning(
                     row=expressions[self.keep_first_n_tokens :],
@@ -275,13 +287,27 @@ class DataCollator(DefaultDataCollator):
             padded_genes.append(genes)
             padded_expressions.append(expressions)
 
+            if self.use_chem_token:
+                # add drug id, id=0 corresponds to <pad> which indicates that drug is not available
+                drug = examples[i]["drug_id"]
+                drug_ids.append(drug)
+
         padded_genes = torch.stack(padded_genes, dim=0).to(device)
         padded_expressions = torch.stack(padded_expressions, dim=0).to(device)
 
-        data_dict = {
-            "gene": padded_genes,
-            "expr": padded_expressions,
-        }
+        if self.use_chem_token:
+            drug_ids = torch.stack(drug_ids, dim=0).to(device)
+
+            data_dict = {
+                "gene": padded_genes,
+                "expr": padded_expressions,
+                "drug_ids": drug_ids,
+            }
+        else:
+            data_dict = {
+                "gene": padded_genes,
+                "expr": padded_expressions,
+            }
 
         # mask
         if self.do_mlm:

@@ -66,6 +66,7 @@ def get_batch_embeddings(
         gene_ids,
         cls_token_id=vocab["<cls>"],
         pad_value=collator_cfg["pad_value"],
+        drug=np.array(adata.obs["drug"]) if "drug" in adata.obs else None,
     )
     collate_fn = DataCollator(
         vocab=vocab,
@@ -131,11 +132,17 @@ def get_batch_embeddings(
         for data_dict in data_loader:
             input_gene_ids = data_dict["gene"].to(device)
             src_key_padding_mask = ~input_gene_ids.eq(collator_cfg["pad_token_id"])
+            drug_ids = (
+                data_dict["drug_ids"]
+                if collator_cfg.get("use_chem_token", False)
+                else None
+            )
 
             embeddings = model._encode(
                 src=input_gene_ids,
                 values=data_dict["expr"].to(device),
                 src_key_padding_mask=src_key_padding_mask,
+                drug_ids=drug_ids.to(device),
             )
 
             if return_gene_embeddings:
