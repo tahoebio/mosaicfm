@@ -106,7 +106,7 @@ class DataCollator(DefaultDataCollator):
         self.vocab = vocab
         self.use_chem_token = use_chem_token
         if self.use_chem_token:
-            assert "<drug>" in gene_to_id, "<drug> token must be in the vocabulary."
+            assert "<drug>" in vocab, "<drug> token must be in the vocabulary."
             self.drug_token_id = vocab["<drug>"]
         else:
             self.drug_token_id = None
