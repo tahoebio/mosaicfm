@@ -133,7 +133,7 @@ def get_batch_embeddings(
             input_gene_ids = data_dict["gene"].to(device)
             src_key_padding_mask = ~input_gene_ids.eq(collator_cfg["pad_token_id"])
             drug_ids = (
-                data_dict["drug_ids"]
+                data_dict["drug_ids"].to(device)
                 if collator_cfg.get("use_chem_token", False)
                 else None
             )
@@ -142,7 +142,7 @@ def get_batch_embeddings(
                 src=input_gene_ids,
                 values=data_dict["expr"].to(device),
                 src_key_padding_mask=src_key_padding_mask,
-                drug_ids=drug_ids.to(device),
+                drug_ids=drug_ids,
             )
 
             if return_gene_embeddings:
