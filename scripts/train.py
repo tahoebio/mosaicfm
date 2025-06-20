@@ -368,7 +368,6 @@ def main(cfg: DictConfig) -> composer.Trainer:
     # Build vocab
     vocab = GeneVocab.from_file(vocab_config["local"])
     special_tokens = ["<pad>", "<cls>", "<eoc>"]
-
     if collator_config.get("use_chem_token", False):
         special_tokens.append("<drug>")
 
