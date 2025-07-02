@@ -3,19 +3,19 @@ seed: ${global_seed}
 device_train_batch_size: 400
 global_train_batch_size: 400
 device_eval_batch_size: 400
-device_train_microbatch_size: "auto"
+device_train_microbatch_size: 20
 vocabulary:
   remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/vevo_v2_vocab.json"
   local: "vocab.json"
 model:
   name: mosaicfm
-  d_model: 512
-  n_layers: 12
+  d_model: 2560
+  n_layers: 32
   init_device: cpu
   expansion_ratio: 4
   standard_scale_outputs: False
   transformer_activation: gelu
-  n_heads: 8
+  n_heads: 20
   norm_scheme: "pre"
   use_generative_training: True
   use_cell_conditioned_generation: False
@@ -25,7 +25,7 @@ model:
     attn_impl: flash
     use_attn_mask: False
     attn_type: "grouped_query_attention"
-    kv_nheads: 8
+    kv_nheads: 20
     attn_pdrop: 0.0
   norm_config:
     norm_type: "layernorm"
@@ -34,21 +34,10 @@ model:
     input_emb_style: "continuous"
     dropout: 0.1
     max_value: 512
-    activation: relu
+    activation: gelu
     use_norm: True
   gene_encoder:
     use_norm: True
-    embeddings:
-      esmc:
-        remote: "s3://vevo-ml-datasets/esm-embeddings/esmc_vocab_aligned_raw.pt"
-        local: "esmc_vocab_aligned_raw.pt"
-        use_norm: False
-        freeze: True
-      evo2:
-        remote: "s3://vevo-ml-datasets/evo2-embeddings/gene_evo27b_250504_embeddings_vocab_aligned.pt"
-        local: "gene_evo27b_250504_embeddings_vocab_aligned.pt"
-        use_norm: False
-        freeze: True
   mvc:
     arch_style: "inner product"
     query_activation: "sigmoid"
