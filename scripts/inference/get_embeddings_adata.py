@@ -144,7 +144,7 @@ def main(cfg: DictConfig):
         model_config.d_model,
         device,
     )
-    cell_embs, gene_embs_ea, gene_ids, genes_ensembl = get_contextual_embeddings(
+    cell_embs, gene_embeddings_ea, gene_ids, genes_ensembl = get_contextual_embeddings(
         cfg,
         model,
         vocab,
@@ -153,8 +153,11 @@ def main(cfg: DictConfig):
         device,
     )
 
-    nan_genes = np.where(np.isnan(gene_embs_ea).any(axis=1))[0]
-    gene_embs_ea[nan_genes] = gene_embeddings_te[nan_genes]
+    nan_genes = np.where(np.isnan(gene_embeddings_ea).any(axis=1))[0]
+    gene_embeddings_ea[nan_genes] = gene_embeddings_te[nan_genes]
+    logging.info(
+        f"Found {len(nan_genes)} genes not expressed in adata sample, replacing with context-free embeddings.",
+    )
 
     with open(cfg.ensembl_to_gene_symbol) as f:
         ensembl_to_gene_symbol = json.load(f)
@@ -162,7 +165,7 @@ def main(cfg: DictConfig):
 
     np.savez(
         os.path.join(cfg.output_path, f"gene_embeddings_{model_name}.npz"),
-        gene_embeddings_EA=gene_embs_ea,
+        gene_embeddings_EA=gene_embeddings_ea,
         gene_embeddings_TE=gene_embeddings_te,
         gene_embeddings_GE=gene_embeddings_ge,
         genes_not_expressed=nan_genes,

@@ -3,10 +3,10 @@ ensembl_to_gene_symbol: "/tahoe/mosaicfm/datasets/vevo_merged_jan_2025/vevo_v2_e
 model_name: "mosaicfm-v2-3b"
 input_path: "/tahoe/mosaicfm/datasets/msigdb/rep_1.h5ad.gz"
 output_path: "/tahoe/mosaicfm/datasets/msigdb/gene_embeddings"
-# Column in adata.var that contains gene names
+# Column in adata.var that contains ensembl IDs
 gene_col: "feature_id"
 # Inference parameters
-batch_size: 32
-max_length: 8192
+batch_size: 128
+max_length: 4096
 # Whether to save the adata with cell embeddings
 save_cell_embeddings: False
