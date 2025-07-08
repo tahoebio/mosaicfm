@@ -38,7 +38,7 @@ vocab = GeneVocab.from_file("vocab.json")
 special_tokens = ["<pad>", "<cls>", "<eoc>"]
 
 if collator_config.use_chem_token:
-    print("Adding <drug> token to vocabulary")
+    logging.info("Adding <drug> token to vocabulary")
     special_tokens.append("<drug>")
 
 
