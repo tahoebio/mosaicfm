@@ -1,5 +1,4 @@
 # Copyright (C) Vevo Therapeutics 2024-2025. All rights reserved.
-from collections.abc import MutableSequence
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
@@ -10,7 +9,7 @@ from omegaconf import DictConfig
 from scipy.sparse import csr_matrix
 from streaming import Stream, StreamingDataLoader, StreamingDataset
 
-from mosaicfm.data import DataCollator
+from mosaicfm.data import GeneSeqCollator
 from mosaicfm.tokenizer import GeneVocab
 
 
@@ -54,30 +53,19 @@ def build_dataloader(
         cache_limit=dataset_cfg.get("cache_limit"),
         batch_size=device_batch_size,
     )
-    if isinstance(collator_cfg.mlm_probability, MutableSequence):
-        mlm_probability = list(collator_cfg.mlm_probability)
-    else:
-        mlm_probability = collator_cfg.mlm_probability
 
-    collate_fn = DataCollator(
+    collate_fn = GeneSeqCollator(
         vocab=vocab,
         drug_to_id_path=collator_cfg.get("drug_to_id_path", None),
-        do_padding=collator_cfg.get("do_padding", True),
-        unexp_padding=loader_cfg.get("unexp_padding", False),
         pad_token_id=collator_cfg.pad_token_id,
         pad_value=collator_cfg.pad_value,
-        do_mlm=collator_cfg.get("do_mlm", True),
-        do_binning=collator_cfg.get("do_binning", True),
-        log_transform=collator_cfg.get("log_transform", False),
         target_sum=collator_cfg.get("target_sum", 10000),
-        mlm_probability=mlm_probability,
-        mask_value=collator_cfg.mask_value,
         max_length=collator_cfg.max_length,
-        sampling=collator_cfg.sampling,
-        data_style=collator_cfg.data_style,
+        num_high_exp_genes=collator_cfg.get("num_high_exp_genes", 512),
         num_bins=collator_cfg.get("num_bins", 51),
         right_binning=collator_cfg.get("right_binning", False),
         keep_first_n_tokens=collator_cfg.get("keep_first_n_tokens", 1),
+        is_train=loader_cfg.get("isTrain", True),
         use_chem_token=collator_cfg.get("use_chem_token", False),
     )
 
