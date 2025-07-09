@@ -1,0 +1,255 @@
+global_seed: 777
+seed: ${global_seed}
+device_train_batch_size: 400
+global_train_batch_size: 4800
+device_eval_batch_size: 400
+device_train_microbatch_size: 'auto'
+eval_subset_num_batches: 100
+vocabulary:
+  remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/vevo_v2_vocab.json"
+  local: "/vevo/repo/mosaicfm_clone/datasets/vevo_v2_vocab.json"
+model:
+  name: mosaicfm-70m-esmc-evo2-concat-mlp-norm-embed-no-norm-no-scale
+  d_model: 512
+  n_layers: 12
+  init_device: cpu
+  expansion_ratio: 4
+  standard_scale_outputs: False
+  transformer_activation: relu
+  n_heads: 8
+  norm_scheme: "pre"
+  use_generative_training: True
+  use_cell_conditioned_generation: False
+  use_glu: False
+  cell_emb_style: cls
+  attn_config:
+    attn_impl: flash
+    attn_type: "grouped_query_attention"
+    use_attn_mask: False
+    kv_nheads: 8
+    attn_pdrop: 0.0
+  norm_config:
+    norm_type: "layernorm"
+    eps: 1.0e-5
+  expression_encoder:
+    input_emb_style: "continuous"
+    dropout: 0.1
+    max_value: 512
+    activation: relu
+    use_norm: True
+  gene_encoder:
+    use_norm: True
+    trainable: true
+    combination_strategy: "concat_and_project"
+    mlp:  # MLP configuration for concat_and_project strategy
+      hidden_layers: "4096"
+      activation: "relu"
+      use_layer_norm: true
+    embeddings:
+      esmc:
+        remote: "s3://vevo-ml-datasets/esm-embeddings/esmc_vocab_aligned_raw.pt"
+        local: "/vevo/repo/mosaicfm_clone/datasets/esmc_vocab_aligned_raw.pt"
+        use_norm: false
+        freeze: true
+      evo2:
+        remote: "s3://vevo-ml-datasets/evo2-embeddings/gene_evo27b_250504_embeddings_vocab_aligned.pt"
+        local: "/vevo/repo/mosaicfm_clone/datasets/gene_evo27b_250504_embeddings_vocab_aligned.pt"
+        use_norm: false
+        freeze: true
+  mvc:
+    arch_style: "inner product"
+    query_activation: "sigmoid"
+    scaled_dot_product: True
+  expression_decoder:
+    n_outputs: 1
+    n_layers: 1
+    activation: "leaky_relu"
+collator:
+  do_padding: True
+  pad_value: -2
+  do_mlm: True
+  do_binning: True
+  mlm_probability: 0.5
+  mask_value: -1
+  max_length: 1024
+  sampling: True
+  data_style: "both"
+  num_bins: 51
+  right_binning: False
+  use_junk_tokens: False
+train_loader:
+  dataset:
+    streams:
+      tahoe:
+        remote: None
+        local: "/vevo/repo/mosaicfm/datasets/vevo_merged_jan_2025/tahoe_merged_MDS/train"
+      cellxgene:
+        remote: None
+        local: "/vevo/repo/mosaicfm/datasets/vevo_merged_jan_2025/cellxgene_merged_MDS/train"
+    download_timeout: 300
+    allow_unsafe_types: True
+    shuffle: True
+    shuffle_seed: ${global_seed}
+    num_canonical_nodes: 2
+  drop_last: False
+  num_workers: 8
+  pin_memory: True
+  prefetch_factor: 48
+  persistent_workers: True
+valid_loader:
+  dataset:
+    streams:
+      tahoe:
+        remote: None
+        local: "/vevo/repo/mosaicfm/datasets/vevo_merged_jan_2025/tahoe_merged_MDS/valid"
+      cellxgene:
+        remote: None
+        local: "/vevo/repo/mosaicfm/datasets/vevo_merged_jan_2025/cellxgene_merged_MDS/valid"
+    download_timeout: 300
+    allow_unsafe_types: True
+    shuffle: False
+    shuffle_seed: ${global_seed}
+    num_canonical_nodes: 2
+  drop_last: False
+  num_workers: 8
+  pin_memory: True
+  prefetch_factor: 48
+  persistent_workers: True
+optimizer:
+  name: decoupled_adamw
+  lr: 3.0e-4
+  betas: [0.9, 0.95]
+  eps: 1.0e-08
+  weight_decay: 1.0e-05
+scheduler:
+  name: cosine_with_warmup
+  t_warmup: "0.05dur"
+  t_max: "1dur"
+  alpha_f: 0.1
+algorithms:
+  gradient_clipping:
+    clipping_type: norm
+    clipping_threshold: 1.0
+  low_precision_layernorm: {}
+precision: amp_bf16
+eval_interval: "500ba"
+max_duration: "1000ba"
+fsdp_config:
+  sharding_strategy: FULL_SHARD
+  mixed_precision: DEFAULT
+  activation_checkpointing: false
+  activation_checkpointing_reentrant: false
+  activation_cpu_offload: false
+  limit_all_gathers: true
+  verbose: true
+callbacks:
+  speed_monitor:
+    window_size: 20
+  lr_monitor: {}
+  memory_monitor: {}
+  runtime_estimator: {}
+  rxrx-known-rels:
+    cfg:
+      known_rels:
+        local: "known-rels.pkl"
+        remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/rxrx-known-rels/known-rels.pkl"
+      gene_metadata:
+        local: "gene-metadata.csv"
+        remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/rxrx-known-rels/gene-metadata.csv"
+      rxrx_perturbations:
+        local: "rxrx-perturbations.csv"
+        remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/rxrx-known-rels/example-embs-metadata.csv"
+  marginal-essentiality:
+    cfg:
+      adata:
+        local: "ccle.h5ad"
+        remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/marginal-essentiality/ccle.h5ad"
+        gene_column: "feature_id"
+      labels:
+        local: "labels.csv"
+        remote: "s3://vevo-ml-datasets/vevo-scgpt/datasets/scgpt_benchmarks/marginal-essentiality/labels.csv"
+        gene_column: "gene_id"
+        label_column: "essential"
+      seq_len: 8192
+      batch_size: 32
+      classifier:
+        n_jobs: 32
+        test_size: 0.2
+        random_state: 42
+  cell-classification:
+    cfg:
+      seq_len: 2048
+      datasets:
+        kim:
+          test:
+            local: "kim_test.h5ad"
+            remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/cell_classification_benchmarks/kim2020/kim_test.h5ad"
+          train:
+            local: "kim_train.h5ad"
+            remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/cell_classification_benchmarks/kim2020/kim_train.h5ad"
+          gene_id_key: "ensembl_id"
+          cell_type_key: "cell_type"
+        ccle:
+          train:
+            local: "ccle.h5ad"
+            remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/cell_classification_benchmarks/CCLE/ccle.h5ad"
+          seq_len: 8192
+          batch_size: 4
+          gene_id_key: "feature_id"
+          cell_type_key: "OncotreeLineage"
+        tahoe:
+          test:
+            local: "Tahoe50k_test.h5ad"
+            remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/cell_classification_benchmarks/Tahoe50k/Tahoe50k_test.h5ad"
+          train:
+            local: "Tahoe50k_train.h5ad"
+            remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/cell_classification_benchmarks/Tahoe50k/Tahoe50k_train.h5ad"
+          gene_id_key: "ensembl_id"
+          cell_type_key: "cell_line"
+        zheng:
+          test:
+            local: "zheng_test.h5ad"
+            remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/cell_classification_benchmarks/zheng/zheng_test.h5ad"
+          train:
+            local: "zheng_train.h5ad"
+            remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/cell_classification_benchmarks/zheng/zheng_train.h5ad"
+          gene_id_key: "ensembl_id"
+          cell_type_key: "cell_type"
+        tabula:
+          test:
+            local: "Tabula50k_test.h5ad"
+            remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/cell_classification_benchmarks/Tabula50k/Tabula50k_test.h5ad"
+          train:
+            local: "Tabula50k_train.h5ad"
+            remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/cell_classification_benchmarks/Tabula50k/Tabula50k_train.h5ad"
+          gene_id_key: "ensembl_id"
+          cell_type_key: "cell_ontology_class"
+        segerstolpe:
+          test:
+            local: "Segerstolpe_test.h5ad"
+            remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/cell_classification_benchmarks/segerstolpe/segerstolpe_test.h5ad"
+          train:
+            local: "segerstolpe_train.h5ad"
+            remote: "s3://vevo-ml-datasets/mosaicfm_v2/datasets/cell_classification_benchmarks/segerstolpe/segerstolpe_train.h5ad"
+          gene_id_key: "ensembl_id"
+          cell_type_key: "cell_type"
+      batch_size: 100
+      classifier_config:
+        solver: "lbfgs"
+        max_iter: 5000
+        multi_class: "multinomial"
+        random_state: 42
+
+loggers:
+  wandb:
+    project: mosaicfm-dev-hamed
+    group: esmc-evo2-embedding
+    name: mosaicfm-70m-esmc-evo2-concat-mlp-norm-embed-no-norm-no-scale
+    log_artifacts: False
+    entity: vevotx
+
+save_folder: "s3://vevo-ml-datasets/vevo-scgpt/models/{run_name}"
+save_interval: "2000ba"
+save_num_checkpoints_to_keep: 0
+autoresume: True
+run_name: "mosaicfm-70m-esmc-evo2-concat-mlp-norm-embed-no-norm-no-scale"

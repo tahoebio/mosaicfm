@@ -375,12 +375,19 @@ class GeneEncoder(nn.Module):
         self.use_norm = use_norm
         if not gene_encoder_cfg:
             gene_encoder_cfg = {}
+        
         additional_embedding_cfg = gene_encoder_cfg.get("embeddings", {})
         self.extra_embeddings = nn.ModuleDict()
+        self.extra_projections = nn.ModuleDict()
         self.extra_norms = nn.ModuleDict()
+
+        log.info(f"Initializing GeneEncoder with {num_embeddings} tokens, embedding_dim={embedding_dim}")
+        log.info(f"Additional embeddings config: {list(additional_embedding_cfg.keys())}")
 
         for name, e_cfg in additional_embedding_cfg.items():
             local, remote = e_cfg["local"], e_cfg["remote"]
+            log.info(f"Loading {name} embeddings from {remote}")
+            
             if dist.get_local_rank() == 0:
                 download_file_from_s3_url(remote, local)
             with dist.local_rank_zero_download_and_wait(local):
@@ -388,6 +395,8 @@ class GeneEncoder(nn.Module):
 
             pretrained_weight = torch.load(local, weights_only=True)["embedding.weight"]
             pretrained_vocab_size, pretrained_dim = pretrained_weight.shape
+            log.info(f"Loaded {name} embeddings: vocab_size={pretrained_vocab_size}, dim={pretrained_dim}")
+            
             if pretrained_vocab_size < num_embeddings:
                 log.warning(
                     f"[{name}] Pretrained embedding size ({pretrained_vocab_size}) is smaller than vocab size ({num_embeddings}). "
@@ -406,33 +415,119 @@ class GeneEncoder(nn.Module):
             )
             for m in emb.modules():
                 m.skip_init = True
+                m.skip_init_name = f"{name}_embedding"
             self.extra_embeddings[name] = emb
+            
+            # Project to target dimension
+            proj = nn.Linear(pretrained_dim, embedding_dim, bias=False)
+            proj.skip_init = True
+            proj.skip_init_name = f"{name}_projection"
+            self.extra_projections[name] = proj
+            log.info(f"Added projection for {name}: {pretrained_dim} -> {embedding_dim}")
 
             if e_cfg.get("use_norm", False):
-                self.extra_norms[name] = nn.LayerNorm(emb.embedding_dim)
+                self.extra_norms[name] = nn.LayerNorm(embedding_dim)
+                log.info(f"Added LayerNorm for {name}")
 
         if self.extra_embeddings:
-            concat_dim = embedding_dim + sum(
-                emb.embedding_dim for emb in self.extra_embeddings.values()
-            )
-            self.project = nn.Linear(concat_dim, embedding_dim, bias=False)
+            num_embeddings_total = 1 + len(self.extra_embeddings)  # primary + extras
+            concat_dim = num_embeddings_total * embedding_dim
+            log.info(f"Total embeddings: {num_embeddings_total}, concat dimension: {concat_dim}")
+            
+            combination_strategy = gene_encoder_cfg.get("combination_strategy", "concat_and_project")
+            mlp_config = gene_encoder_cfg.get("mlp", None) if combination_strategy == "concat_and_project" else None
+            
+            if mlp_config is not None:
+                log.info(f"Building MLP projection with config: {mlp_config}")
+                self.project = self._build_mlp_projection(concat_dim, embedding_dim, mlp_config)
+            else:
+                log.info("Using simple linear projection")
+                self.project = nn.Linear(concat_dim, embedding_dim, bias=False)
+                self.project.skip_init = True
+                self.project.skip_init_name = "simple_concat_projection"
         else:
             self.project = nn.Identity()
+
+        log.info(f"Final projection architecture: {self.project}")
 
         if self.use_norm:
             self.enc_norm = nn.LayerNorm(embedding_dim)
 
+    def _build_mlp_projection(self, input_dim: int, output_dim: int, mlp_config: Dict) -> nn.Module:
+        """Build MLP that concatenates input with hidden output before final projection."""
+        
+        # Parse hidden layers
+        hidden_spec = mlp_config.get("hidden_layers", "1024")
+        if isinstance(hidden_spec, int):
+            hidden_dims = [hidden_spec]
+        elif isinstance(hidden_spec, str):
+            hidden_dims = [int(x) for x in hidden_spec.split(",") if x.strip()]
+        else:
+            log.warning(f"Invalid hidden_layers spec {hidden_spec!r}; using default [1024]")
+            hidden_dims = [1024]
+        
+        activation_name = mlp_config.get("activation", "relu")
+        use_layer_norm = mlp_config.get("use_layer_norm", False)
+        
+        # Get activation function once
+        act_fn = resolve_ffn_act_fn({"name": activation_name})
+        if callable(act_fn) and not isinstance(act_fn, nn.Module):
+            class ActivationWrapper(nn.Module):
+                def __init__(self, fn, name):
+                    super().__init__()
+                    self.fn, self.name = fn, name
+                def forward(self, x): return self.fn(x)
+                def __repr__(self): return f"ActivationWrapper({self.name})"
+            act_class = lambda: ActivationWrapper(act_fn, activation_name)
+        else:
+            act_class = lambda: act_fn
+        
+        # Build MLP
+        layers = []
+        current_dim = input_dim
+        for i, hidden_dim in enumerate(hidden_dims):
+            linear = nn.Linear(current_dim, hidden_dim, bias=False)
+            linear.skip_init = True
+            linear.skip_init_name = f"concat_mlp_hidden_layer_{i}"
+            layers.append(linear)
+            layers.append(act_class())
+            if use_layer_norm:
+                layers.append(nn.LayerNorm(hidden_dim))
+            current_dim = hidden_dim
+        
+        hidden_layers = nn.Sequential(*layers)
+        final_proj = nn.Linear(input_dim + current_dim, output_dim, bias=False)
+        final_proj.skip_init = True
+        final_proj.skip_init_name = "final_concat_projection"
+        
+        class MLPWithConcat(nn.Module):
+            def __init__(self, hidden, final):
+                super().__init__()
+                self.hidden_layers = hidden
+                self.final_proj = final
+            
+            def forward(self, x):
+                hidden = self.hidden_layers(x)
+                return self.final_proj(torch.cat([x, hidden], dim=-1))
+        
+        return MLPWithConcat(hidden_layers, final_proj)
+
     def forward(self, x: Tensor) -> Tensor:
         reps = [self.embedding(x)]
+        
         for name, emb in self.extra_embeddings.items():
             y = emb(x)
+            y = self.extra_projections[name](y)
             if name in self.extra_norms:
                 y = self.extra_norms[name](y)
             reps.append(y)
+        
         x = torch.cat(reps, dim=-1) if len(reps) > 1 else reps[0]
         x = self.project(x)
+        
         if self.use_norm:
             x = self.enc_norm(x)
+        
         return x
 
 
