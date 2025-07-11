@@ -8,6 +8,10 @@ from .blocks import (
     SCGPTBlock,
     SCGPTEncoder,
 )
+from .MFM import (
+    ComposerMosaicFM,
+    MosaicFM,
+)
 from .model import (
     ComposerSCGPTModel,
     ComposerSCGPTPerturbationModel,
@@ -16,12 +20,14 @@ from .model import (
 
 __all__ = [
     "CategoryValueEncoder",
+    "ComposerMosaicFM",
     "ComposerSCGPTModel",
     "ComposerSCGPTPerturbationModel",
     "ContinuousValueEncoder",
     "ExprDecoder",
     "GeneEncoder",
     "MVCDecoder",
+    "MosaicFM",
     "SCGPTBlock",
     "SCGPTEncoder",
     "SCGPTModel",

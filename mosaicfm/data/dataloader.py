@@ -62,6 +62,8 @@ def build_dataloader(
         target_sum=collator_cfg.get("target_sum", 10000),
         max_length=collator_cfg.max_length,
         num_high_exp_genes=collator_cfg.get("num_high_exp_genes", 512),
+        num_non_exp_genes=collator_cfg.get("num_non_exp_genes", 512),
+        num_shared_genes=collator_cfg.get("num_shared_genes", 256),
         num_bins=collator_cfg.get("num_bins", 51),
         right_binning=collator_cfg.get("right_binning", False),
         keep_first_n_tokens=collator_cfg.get("keep_first_n_tokens", 1),

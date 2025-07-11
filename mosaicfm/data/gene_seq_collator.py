@@ -1,19 +1,18 @@
 # Copyright (C) Vevo Therapeutics 2024-2025. All rights reserved.
 import json
 import logging
+
 log = logging.getLogger(__name__)
 
-from typing import Dict, List, Mapping, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
-import numpy as np
 import torch
 from composer.utils import dist
 from transformers import DefaultDataCollator
 
+from mosaicfm.data.collator import binning, log_transform
 from mosaicfm.tokenizer import GeneVocab
 from mosaicfm.utils import download_file_from_s3_url
-from mosaicfm.data.collator import log_transform, binning
-
 
 
 class GeneSeqCollator(DefaultDataCollator):
@@ -32,6 +31,8 @@ class GeneSeqCollator(DefaultDataCollator):
         max_length (:obj:`int`, optional): the maximum length of the sequences.
             This is required if do_padding is True.
         num_high_exp_genes (:obj:`int`): the number of highly expressed genes to keep.
+        num_non_exp_genes (:obj:`int`): the number of non-expressed genes that are randomly chosen.
+        num_shared_genes (:obj:`int`): the number of shared genes across the cell.
         reserve_keys (:obj:`List[str]`, optional): a list of keys in the examples
             to reserve in the output dictionary. Default to []. These fields
             will be kept unchanged in the output.
@@ -54,6 +55,8 @@ class GeneSeqCollator(DefaultDataCollator):
         target_sum: int = 10000,
         max_length: Optional[int] = None,
         num_high_exp_genes: int = 512,
+        num_non_exp_genes: int = 512,
+        num_shared_genes: int = 256,
         reserve_keys: Optional[List[str]] = None,
         keep_first_n_tokens: int = 1,
         is_train: bool = True,
@@ -69,6 +72,8 @@ class GeneSeqCollator(DefaultDataCollator):
         self.target_sum = target_sum
         self.max_length = max_length
         self.num_high_exp_genes = num_high_exp_genes
+        self.num_non_exp_genes = num_non_exp_genes
+        self.num_shared_genes = num_shared_genes
         self.reserve_keys = reserve_keys if reserve_keys is not None else []
         self.keep_first_n_tokens = keep_first_n_tokens
         self.is_train = is_train
@@ -168,7 +173,9 @@ class GeneSeqCollator(DefaultDataCollator):
         if self.is_train:
             data_dict = self._call_train(examples)
         else:
-            raise NotImplementedError("SEDataCollator is not implemented for evaluation.")
+            raise NotImplementedError(
+                "GeneSeqCollator is not implemented for evaluation.",
+            )
 
         # add reserved keys
         device = examples[0]["genes"].device
@@ -182,9 +189,8 @@ class GeneSeqCollator(DefaultDataCollator):
 
         return data_dict
 
-    
     def _call_train(
-        self,       
+        self,
         examples: List[Dict[str, torch.Tensor]],
     ) -> Dict[str, torch.Tensor]:
         """
@@ -203,9 +209,9 @@ class GeneSeqCollator(DefaultDataCollator):
                                         [36572, 17868, ..., 17072],
                                         ...,
                                         [36572, 17868, ..., 17072]]),
-                                        
+
                 'in_exprs': tensor([[ 0.,  2., ..., 18.], #binned
-        
+
                 'high_exp_gene_ids': tensor([[36573, 17869, ..., 17073],
                 'high_exp_exprs': tensor([[ 1.,  3., ..., 19.],  #log_transformed
 
@@ -216,7 +222,6 @@ class GeneSeqCollator(DefaultDataCollator):
                 'rand_exprs': tensor([[ 0.1, 0.15, ...,  0.75]]), #log_transformed
                 }
         """
-
 
         in_gene_ids = []
         in_exprs = []
@@ -229,9 +234,10 @@ class GeneSeqCollator(DefaultDataCollator):
 
         device = examples[0]["genes"].device
 
-        #1) We need to choose the random genes for the whole batch
-        num_rand_genes = self.num_high_exp_genes // 2
-        idx = torch.randperm(len(self.non_special_gene_ids), device=device)[:num_rand_genes]
+        # 1) We need to choose the random genes for the whole batch
+        idx = torch.randperm(len(self.non_special_gene_ids), device=device)[
+            : self.num_shared_genes
+        ]
         rand_gene_id = self.non_special_gene_ids[idx]
 
         for i in range(len(examples)):
@@ -251,7 +257,7 @@ class GeneSeqCollator(DefaultDataCollator):
                 continue
 
             if self.use_chem_token:
-                #2) add drug token <drug>, and pad_value=-2 expression at location 1  (after <cls>) of genes and expressions
+                # 2) add drug token <drug>, and pad_value=-2 expression at location 1  (after <cls>) of genes and expressions
                 genes = torch.cat(
                     (
                         genes[:1],
@@ -275,59 +281,73 @@ class GeneSeqCollator(DefaultDataCollator):
                     ),
                 )
 
-
-            #3) sorth genes based on expression values
-            order = torch.argsort(expressions[self.keep_first_n_tokens:], descending=True)
-            expressions = torch.cat((expressions[:self.keep_first_n_tokens], expressions[self.keep_first_n_tokens:][order]), dim=0)
+            # 3) sorth genes based on expression values
+            order = torch.argsort(
+                expressions[self.keep_first_n_tokens :],
+                descending=True,
+            )
+            expressions = torch.cat(
+                (
+                    expressions[: self.keep_first_n_tokens],
+                    expressions[self.keep_first_n_tokens :][order],
+                ),
+                dim=0,
+            )
             log_expressions = expressions.clone()  # make a copy for log transformation
-            genes = torch.cat((genes[:self.keep_first_n_tokens], genes[self.keep_first_n_tokens:][order]), dim=0)
+            genes = torch.cat(
+                (
+                    genes[: self.keep_first_n_tokens],
+                    genes[self.keep_first_n_tokens :][order],
+                ),
+                dim=0,
+            )
 
             assert len(genes) == len(expressions), (
                 f"Genes and expressions must have the same length after sorting. "
                 f"Got {genes.shape} genes and {expressions.shape} expressions.",
             )
 
-            #4) log transform and bin the expressions for input and output
-            slice_exp = expressions[self.keep_first_n_tokens :].clone()
-            expressions[self.keep_first_n_tokens:] = binning(
-                row=slice_exp,
+            # 4) log transform and bin the expressions for input and output
+            expressions[self.keep_first_n_tokens :] = binning(
+                row=expressions[self.keep_first_n_tokens :],
                 n_bins=self.num_bins,
                 right=self.right_binning,
-            ) #binned expression include all of genes including the first n tokens (special tokens)
+            )  # binned expression include all of genes including the first n tokens (special tokens)
 
-            slice_log_Exp = log_expressions[self.keep_first_n_tokens :].clone()
-            log_expressions[self.keep_first_n_tokens:] = log_transform(
-                row=slice_log_Exp,
+            log_expressions[self.keep_first_n_tokens :] = log_transform(
+                row=log_expressions[self.keep_first_n_tokens :],
                 target_sum=self.target_sum,
-            ) # log expression include all of genes including the first n tokens (special tokens)
+            )  # log expression include all of genes including the first n tokens (special tokens)
 
             assert len(genes) == len(expressions) == len(log_expressions), (
                 f"Genes, binned expressions and log expressions must have the same length. "
                 f"Got {genes.shape} genes, {expressions.shape} expressions and {log_expressions.shape} log expressions.",
             )
 
-            #5) create input to the model which consists of 2048 highly expressed genes and their expressions
-            if len(genes)>= self.max_length: 
+            # 5) create input to the model which consists of 2048 highly expressed genes and their expressions
+            if len(genes) >= self.max_length:
                 # truncate the genes and expressions to max_length
                 in_gene_id = genes[: self.max_length]
                 in_expr = expressions[: self.max_length]
-            else: 
+            else:
                 # add unexpressed genes to the genes and expressions to max_length
                 in_gene_id, in_expr = self._pad_unexp_genes(
-                        genes,
-                        expressions,
-                        max_length=self.max_length,
-                    )
-            
+                    genes,
+                    expressions,
+                    max_length=self.max_length,
+                )
+
             assert len(in_gene_id) == self.max_length, (
                 f"Input genes must have the same length as max_length. "
                 f"Got {in_gene_id.shape} genes and max_length {self.max_length}.",
             )
 
+            # 6) create labels (output) of the model which in default consists of 512 highly expressed genes, 512 non expressed genes and 256 random genes
 
-            #6) create labels (output) of the model which in default consists of 512 highly expressed genes, 512 non expressed genes and 256 random genes
-            
             # 6.1) get the highly expressed genes and their expressions
+            assert len(genes) > self.num_high_exp_genes, (
+                f"Number of genes ({len(genes)}) which is {self.max_length} must be greater than number of high expressed genes ({self.num_high_exp_genes}). Sequence is already padded if number of genes are less than {self.max_length}",
+            )
             high_exp_expr = log_expressions[: self.num_high_exp_genes]
             high_exp_gene_id = genes[: self.num_high_exp_genes]
 
@@ -337,36 +357,29 @@ class GeneSeqCollator(DefaultDataCollator):
             )
 
             # 6.2) get the non-expressed genes and their expressions
-            num_non_exp_genes = self.num_high_exp_genes
-            non_exp_gene_id, non_exp_expr =self._pick_unexp_genes(
-                genes[self.keep_first_n_tokens:],
-                k = num_non_exp_genes,
-                type = expressions.dtype,
-
+            non_exp_gene_id, non_exp_expr = self._pick_unexp_genes(
+                genes[self.keep_first_n_tokens :],
+                k=self.num_non_exp_genes,
+                type=expressions.dtype,
             )
 
-            assert len(non_exp_gene_id) == self.num_high_exp_genes, (
-                f"Non expressed genes must have the same length as num_high_exp_genes. "
-                f"Got {non_exp_gene_id.shape} genes and num_high_exp_genes {num_non_exp_genes}.",
-            )
-
-            assert torch.isin(non_exp_gene_id, genes).sum() == 0, (    
-                f"Non expressed genes must not overlap with expressed genes. "
-            )
+            assert (
+                torch.isin(non_exp_gene_id, genes).sum() == 0
+            ), "Non expressed genes must not overlap with expressed genes. "
 
             # 6.3) get expressions for the random genes
             rand_expr = self._collect_expr_rand_genes(
-                genes=genes[self.keep_first_n_tokens:],
-                expressions=log_expressions[self.keep_first_n_tokens:],
-                rand_genes=rand_gene_id
+                genes=genes[self.keep_first_n_tokens :],
+                expressions=log_expressions[self.keep_first_n_tokens :],
+                rand_genes=rand_gene_id,
             )
 
             assert len(rand_expr) == len(rand_gene_id), (
-                f"Random genes and their expressions must have the same length, and be half the number of high expressed genes."
-                f"Got {rand_expr.shape} expressions and {rand_gene_id.shape} random genes. Number of random genes should be {self.num_high_exp_genes // 2}.",
+                f"Random genes and their expressions must have the same length."
+                f"Got {rand_expr.shape} expressions and {rand_gene_id.shape} random genes. Number of random genes is  {self.num_shared_genes}.",
             )
- 
-            #7) append the data to the lists
+
+            # 7) append the data to the lists
 
             in_gene_ids.append(in_gene_id)
             in_exprs.append(in_expr)
@@ -381,8 +394,7 @@ class GeneSeqCollator(DefaultDataCollator):
                 drug = examples[i]["drug_id"]
                 drug_ids.append(drug)
 
-        
-        #8) stack the lists to tensors
+        # 8) stack the lists to tensors
         in_gene_ids = torch.stack(in_gene_ids, dim=0)
         in_exprs = torch.stack(in_exprs, dim=0)
         high_exp_gene_ids = torch.stack(high_exp_gene_ids, dim=0)
@@ -391,7 +403,6 @@ class GeneSeqCollator(DefaultDataCollator):
         non_exp_exprs = torch.stack(non_exp_exprs, dim=0)
         rand_exprs = torch.stack(rand_exprs, dim=0)
         rand_gene_ids = rand_gene_id.unsqueeze(0).repeat(rand_exprs.shape[0], 1)
-
 
         if self.use_chem_token:
             drug_ids = torch.stack(drug_ids)
@@ -425,16 +436,14 @@ class GeneSeqCollator(DefaultDataCollator):
         *arrays: torch.Tensor,  # First tensor is genes, rest are  expressions respectively processed expressions, raw expressions (optional)
         max_length: int,
     ):
-
-        """Pad sequence with unexpressed genes. """
-
-        device = arrays[0].device
+        """Pad sequence with unexpressed genes."""
 
         num_to_pad = max_length - len(arrays[0])
 
-
         random_unexp_genes, random_unexp_expressions = self._pick_unexp_genes(
-            arrays[0], k=num_to_pad, type=arrays[1].dtype 
+            arrays[0],
+            k=num_to_pad,
+            type=arrays[1].dtype,
         )  # pick unexpressed genes and their expressions
 
         # Pad the first tensor(gene_ids) with random unexpressed gene ids and the rest (expressions) with zeros.
@@ -442,16 +451,11 @@ class GeneSeqCollator(DefaultDataCollator):
             torch.cat(
                 [
                     array,
-                    (
-                        random_unexp_genes
-                        if i == 0
-                        else random_unexp_expressions
-                    ),
+                    (random_unexp_genes if i == 0 else random_unexp_expressions),
                 ],
             )
             for i, array in enumerate(arrays)
         )
-
 
     def _pick_unexp_genes(
         self,
@@ -459,7 +463,7 @@ class GeneSeqCollator(DefaultDataCollator):
         k: int,
         type: Union[torch.dtype, str] = torch.float32,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Pick unexpressed genes. """
+        """Pick unexpressed genes."""
         device = genes.device
 
         # get list of all valid gene ids
@@ -473,12 +477,12 @@ class GeneSeqCollator(DefaultDataCollator):
         idx = torch.randperm(unexp_genes.shape[0])[:k]
         random_unexp_genes = unexp_genes[idx]
         unexp_genes_expressions = torch.zeros(
-            k, dtype=type, device=device
+            k,
+            dtype=type,
+            device=device,
         )  # create zero expressions for unexpressed genes
 
-
         return random_unexp_genes, unexp_genes_expressions
-
 
     def _collect_expr_rand_genes(
         self,
@@ -489,21 +493,20 @@ class GeneSeqCollator(DefaultDataCollator):
         """Collect expressions for the random genes."""
 
         # sort gene_ids (and shuffle values the same way)
-        genes,  idx_sort = torch.sort(genes)
+        genes, idx_sort = torch.sort(genes)
         expressions = expressions[idx_sort]
 
-        # for each random_gene, find the insertion‐point in sorted_ids
+        # for each random_gene, find the insertion point in sorted_ids
         pos = torch.searchsorted(genes, rand_genes)
 
         # clamp any “off the end” indices back into the right boundry
         pos_clamped = torch.clamp(pos, max=genes.size(0) - 1)
 
         # mask where the gene actually matches (handles the case of multiple right boundary in pos)
-        mask = (genes[pos_clamped] == rand_genes)
+        mask = genes[pos_clamped] == rand_genes
 
-        # gather expression where mask is True (common genes), else 0 
+        # gather expression where mask is True (common genes), else 0
         out = torch.zeros_like(rand_genes, dtype=expressions.dtype)
         out[mask] = expressions[pos_clamped][mask]
-
 
         return out
