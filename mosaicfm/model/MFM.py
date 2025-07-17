@@ -1,9 +1,8 @@
 # Copyright (C) Vevo Therapeutics 2024-2025. All rights reserved.
 import logging
-from typing import Mapping, Optional, Tuple
+from typing import Mapping, Optional
 
 import torch
-import torch.nn.functional as F
 from composer.models import ComposerModel
 from composer.utils import dist
 from llmfoundry.layers_registry import param_init_fns
@@ -140,11 +139,10 @@ class MosaicFM(nn.Module):
         )
 
         self.binary_decoder = nn.Sequential(
-            SkipBlock(2*self.d_model),
-            SkipBlock(2*self.d_model),
-            nn.Linear(2*self.d_model, 1, bias=True),
+            SkipBlock(2 * self.d_model),
+            SkipBlock(2 * self.d_model),
+            nn.Linear(2 * self.d_model, 1, bias=True),
         )
-
 
         if self.init_device != "meta":
             log.info(
@@ -170,10 +168,8 @@ class MosaicFM(nn.Module):
         *args,
         **kwargs,
     ) -> Mapping[str, Tensor]:
-        
 
         return self.forward_train(*args, **kwargs)
-
 
     def forward_train(
         self,
@@ -187,7 +183,6 @@ class MosaicFM(nn.Module):
         rand_exprs: Tensor,
         drug_ids: Optional[Tensor] = None,
     ) -> Mapping[str, Tensor]:
-        
         """
         Args:
             in_gene_ids (:obj:`Tensor`): token ids of the input genes, shape
@@ -227,15 +222,12 @@ class MosaicFM(nn.Module):
             drug_embs = self.chem_encoder(drug_ids)  # (batch, embsize)
             total_embs[:, 1, :] = drug_embs  # (batch, in_seq_len, embsize)
 
-
-
         transformer_output = self.transformer_encoder(
             pcpt_total_embs=total_embs,
             gen_total_embs=None,
             pcpt_key_padding_mask=None,
             gen_key_padding_mask=None,
-        ) # (batch, seq_len, embsize)
-
+        )  # (batch, seq_len, embsize)
 
         # 2) get CLS embedding (cell embeddings) from the transformer output
 
@@ -243,28 +235,35 @@ class MosaicFM(nn.Module):
         output["cell_emb"] = cell_emb
 
         # 3) create output sequence (values will be GT) and feed its gene ids to gene encoder
-        out_gene_ids = torch.cat((high_exp_gene_ids, non_exp_gene_ids, rand_gene_ids), dim=1)
+        out_gene_ids = torch.cat(
+            (high_exp_gene_ids, non_exp_gene_ids, rand_gene_ids),
+            dim=1,
+        )
         out_exprs = torch.cat((high_exp_exprs, non_exp_exprs, rand_exprs), dim=1)
 
-        output["out_exprs"] = out_exprs # (batch, out_seq_len)
+        output["out_exprs"] = out_exprs  # (batch, out_seq_len)
         output["rand_exprs"] = rand_exprs  # (batch, len_rand_genes)
-        
+
         out_gene_embs = self.gene_encoder(out_gene_ids)  # (batch, out_seq_len, embsize)
 
         # 4) append CLS embedding to each token of output sequence and feed it to decoder to predict expressions values of output genes
 
-        out_token_embs = torch.cat((cell_emb.unsqueeze(1).repeat(1, out_gene_ids.shape[1], 1), out_gene_embs), dim=-1)  # (batch, seq_len, 2*embsize)
+        out_token_embs = torch.cat(
+            (cell_emb.unsqueeze(1).repeat(1, out_gene_ids.shape[1], 1), out_gene_embs),
+            dim=-1,
+        )  # (batch, seq_len, 2*embsize)
 
         decoder_output = self.binary_decoder(out_token_embs)
         output["out_preds"] = decoder_output.squeeze(-1)
-        output["rand_preds"] = decoder_output[:, -len_rand_genes:, :].squeeze(-1)  # (batch, len_rand_genes)
+        output["rand_preds"] = decoder_output[:, -len_rand_genes:, :].squeeze(
+            -1,
+        )  # (batch, len_rand_genes)
 
-        assert output["rand_exprs"].shape[1] == output["rand_preds"].shape[1], \
-            f"rand_exprs shape {output['rand_exprs'].shape} does not match rand_preds shape {output['rand_preds'].shape}"
+        assert (
+            output["rand_exprs"].shape[1] == output["rand_preds"].shape[1]
+        ), f"rand_exprs shape {output['rand_exprs'].shape} does not match rand_preds shape {output['rand_preds'].shape}"
 
         return output
-
-
 
 
 class ComposerMosaicFM(ComposerModel):
@@ -299,20 +298,18 @@ class ComposerMosaicFM(ComposerModel):
     def forward(self, batch):  # batch is the output of the dataloader
         # specify how batches are passed through the model
 
-
         in_gene_ids = batch["in_gene_ids"]
         in_exprs = batch["in_exprs"]
         high_exp_gene_ids = batch["high_exp_gene_ids"]
         high_exp_exprs = batch["high_exp_exprs"]
         non_exp_gene_ids = batch["non_exp_gene_ids"]
-        non_exp_exprs = batch["non_exp_exprs"]  
+        non_exp_exprs = batch["non_exp_exprs"]
         rand_gene_ids = batch["rand_gene_ids"]
         rand_exprs = batch["rand_exprs"]
 
         drug_ids = (
             batch["drug_ids"] if "drug_ids" in batch else None
         )  # drug_ids is None if use_chem_token is set to False
-
 
         output_dict = self.model(
             in_gene_ids=in_gene_ids,
@@ -336,11 +333,9 @@ class ComposerMosaicFM(ComposerModel):
 
         return outputs if outputs is not None else self.forward(batch)
 
-
-
     def loss(self, outputs, batch):
 
-        #1) calculate loss output genes
+        # 1) calculate loss output genes
         out_exprs = outputs["out_exprs"]  # GT = (batch, out_seq_len)
         out_preds = outputs["out_preds"]  # preds = (batch, out_seq_len)
 
@@ -348,28 +343,27 @@ class ComposerMosaicFM(ComposerModel):
 
         loss_gene = self.criterion(out_preds, out_exprs, positions_to_match)
 
-
-        #2) calculate loss cell which amplifies loss random genes across the whole batch
+        # 2) calculate loss cell which amplifies loss random genes across the whole batch
         rand_exprs = outputs["rand_exprs"]  # (batch, len_rand_genes)
         rand_preds = outputs["rand_preds"]  # (batch, len_rand_genes)
 
         positions_to_match = torch.ones_like(rand_exprs, dtype=torch.bool)
 
-        loss_cell = self.criterion(rand_preds, rand_exprs, positions_to_match)  
+        loss_cell = self.criterion(rand_preds, rand_exprs, positions_to_match)
 
+        # 3) combine cell and gene losses
 
-
-        #3) combine cell and gene losses
-
-        loss = self.model_config.get("loss_wg", 1.0) * loss_gene + self.model_config.get("loss_wc", 0.0) * loss_cell
+        loss = (
+            self.model_config.get("loss_wg", 1.0) * loss_gene
+            + self.model_config.get("loss_wc", 0.0) * loss_cell
+        )
         return loss
-
 
     def update_metric(self, batch, outputs, metric):
 
         if "cell" in metric.name:
             preds = outputs["rand_preds"]
-            target = outputs["rand_exprs"] 
+            target = outputs["rand_exprs"]
             mask = ~batch["rand_gene_ids"].eq(self.pad_token_id)
         elif "gene" in metric.name:
             preds = outputs["out_preds"]
@@ -377,8 +371,7 @@ class ComposerMosaicFM(ComposerModel):
         else:
             raise ValueError(f"metric {metric.name} not recognized!")
 
-        mask = torch.ones_like(target, dtype=torch.bool) 
-
+        mask = torch.ones_like(target, dtype=torch.bool)
 
         metric.update(preds=preds, target=target, mask=mask)
 
@@ -391,7 +384,7 @@ class ComposerMosaicFM(ComposerModel):
         # specify how to compute the number of FLOPs for a batch
         # This assumes non cell-conditioned generation (single forward pass)
         bs = batch["in_gene_ids"].shape[0]
-        msl = batch["in_gene_ids"].shape[1] # Assumes no-padding (as an approximation)
+        msl = batch["in_gene_ids"].shape[1]  # Assumes no-padding (as an approximation)
         params = self.n_active_params
         params_flops_per_token = 2 * params
         params_flops_per_seq = params_flops_per_token * msl
@@ -406,4 +399,3 @@ class ComposerMosaicFM(ComposerModel):
         normalized_value = (x - min_value) / (max_value - min_value)
         # Scale to -1..1
         return 2 * normalized_value - 1
-
