@@ -40,7 +40,7 @@ from streaming.base.util import clean_stale_shared_memory
 install()
 
 from mosaicfm.data import build_dataloader
-from mosaicfm.model import ComposerSCGPTModel
+from mosaicfm.model import ComposerMosaicFM, ComposerSCGPTModel
 from mosaicfm.tokenizer import GeneVocab
 from mosaicfm.utils import download_file_from_s3_url
 
@@ -452,11 +452,24 @@ def main(cfg: DictConfig) -> composer.Trainer:
         },
     )
     with init_context:
+        model_type = model_config.get("model_type", "scgpt")
+
         # Build Model
-        model = ComposerSCGPTModel(
-            model_config=model_config,
-            collator_config=collator_config,
-        )
+        if model_type == "scgpt":
+            model = ComposerSCGPTModel(
+                model_config=model_config,
+                collator_config=collator_config,
+            )
+        elif model_type == "mosaicfm":
+            model = ComposerMosaicFM(
+                model_config=model_config,
+                collator_config=collator_config,
+            )
+        else:
+            raise ValueError(
+                f"Model type {model_type} is not implemented. "
+                "Supported model types are 'scgpt' and 'mosaicfm'.",
+            )
 
     # Log number of parameters
     n_params = sum(p.numel() for p in model.parameters())

@@ -362,6 +362,7 @@ class GeneEncoder(nn.Module):
         self,
         num_embeddings: int,
         embedding_dim: int,
+        activation: str = "gelu",
         padding_idx: Optional[int] = None,
         use_norm: bool = False,
         gene_encoder_cfg: Optional[Dict] = None,
@@ -378,6 +379,7 @@ class GeneEncoder(nn.Module):
         additional_embedding_cfg = gene_encoder_cfg.get("embeddings", {})
         self.extra_embeddings = nn.ModuleDict()
         self.extra_norms = nn.ModuleDict()
+        self.activation = resolve_ffn_act_fn({"name": activation})
 
         for name, e_cfg in additional_embedding_cfg.items():
             local, remote = e_cfg["local"], e_cfg["remote"]
@@ -433,6 +435,7 @@ class GeneEncoder(nn.Module):
         x = self.project(x)
         if self.use_norm:
             x = self.enc_norm(x)
+        x = self.activation(x)
         return x
 
 
@@ -700,3 +703,26 @@ class MVCDecoder(nn.Module):
             return {"pred": pred_value}
         else:
             raise ValueError(f"Unknown arch_style: {self.arch_style}")
+
+
+class SkipBlock(nn.Module):
+    def __init__(self, in_features):
+        """
+        Given input X of size in_features
+        - out = layernorm(x + MLP(MLP(X))
+
+        """
+        super().__init__()
+        self.dim = in_features
+        self.intermediate_dense = nn.Linear(in_features, in_features * 2, bias=True)
+        self.dense = nn.Linear(in_features * 2, in_features, bias=True)
+        self.activation = nn.ReLU()
+        self.layer_norm = nn.LayerNorm(in_features)
+
+    def forward(self, x):
+        residual = x
+        x = self.intermediate_dense(x)
+        x = self.activation(x)
+        x = self.dense(x)
+        x = self.layer_norm(x + residual)
+        return x
