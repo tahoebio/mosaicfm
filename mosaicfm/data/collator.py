@@ -64,6 +64,7 @@ class DataCollator(DefaultDataCollator):
         do_mlm: bool = True,
         do_binning: bool = True,
         log_transform: bool = False,
+        log_preds: bool = False,
         target_sum: int = 10000,
         mlm_probability: float = 0.15,
         mask_value: int = -1,
@@ -84,6 +85,7 @@ class DataCollator(DefaultDataCollator):
         self.do_mlm = do_mlm
         self.do_binning = do_binning
         self.log_transform = log_transform
+        self.log_preds = log_preds
         self.target_sum = target_sum
         self.mlm_probability = mlm_probability
         self.mask_value = mask_value
@@ -267,6 +269,7 @@ class DataCollator(DefaultDataCollator):
                     row=expressions[self.keep_first_n_tokens :],
                     target_sum=self.target_sum,
                 )
+
             genes, expressions = self._sample_or_truncate_plus_pad(
                 genes,
                 expressions,
@@ -464,6 +467,13 @@ class DataCollator(DefaultDataCollator):
 
             original_expressions = expressions.detach().clone()
 
+            if self.log_preds:
+                log_expressions = expressions.clone()
+                log_expressions[self.keep_first_n_tokens :] = log_transform(
+                    row=expressions[self.keep_first_n_tokens :],
+                    target_sum=self.target_sum,
+                )
+
             if self.do_binning:
                 expressions[self.keep_first_n_tokens :] = binning(
                     row=expressions[self.keep_first_n_tokens :],
@@ -479,19 +489,38 @@ class DataCollator(DefaultDataCollator):
                     target_sum=self.target_sum,
                 )
 
-            (
-                gen_genes,
-                gen_expressions,
-                gen_original_exp,
-                pcpt_genes,
-                pcpt_expressions,
-                pcpt_original_exp,
-            ) = self._random_split(
-                genes[self.keep_first_n_tokens :],
-                expressions[self.keep_first_n_tokens :],
-                original_expressions[self.keep_first_n_tokens :],
-                ratio=gen_prob,
-            )
+            if self.log_preds:
+                (
+                    gen_genes,
+                    _,
+                    gen_original_exp,
+                    gen_expressions,
+                    pcpt_genes,
+                    pcpt_expressions,
+                    pcpt_original_exp,
+                    _,
+                ) = self._random_split(
+                    genes[self.keep_first_n_tokens :],
+                    expressions[self.keep_first_n_tokens :],
+                    original_expressions[self.keep_first_n_tokens :],
+                    log_expressions[self.keep_first_n_tokens :],
+                    ratio=gen_prob,
+                )
+
+            else:
+                (
+                    gen_genes,
+                    gen_expressions,
+                    gen_original_exp,
+                    pcpt_genes,
+                    pcpt_expressions,
+                    pcpt_original_exp,
+                ) = self._random_split(
+                    genes[self.keep_first_n_tokens :],
+                    expressions[self.keep_first_n_tokens :],
+                    original_expressions[self.keep_first_n_tokens :],
+                    ratio=gen_prob,
+                )
             pcpt_genes = torch.cat(
                 (genes[: self.keep_first_n_tokens], pcpt_genes),
                 dim=0,
