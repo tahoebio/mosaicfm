@@ -49,10 +49,12 @@ def main(cfg: DictConfig) -> None:
         num_bins=coll_cfg.get("num_bins", 51),
         right_binning=coll_cfg.get("right_binning", False),
         reserve_keys=cfg.data.reserve_keys,
+        use_chem_token=False,
     )
 
     log.info("Loading model checkpoint and configuration...")
     model_cfg = om.load(cfg.paths.model_config_path)
+    model_name = cfg.paths.model_file.split("/")[-2]
     model_cfg["attn_config"]["attn_impl"] = cfg.model.attn_impl
     model_cfg["attn_config"]["use_attn_mask"] = cfg.model.use_attn_mask
 
@@ -86,7 +88,7 @@ def main(cfg: DictConfig) -> None:
             pa.field("sample", pa.dictionary(pa.int32(), pa.string())),
             pa.field("cell_line", pa.dictionary(pa.int32(), pa.string())),
             pa.field("BARCODE_SUB_LIB_ID", pa.string()),
-            pa.field("mosaicfm-70m-merged", pa.list_(pa.float32(), 512)),
+            pa.field(model_name, pa.list_(pa.float32(), 512)),
         ],
     )
 
