@@ -12,51 +12,41 @@ from mosaicfm.utils import download_file_from_s3_url
 
 
 class DataCollator(DefaultDataCollator):
-    """Data collator for the mask value learning task. It pads the sequences to
-    the maximum length in the batch and masks the gene expression values.
+    """Data collator for the masked value learning task.
+
+    Pads sequences to the batch maximum and applies masking/bucketing transforms.
 
     Args:
-        vocab (:obj: GeneVocab): The vocabulary that includes the gene ids, name, special tokens, etc.
-        use_chem_token (:obj:`bool`): whether to create and use the chemical token in the sequence.
-        drug_to_id_path (:obj:`dict`): path to the drug to id .json file.
-        do_padding (:obj:`bool`): whether to pad the sequences to the max length.
-        unexp_padding (:obj:`bool`): whether to pad the sequences with unexpressed genes. If False it pads with pad token.
-        pad_token_id (:obj:`int`, optional): the token id to use for padding.
-            This is required if do_padding is True.
-        pad_value (:obj:`int`): the value to use for padding the expression
-            values to the max length.
-        do_mlm (:obj:`bool`): whether to do masking with MLM.
-        do_binning (:obj:`bool`): whether to bin the expression values.
-        log_transform (:obj:`bool`): whether to transform the gene expression values.
-        target_sum (:obj:`int`): The target sum of the normalized counts before log1p transformation.
-        mlm_probability (:obj:`float`): the probability of masking with MLM.
-        mask_value (:obj:`int`): the value to fill at the expression postions
-            that are masked.
-        max_length (:obj:`int`, optional): the maximum length of the sequences.
-            This is required if do_padding is True.
-        sampling (:obj:`bool`): whether to do sampling instead of truncation if
-            length > max_length.
-        reserve_keys (:obj:`List[str]`, optional): a list of keys in the examples
-            to reserve in the output dictionary. Default to []. These fields
-            will be kept unchanged in the output.
-        keep_first_n_tokens (:obj:`int`): the number of tokens in the beginning
-            of the sequence to keep unchanged from sampling. This is useful when
-            special tokens have been added to the beginning of the sequence.
-            Default to 1.
-        data_style (:obj:`str`): the style of the data. If "pcpt", the data is
-            masked and padded for perception training. If "gen", only the gene
-            tokens are provided, but not the expression values, for pure generative
-            training setting. If "both", the output will contain both fields above.
-            Choices: "pcpt", "gen", "both". Default to "pcpt".
-        num_bins (:obj:`int`): the number of bins to use for binning the expression
-        right_binning (:obj:`bool`): whether to use right sided-binning. Torch default is False
+        vocab (GeneVocab): Vocabulary containing gene IDs and special tokens.
+        use_chem_token (bool): Whether to insert/use a chemical token in the sequence.
+        drug_to_id_path (dict): Paths for drug-to-id JSON (remote/local).
+        do_padding (bool): Whether to pad sequences up to the max length.
+        unexp_padding (bool): If True, pad with unexpressed genes; otherwise, pad token.
+        pad_token_id (int, optional): Pad token ID (required if do_padding=True).
+        pad_value (int): Value used for padding expression values.
+        do_mlm (bool): Whether to apply masking with MLM.
+        do_binning (bool): Whether to bin expression values.
+        log_transform (bool): Whether to log-transform expression values.
+        target_sum (int): Target sum before log1p transformation.
+        mlm_probability (float | list[float]): Masking probability (or choices).
+        mask_value (int): Value filled at masked expression positions.
+        max_length (int, optional): Max sequence length (2048 typically, required if do_padding=True).
+        sampling (bool): If True, sample instead of truncate when length > max_length.
+        reserve_keys (List[str], optional): Keys to carry through unchanged in outputs.
+        keep_first_n_tokens (int): Number of leading tokens to preserve from sampling.
+        data_style (str): One of {'pcpt','gen','both'}.
+            - 'pcpt': returns inputs for perception training (genes + masked expr).
+            - 'gen': returns inputs for generative setting as 'pcpt_gene' and 'pcpt_expr'.
+            - 'both': returns split perception/generation fields.
+        num_bins (int): Number of bins for bucketing expression values (51 typically).
+        right_binning (bool): Use right-sided bucketing (torch default: False).
     """
 
     def __init__(
         self,
         vocab: GeneVocab,
         drug_to_id_path: Optional[dict] = None,
-        use_chem_token: int = False,
+        use_chem_token: bool = False,
         do_padding: bool = True,
         unexp_padding: bool = False,
         pad_token_id: Optional[int] = None,
@@ -65,7 +55,7 @@ class DataCollator(DefaultDataCollator):
         do_binning: bool = True,
         log_transform: bool = False,
         target_sum: int = 10000,
-        mlm_probability: float = 0.15,
+        mlm_probability: Union[float, List[float]] = 0.15,
         mask_value: int = -1,
         max_length: Optional[int] = None,
         sampling: bool = True,
@@ -117,10 +107,10 @@ class DataCollator(DefaultDataCollator):
             "If `drug_to_id_path` is provided, `use_chem_token` must be True.",
         )
         assert not self.use_chem_token or self.keep_first_n_tokens > 1, (
-            "If `use_chem_token` is True, we need to keep <cls> and <drug> token in the beggining of pcpt_genes. So `keep_first_n_tokens` must be >=2!",
+            "If `use_chem_token` is True, we need to keep <cls> and <drug> token in the beginning of pcpt_genes. So `keep_first_n_tokens` must be >=2!",
         )
         # load drug_to_id mapping if present
-        if self.use_chem_token:
+        if self.use_chem_token and drug_to_id_path is not None:
             if dist.get_local_rank() == 0:
                 download_file_from_s3_url(
                     s3_url=drug_to_id_path["remote"],
@@ -156,10 +146,11 @@ class DataCollator(DefaultDataCollator):
         if isinstance(self.reserve_keys, str):
             self.reserve_keys = [self.reserve_keys]
 
-        if self.keep_first_n_tokens < 0 or self.keep_first_n_tokens > self.max_length:
+        if self.max_length is not None and (
+            self.keep_first_n_tokens < 0 or self.keep_first_n_tokens > self.max_length
+        ):
             raise ValueError(
-                "`keep_first_n_tokens` must be between 0 and `max_length` "
-                f"({self.max_length}).",
+                f"`keep_first_n_tokens` must be between 0 and `max_length` ({self.max_length}).",
             )
 
         if self.data_style not in ["pcpt", "gen", "both"]:
@@ -168,12 +159,12 @@ class DataCollator(DefaultDataCollator):
     def __call__(
         self,
         examples: List[Dict[str, torch.Tensor]],
-    ) -> Dict[str, torch.Tensor]:
+    ) -> Dict[str, Union[torch.Tensor, List[torch.Tensor]]]:
         """
         Args:
             examples (:obj:`List[Dict[str, torch.Tensor]]`): a list of data dicts.
                 Each dict is for one cell. It contains multiple 1 dimensional tensors
-                like the following exmaple:
+                like the following example:
                     {'id': tensor(184117),
                     'genes': tensor([36572, 17868, ..., 17072]),
                     'expressions': tensor([ 0.,  2., ..., 18.])}
@@ -210,6 +201,8 @@ class DataCollator(DefaultDataCollator):
             data_dict = self._call_gen(examples)
         elif self.data_style == "both":
             data_dict = self._call_both(examples)
+        else:
+            raise ValueError(f"Unknown data_style: {self.data_style}")
 
         # add reserved keys
         device = examples[0]["genes"].device
@@ -219,9 +212,9 @@ class DataCollator(DefaultDataCollator):
                 # if the reserved key is a tensor, stack them
                 data_dict[key] = torch.stack(data_, dim=0).to(device)
             else:
-                data_dict[key] = data_  # if not tensor, just keep the list
+                data_dict[key] = data_  # type: ignore[assignment]  # if not tensor, just keep the list
 
-        return data_dict
+        return data_dict  # type: ignore[return-value]
 
     def _call_pcpt(
         self,
@@ -245,7 +238,11 @@ class DataCollator(DefaultDataCollator):
         device = examples[0]["genes"].device
 
         max_ori_len = max(len(example["genes"]) for example in examples)
-        _max_length = self.max_length if max_ori_len >= self.max_length else max_ori_len
+        _max_length = (
+            self.max_length
+            if self.max_length is not None and max_ori_len >= self.max_length
+            else max_ori_len
+        )
 
         # pad and truncate
         padded_genes = []
@@ -254,19 +251,25 @@ class DataCollator(DefaultDataCollator):
             genes = examples[i]["genes"]
             expressions = examples[i]["expressions"]
             if self.do_binning:
-                expressions[self.keep_first_n_tokens :] = binning(
+                binned_result = binning(
                     row=expressions[self.keep_first_n_tokens :],
                     n_bins=self.num_bins,
                     right=self.right_binning,
                 )
+                if isinstance(binned_result, np.ndarray):
+                    binned_result = torch.from_numpy(binned_result)
+                expressions[self.keep_first_n_tokens :] = binned_result
             elif self.log_transform:
                 assert not (
                     self.do_binning
                 ), "Only one of `do_binning` and `log_transform` can be True."
-                expressions[self.keep_first_n_tokens :] = log_transform(
+                log_result = log_transform(
                     row=expressions[self.keep_first_n_tokens :],
                     target_sum=self.target_sum,
                 )
+                if isinstance(log_result, np.ndarray):
+                    log_result = torch.from_numpy(log_result)
+                expressions[self.keep_first_n_tokens :] = log_result
             genes, expressions = self._sample_or_truncate_plus_pad(
                 genes,
                 expressions,
@@ -321,12 +324,16 @@ class DataCollator(DefaultDataCollator):
         """
 
         if not isinstance(examples[0], Mapping):
-            return NotImplementedError
+            raise NotImplementedError
 
         device = examples[0]["genes"].device
 
         max_ori_len = max(len(example["genes"]) for example in examples)
-        _max_length = self.max_length if max_ori_len >= self.max_length else max_ori_len
+        _max_length = (
+            self.max_length
+            if self.max_length is not None and max_ori_len >= self.max_length
+            else max_ori_len
+        )
 
         # pad and truncate
         padded_pcpt_genes = []
@@ -335,19 +342,25 @@ class DataCollator(DefaultDataCollator):
             genes = examples[i]["genes"]
             expressions = examples[i]["expressions"]
             if self.do_binning:
-                expressions[self.keep_first_n_tokens :] = binning(
+                binned_result = binning(
                     row=expressions[self.keep_first_n_tokens :],
                     n_bins=self.num_bins,
                     right=self.right_binning,
                 )
+                if isinstance(binned_result, np.ndarray):
+                    binned_result = torch.from_numpy(binned_result)
+                expressions[self.keep_first_n_tokens :] = binned_result
             elif self.log_transform:
                 assert not (
                     self.do_binning
                 ), "Only one of `do_binning` and `log_transform` can be True."
-                expressions[self.keep_first_n_tokens :] = log_transform(
+                log_result = log_transform(
                     row=expressions[self.keep_first_n_tokens :],
                     target_sum=self.target_sum,
                 )
+                if isinstance(log_result, np.ndarray):
+                    log_result = torch.from_numpy(log_result)
+                expressions[self.keep_first_n_tokens :] = log_result
             genes, expressions = self._sample_or_truncate_plus_pad(
                 genes,
                 expressions,
@@ -370,19 +383,19 @@ class DataCollator(DefaultDataCollator):
         examples: List[Dict[str, torch.Tensor]],
         gen_prob: Optional[float] = None,
     ) -> Dict[str, torch.Tensor]:
-        """This method will split the input into the peception part and the
+        """This method will split the input into the perception part and the
         generation part. The perception part will be processed into gene ids and
         expr values, and the generation part will be processed into gene ids
         only.
 
-        By default, the mlm_probability will be used to select the genese assigned to
+        By default, the mlm_probability will be used to select the genes assigned to
         the generation part.
 
         Each example is like:
             {'id': tensor(184117),
             'genes': tensor([36572, 17868, ..., 17072]),
             'expressions': tensor([ 0.,  2., ..., 18.])},
-            'drug_id': Optinal = tensor(256), id 0 refers to <pad> token and indicates that drug is not available
+            'drug_id': Optional = tensor(256), id 0 refers to <pad> token and indicates that drug is not available
 
         Args:
             gen_prob (float, optional): the probability of a gene being assigned to
@@ -419,7 +432,11 @@ class DataCollator(DefaultDataCollator):
             gen_prob = self.get_mlm_probability()
 
         max_ori_len = max(len(example["genes"]) for example in examples)
-        _max_length = self.max_length if max_ori_len >= self.max_length else max_ori_len
+        _max_length = (
+            self.max_length
+            if self.max_length is not None and max_ori_len >= self.max_length
+            else max_ori_len
+        )
 
         gen_length = int((_max_length - self.keep_first_n_tokens) * gen_prob)
         pcpt_length = _max_length - gen_length  # perception part length
@@ -431,7 +448,7 @@ class DataCollator(DefaultDataCollator):
         padded_gen_genes = []
         padded_gen_expressions = []
         padded_gen_original_exp = []
-        drug_ids = [] if self.use_chem_token else None
+        drug_ids = []
 
         for i in range(len(examples)):
             genes = examples[i]["genes"]
@@ -465,19 +482,25 @@ class DataCollator(DefaultDataCollator):
             original_expressions = expressions.detach().clone()
 
             if self.do_binning:
-                expressions[self.keep_first_n_tokens :] = binning(
+                binned_result = binning(
                     row=expressions[self.keep_first_n_tokens :],
                     n_bins=self.num_bins,
                     right=self.right_binning,
                 )
+                if isinstance(binned_result, np.ndarray):
+                    binned_result = torch.from_numpy(binned_result)
+                expressions[self.keep_first_n_tokens :] = binned_result
             elif self.log_transform:
                 assert not (
                     self.do_binning
                 ), "Only one of `do_binning` and `log_transform` can be True."
-                expressions[self.keep_first_n_tokens :] = log_transform(
+                log_result = log_transform(
                     row=expressions[self.keep_first_n_tokens :],
                     target_sum=self.target_sum,
                 )
+                if isinstance(log_result, np.ndarray):
+                    log_result = torch.from_numpy(log_result)
+                expressions[self.keep_first_n_tokens :] = log_result
 
             (
                 gen_genes,
@@ -614,8 +637,7 @@ class DataCollator(DefaultDataCollator):
             return np.random.choice(self.mlm_probability)
         else:
             raise ValueError(
-                "mlm_probability must be a float or a list of floats, "
-                f"but got {type(self.mlm_probability)} instead.",
+                f"mlm_probability must be a float or a list of floats, but got {type(self.mlm_probability)} instead.",
             )
 
     def _mask(
@@ -711,7 +733,11 @@ class DataCollator(DefaultDataCollator):
                     array,
                     torch.full(
                         (max_length - len(array),),
-                        self.pad_token_id if i == 0 else self.pad_value,
+                        (
+                            self.pad_token_id
+                            if i == 0 and self.pad_token_id is not None
+                            else self.pad_value
+                        ),
                         dtype=array.dtype,
                         device=device,
                     ),
@@ -762,27 +788,27 @@ def log_transform(
     target_sum: int,
     eps: float = 1e-9,
 ) -> Union[np.ndarray, torch.Tensor]:
-    """Log transform the row.
+    """Log transform a row of counts.
 
     Args:
         row (Union[np.ndarray, torch.Tensor]):
             The row to be log-1p-transformed.
-        target_sum (int, optional):
-            The target sum of the normalized row before log-1p transformation. Default to 10000.
+        target_sum (int):
+            The target sum of the normalized row before log-1p transformation.
         eps (float, optional):
             The epsilon value used for normalization.
     Returns:
         Union[np.ndarray, torch.Tensor]:
             The log-1p-transformed row.
     """
-    dtype = row.dtype
+    original_dtype = row.dtype if hasattr(row, "dtype") else None
     is_tensor = isinstance(row, torch.Tensor)
     if not is_tensor:
         row = torch.as_tensor(row)
-    row = (row / (row.sum(axis=-1, keepdims=True) + eps)) * target_sum
+    row = (row / (row.sum(dim=-1, keepdim=True) + eps)) * target_sum
     row = torch.log1p(row)
-    if not is_tensor:
-        return row.numpy().astype(dtype)
+    if not is_tensor and original_dtype is not None:
+        return row.detach().numpy().astype(original_dtype)  # type: ignore[arg-type]
     return row
 
 
@@ -792,25 +818,24 @@ def binning(
     n_bins: int,
     right: bool = False,
 ) -> Union[np.ndarray, torch.Tensor]:
-    """Binning the row into n_bins.
+    """Quantize gene expression values into discrete bins.
+
+    Converts continuous expression counts into discrete tokens using quantile-based
+    binning for efficient transformer training.
 
     Args:
         row (Union[np.ndarray, torch.Tensor]):
-            The row to be binned.
+            Gene expression counts for a single cell.
         n_bins (int):
-            The number of bins.
+            Number of quantization bins (51 typically).
         right (bool, optional):
-            Argument passed to `torch.bucketize`. if False, return the first suitable location that is found.
-            If True, return the last such index.
-            If no suitable index found, return 0 for non-numerical value (eg. nan, inf) or the size of boundaries
-            (one pass the last index). In other words, if False, gets the lower bound index for each value
-            in input from boundaries. If True, gets the upper bound index instead. Default value is False.
-    .
+            Whether to use right-sided binning for boundary values.
+
     Returns:
         Union[np.ndarray, torch.Tensor]:
-            The binned row.
+            Binned expression values as discrete tokens in range [1, n_bins].
     """
-    dtype = row.dtype
+    original_dtype = row.dtype if hasattr(row, "dtype") else None
     return_np = not (isinstance(row, torch.Tensor))
     if not isinstance(row, torch.Tensor):
         row = torch.as_tensor(row)
@@ -825,8 +850,8 @@ def binning(
     else:
         bins = torch.quantile(row, GRADES)
         binned_row = torch.bucketize(row, bins, right=right)
-    if return_np:
-        binned_row = binned_row.astype(dtype)
+    if return_np and original_dtype is not None:
+        binned_row = binned_row.detach().numpy().astype(original_dtype)  # type: ignore[arg-type]
     if not (right):
         # Left sided binning satisfies the condition: bins[i - 1] < row < bins[i]
         # For right=False, the smallest binned values is 0

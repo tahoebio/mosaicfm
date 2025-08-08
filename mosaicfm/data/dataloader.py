@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import torch
+import torch.utils.data
 from composer.core.data_spec import DataSpec
 from datasets import Dataset
 from omegaconf import DictConfig
@@ -98,8 +99,8 @@ def build_perturbation_dataloader(
     loader_cfg: DictConfig,
     device_batch_size: int,
     isTrain: bool,
-) -> DataSpec:
-    """Builds a dataloader from a config for perturbation task.
+) -> StreamingDataLoader:
+    """Builds a dataloader from a config for the perturbation task.
 
     Args:
         loader_cfg (DictConfig): An omegaconf dictionary used to configure the loader.
@@ -112,7 +113,9 @@ def build_perturbation_dataloader(
 
     dataset = Dataset.load_from_disk(data_path)
 
-    def collate_fn(examples: List[Dict[str, torch.Tensor]]) -> Dict[str, torch.Tensor]:
+    def collate_fn(
+        examples: List[Dict[str, torch.Tensor]],
+    ) -> Dict[str, Any]:
 
         genes = torch.stack([example["genes"] for example in examples])
         n_genes = len(genes[0])
@@ -175,7 +178,7 @@ class CountDataset(torch.utils.data.Dataset):
             raise ValueError(
                 f"count_matrix must be either an np.ndarray or a scipy.sparse csr_matrix. found {type(count_matrix)}",
             )
-        self.count_matrix = count_matrix
+        self.count_matrix: csr_matrix = count_matrix
         self.gene_ids = gene_ids
 
         self.add_cls_token = add_cls_token
@@ -190,7 +193,7 @@ class CountDataset(torch.utils.data.Dataset):
     def __len__(self) -> int:
         return self.count_matrix.shape[0]
 
-    def __getitem__(self, idx) -> Dict[str, torch.Tensor]:
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         row = self.count_matrix.getrow(idx)
         nonzero_idx = row.indices
         values = row.data
@@ -199,7 +202,7 @@ class CountDataset(torch.utils.data.Dataset):
             genes = np.insert(genes, 0, self.cls_token_id)
             values = np.insert(values, 0, self.pad_value)
         return {
-            "id": idx,
+            "id": torch.tensor(idx, dtype=torch.long),
             "genes": torch.tensor(genes, dtype=torch.long),
             "expressions": torch.tensor(values, dtype=torch.float),
         }

@@ -3,19 +3,21 @@ from typing import Optional, Tuple, Union
 
 import numpy as np
 import torch
+import torch.amp
+import torch.utils.data
 from anndata import AnnData
 from omegaconf import DictConfig
 from scipy.sparse import csc_matrix, csr_matrix
 from tqdm.auto import tqdm
 
 from mosaicfm.data import CountDataset, DataCollator
-from mosaicfm.model import SCGPTModel
+from mosaicfm.model import MosaicfmModel
 from mosaicfm.tokenizer import GeneVocab
 
 
 def get_batch_embeddings(
     adata: AnnData,
-    model: SCGPTModel,
+    model: MosaicfmModel,
     vocab: GeneVocab,
     model_cfg: DictConfig,
     collator_cfg: DictConfig,
@@ -25,11 +27,15 @@ def get_batch_embeddings(
     max_length: Optional[int] = None,
     return_gene_embeddings: bool = False,
 ) -> Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
-    """Get the cell embeddings for a batch of cells.
+    """Extract cell and gene embeddings for a batch of cells.
+
+    Generates dense vector representations from single-cell RNA-seq data.
+    Supports both cell embeddings (from <cls> tokens) and gene
+    embeddings (averaged across cells).
 
     Args:
         adata (AnnData): The AnnData object.
-        model (SCGPTModel): The model.
+        model (MosaicfmModel): The model instance.
         vocab (GeneVocab): The gene-to-ID vocabulary
         model_cfg (DictConfig, optional): The model configuration dictionary.
         collator_cfg (DictConfig, optional): The collator configuration dictionary.
@@ -42,9 +48,9 @@ def get_batch_embeddings(
 
     Returns:
         Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]:
-            - If `return_gene_embeddings` is False, returns a NumPy array of cell embeddings.
-            - If `return_gene_embeddings` is True, returns a tuple of cell embeddings and
-              gene embeddings as NumPy arrays.
+            Cell embeddings (num_cells, d_model) if return_gene_embeddings=False,
+            or tuple of (cell_embeddings, gene_embeddings) if return_gene_embeddings=True.
+            Both arrays are L2-normalized for similarity computation.
     """
     count_matrix = adata.X
     if isinstance(count_matrix, np.ndarray):
@@ -56,7 +62,7 @@ def get_batch_embeddings(
 
     if gene_ids is None:
         gene_ids = np.array(adata.var["id_in_vocab"])
-        assert np.all(gene_ids >= 0)
+    assert gene_ids is not None and np.all(gene_ids >= 0)
 
     if max_length is None:
         max_length = len(gene_ids)
@@ -100,6 +106,10 @@ def get_batch_embeddings(
 
     device = next(model.parameters()).device
     cell_embeddings = np.zeros((len(dataset), model_cfg["d_model"]), dtype=np.float32)
+    # Initialize zero-sized placeholders to satisfy static type checkers when
+    # return_gene_embeddings is False (avoids possibly-unbound warnings).
+    gene_embeddings = torch.empty(0, dtype=torch.float32, device=device)
+    gene_embedding_counts = torch.empty(0, dtype=torch.float32, device=device)
     if return_gene_embeddings:
         gene_embeddings = torch.zeros(
             len(vocab),

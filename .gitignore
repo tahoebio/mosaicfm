@@ -141,7 +141,9 @@ dmypy.json
 *.npy
 events.out.tfevents.*
 tmp/
-data/
+/data/
+datasets/
+*.dataset
 save/
 saved/
 output/
@@ -159,3 +161,16 @@ runai/*/
 *.json
 debug_notebooks/
 ckpt/
+
+# IDE files
+.idea/
+.vscode/
+
+# macOS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
