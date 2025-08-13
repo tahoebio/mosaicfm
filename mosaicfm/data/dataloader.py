@@ -69,6 +69,7 @@ def build_dataloader(
         do_mlm=collator_cfg.get("do_mlm", True),
         do_binning=collator_cfg.get("do_binning", True),
         log_transform=collator_cfg.get("log_transform", False),
+        log_preds=collator_cfg.get("log_preds", False),
         target_sum=collator_cfg.get("target_sum", 10000),
         mlm_probability=mlm_probability,
         mask_value=collator_cfg.mask_value,
