@@ -5,12 +5,15 @@ import os
 import sys
 
 import pyarrow as pa
+import pyarrow.fs as pafs
 import pyarrow.parquet as pq
 import streaming
 import torch
+import torch.distributed as dist
 from datasets import load_dataset
 from omegaconf import DictConfig
 from omegaconf import OmegaConf as om
+from torch.utils.data import DistributedSampler
 from tqdm.auto import tqdm
 
 from mosaicfm.data import DataCollator
@@ -24,10 +27,49 @@ logging.basicConfig(
 )
 
 
+def setup():
+    """Initialize distributed process group and set device."""
+    dist.init_process_group(backend="nccl")
+    local_rank = int(os.environ["LOCAL_RANK"])
+    torch.cuda.set_device(local_rank)
+    return local_rank
+
+
+def cleanup():
+    """Clean up distributed process group."""
+    dist.destroy_process_group()
+
+
+def get_output_filesystem_and_path(output_dir: str):
+    """Get filesystem and path for output directory."""
+    if output_dir.startswith("s3://"):
+        fs = pafs.S3FileSystem()
+        path = output_dir[5:]  # strip s3://
+    else:
+        fs = pafs.LocalFileSystem()
+        path = output_dir
+    return fs, path
+
+
+def get_parquet_writer(fs, path_prefix, rank, shard_idx, schema):
+    """Create a rank-specific parquet writer."""
+    file_path = f"{path_prefix}/rank{rank}_embeddings_{shard_idx:03d}.parquet"
+    sink = fs.open_output_stream(file_path)
+    writer = pq.ParquetWriter(sink, schema, use_dictionary=True)
+    return writer, sink
+
+
 def main(cfg: DictConfig) -> None:
     """
     Main entrypoint: load model, dataset, compute embeddings, and write chunked Parquet shards.
     """
+    # Initialize distributed processing
+    local_rank = setup()
+    rank = dist.get_rank()
+    world_size = dist.get_world_size()
+
+    log.info(f"Rank {rank} started with local_rank {local_rank}...")
+
     log.info("Loading vocabulary and collator configuration...")
     vocab = GeneVocab.from_file(cfg.paths.vocab_file)
     coll_cfg = om.load(cfg.paths.collator_config_path)
@@ -57,21 +99,37 @@ def main(cfg: DictConfig) -> None:
     model_cfg["attn_config"]["use_attn_mask"] = cfg.model.use_attn_mask
 
     model = ComposerSCGPTModel(model_config=model_cfg, collator_config=coll_cfg)
-    state = torch.load(cfg.paths.model_file)["state"]["model"]
+
+    # Set per-rank device
+    device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu")
+    torch.cuda.empty_cache()
+
+    # Coordinated model loading
+    dist.barrier()
+    state = torch.load(cfg.paths.model_file, map_location=device)["state"]["model"]
     model.load_state_dict(state, strict=True)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device).eval()
+    dist.barrier()
+
+    # Wrap model with DDP
+    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank])
 
     log.info("Loading dataset and preparing DataLoader...")
     ds = load_dataset(
         cfg.dataset.name,
         split=cfg.dataset.split,
         streaming=cfg.dataset.streaming,
+        cache_dir=cfg.dataset.get("cache_dir", None),
     )
     ds = ds.with_format("torch")
+
+    # Create distributed sampler
+    sampler = DistributedSampler(ds, num_replicas=world_size, rank=rank, shuffle=False)
+
     loader = streaming.StreamingDataLoader(
         ds,
         batch_size=cfg.data.batch_size,
+        sampler=sampler,
         collate_fn=collator,
         drop_last=False,
         num_workers=cfg.data.num_workers,
@@ -86,17 +144,22 @@ def main(cfg: DictConfig) -> None:
             pa.field("sample", pa.dictionary(pa.int32(), pa.string())),
             pa.field("cell_line", pa.dictionary(pa.int32(), pa.string())),
             pa.field("BARCODE_SUB_LIB_ID", pa.string()),
-            pa.field("mosaicfm-70m-merged", pa.list_(pa.float32(), 512)),
+            pa.field(cfg.model_name, pa.list_(pa.float32(), model_cfg["d_model"])),
         ],
     )
 
-    os.makedirs(cfg.paths.output_dir, exist_ok=True)
+    # Setup output filesystem and paths
+    fs, output_path = get_output_filesystem_and_path(cfg.paths.output_dir)
 
-    total_rows = len(ds)
     row_count = 0
     shard_idx = 0
     writer = None
-    pbar = tqdm(total=total_rows, desc="Embedding & writing")
+    sink = None
+    pbar = tqdm(
+        total=len(sampler),
+        desc=f"Rank {rank} embedding & writing",
+        disable=(rank != 0),
+    )
 
     precision = {
         "fp32": torch.float32,
@@ -116,11 +179,13 @@ def main(cfg: DictConfig) -> None:
 
             # Rotate to a new ParquetWriter if starting a shard
             if writer is None:
-                shard_path = os.path.join(
-                    cfg.paths.output_dir,
-                    f"{cfg.output.prefix}_{shard_idx:03d}.parquet",
+                writer, sink = get_parquet_writer(
+                    fs,
+                    output_path,
+                    rank,
+                    shard_idx,
+                    schema,
                 )
-                writer = pq.ParquetWriter(shard_path, schema, use_dictionary=True)
 
             # Extract metadata
             drugs = batch["drug"]
@@ -132,7 +197,7 @@ def main(cfg: DictConfig) -> None:
             ids = batch["gene"].to(device)
             expr = batch["expr"].to(device)
             mask = ~ids.eq(coll_cfg.pad_token_id)
-            embs = model.model._encode(ids, expr, src_key_padding_mask=mask)
+            embs = model.module.model._encode(ids, expr, src_key_padding_mask=mask)
             cls_np = embs[:, 0, :].cpu().numpy()
 
             # Build and write Arrow Table
@@ -142,7 +207,7 @@ def main(cfg: DictConfig) -> None:
                     "sample": samples,
                     "cell_line": cells,
                     "BARCODE_SUB_LIB_ID": barcodes,
-                    "mosaicfm-70m-merged": [list(r) for r in cls_np],
+                    cfg.model_name: [list(r) for r in cls_np],
                 },
                 schema=schema,
             )
@@ -154,16 +219,25 @@ def main(cfg: DictConfig) -> None:
             # If chunk size reached, close and advance shard
             if row_count >= cfg.parquet.chunk_size:
                 writer.close()
+                sink.close()
                 writer = None
+                sink = None
                 row_count = 0
                 shard_idx += 1
 
     # Final close
     if writer:
         writer.close()
+    if sink:
+        sink.close()
     pbar.close()
 
-    log.info(f"Finished writing embeddings to: {cfg.paths.output_dir}")
+    # Ensure all ranks finish before cleanup
+    dist.barrier()
+    cleanup()
+
+    if rank == 0:
+        log.info(f"Finished writing embeddings to: {cfg.paths.output_dir}")
 
 
 if __name__ == "__main__":
