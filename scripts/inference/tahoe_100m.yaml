@@ -1,17 +1,21 @@
+model_name: "mosaicfm-3b-prod-cont-MFMv2"
+
 paths:
-  vocab_file: "/tahoe/mosaicfm/datasets/vevo_merged_jan_2025/vevo_v2_vocab.json"
-  model_config_path: "/tahoe/mosaicfm/checkpoints/release/mosaicfm-70m-merged/model_config.yml"
-  collator_config_path: "/tahoe/mosaicfm/checkpoints/release/mosaicfm-70m-merged/collator_config.yml"
-  model_file: "/tahoe/mosaicfm/checkpoints/release/mosaicfm-70m-merged/best-model.pt"
-  output_dir: "/tahoe/mosaicfm/datasets/barotaxis/embeddings_tahoe_100m"
+  model_path_root: "/tahoe/mosaicfm/checkpoints/release/${model_name}"
+  vocab_file: "${paths.model_path_root}/vocab.json"
+  model_config_path: "${paths.model_path_root}/model_config.yml"
+  collator_config_path: "${paths.model_path_root}/collator_config.yml"
+  model_file: "${paths.model_path_root}/best-model.pt"
+  output_dir: "s3://vevo-ml-datasets/mosaicfm_v2/inference/${model_name}_tahoe_100m_embeddings"
 
 dataset:
-  name: "tahoebio/Tahoe-100M"
+  name: "/tahoe/mosaicfm/datasets/Tahoe-100M-HF"
   split: "train"
   streaming: False
+  cache_dir: "/tahoe/mosaicfm/datasets/HF_cache"
 
 data:
-  batch_size: 1750
+  batch_size: 128
   max_length: 2048
   num_workers: 8
   prefetch_factor: 8
@@ -30,4 +34,4 @@ parquet:
   chunk_size: 100000
 
 output:
-  prefix: "mosaicfm-70m-merged"
+  prefix: ${model_name}
