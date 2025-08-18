@@ -33,5 +33,9 @@ model:
 parquet:
   chunk_size: 100000
 
+resume:
+  enabled: true
+  policy: "truncate_incomplete"
+
 output:
   prefix: ${model_name}
