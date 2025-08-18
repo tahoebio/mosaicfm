@@ -3,13 +3,14 @@
 import logging
 import os
 import sys
+from datetime import datetime
+from typing import Any, Optional, Tuple, Union
 
 import pyarrow as pa
 import pyarrow.fs as pafs
 import pyarrow.parquet as pq
 import streaming
 import torch
-import torch.distributed as dist
 from datasets import load_dataset
 from omegaconf import DictConfig
 from omegaconf import OmegaConf as om
@@ -27,21 +28,22 @@ logging.basicConfig(
 )
 
 
-def setup():
-    """Initialize distributed process group and set device."""
-    dist.init_process_group(backend="nccl")
-    local_rank = int(os.environ["LOCAL_RANK"])
-    torch.cuda.set_device(local_rank)
+def setup() -> int:
+    local_rank = int(os.environ.get("LOCAL_RANK", "0"))
+    if torch.cuda.is_available():
+        torch.cuda.set_device(local_rank)
     return local_rank
 
 
-def cleanup():
-    """Clean up distributed process group."""
-    dist.destroy_process_group()
+def get_rank_world() -> tuple[int, int]:
+    rank = int(os.environ.get("RANK", "0"))
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    return rank, world_size
 
 
-def get_output_filesystem_and_path(output_dir: str):
-    """Get filesystem and path for output directory."""
+def get_output_filesystem_and_path(
+    output_dir: str,
+) -> Tuple[Union[pafs.S3FileSystem, pafs.LocalFileSystem], str]:
     if output_dir.startswith("s3://"):
         fs = pafs.S3FileSystem()
         path = output_dir[5:]  # strip s3://
@@ -51,7 +53,13 @@ def get_output_filesystem_and_path(output_dir: str):
     return fs, path
 
 
-def get_parquet_writer(fs, path_prefix, rank, shard_idx, schema):
+def get_parquet_writer(
+    fs: Union[pafs.S3FileSystem, pafs.LocalFileSystem],
+    path_prefix: str,
+    rank: int,
+    shard_idx: int,
+    schema: pa.Schema,
+) -> Tuple[pq.ParquetWriter, Any]:
     """Create a rank-specific parquet writer."""
     file_path = f"{path_prefix}/rank{rank}_embeddings_{shard_idx:03d}.parquet"
     sink = fs.open_output_stream(file_path)
@@ -60,15 +68,14 @@ def get_parquet_writer(fs, path_prefix, rank, shard_idx, schema):
 
 
 def main(cfg: DictConfig) -> None:
-    """
-    Main entrypoint: load model, dataset, compute embeddings, and write chunked Parquet shards.
-    """
-    # Initialize distributed processing
     local_rank = setup()
-    rank = dist.get_rank()
-    world_size = dist.get_world_size()
+    rank, world_size = get_rank_world()
+    device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu")
 
-    log.info(f"Rank {rank} started with local_rank {local_rank}...")
+    log.info(
+        f"Rank {rank}/{world_size} starting on device {device} "
+        f"(hostname={os.uname().nodename}, pid={os.getpid()}, time={datetime.now().isoformat()})",
+    )
 
     log.info("Loading vocabulary and collator configuration...")
     vocab = GeneVocab.from_file(cfg.paths.vocab_file)
@@ -99,20 +106,11 @@ def main(cfg: DictConfig) -> None:
     model_cfg["attn_config"]["use_attn_mask"] = cfg.model.use_attn_mask
 
     model = ComposerSCGPTModel(model_config=model_cfg, collator_config=coll_cfg)
-
-    # Set per-rank device
-    device = torch.device(f"cuda:{local_rank}" if torch.cuda.is_available() else "cpu")
     torch.cuda.empty_cache()
 
-    # Coordinated model loading
-    dist.barrier()
     state = torch.load(cfg.paths.model_file, map_location=device)["state"]["model"]
     model.load_state_dict(state, strict=True)
     model.to(device).eval()
-    dist.barrier()
-
-    # Wrap model with DDP
-    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank])
 
     log.info("Loading dataset and preparing DataLoader...")
     ds = load_dataset(
@@ -123,8 +121,16 @@ def main(cfg: DictConfig) -> None:
     )
     ds = ds.with_format("torch")
 
-    # Create distributed sampler
-    sampler = DistributedSampler(ds, num_replicas=world_size, rank=rank, shuffle=False)
+    if cfg.dataset.streaming:
+        ds = ds.shard(num_shards=world_size, index=rank, contiguous=True)
+        sampler = None
+    else:
+        sampler = DistributedSampler(
+            ds,
+            num_replicas=world_size,
+            rank=rank,
+            shuffle=False,
+        )
 
     loader = streaming.StreamingDataLoader(
         ds,
@@ -135,7 +141,24 @@ def main(cfg: DictConfig) -> None:
         num_workers=cfg.data.num_workers,
         pin_memory=True,
         prefetch_factor=cfg.data.prefetch_factor,
-        persistent_workers=True,
+        persistent_workers=False,
+    )
+
+    total_batches: Optional[int] = None
+    if sampler is not None:
+        try:
+            total_batches = len(sampler)
+        except Exception:
+            total_batches = None
+    elif (not cfg.dataset.streaming) and hasattr(ds, "__len__"):
+        N = len(ds)
+        B = int(cfg.data.batch_size)
+        total_batches = (N // B) + (1 if (N % B) else 0)
+
+    pbar = tqdm(
+        total=total_batches,
+        desc=f"Rank {rank} embedding & writing",
+        disable=(rank != 0),
     )
 
     schema = pa.schema(
@@ -147,19 +170,7 @@ def main(cfg: DictConfig) -> None:
             pa.field(cfg.model_name, pa.list_(pa.float32(), model_cfg["d_model"])),
         ],
     )
-
-    # Setup output filesystem and paths
     fs, output_path = get_output_filesystem_and_path(cfg.paths.output_dir)
-
-    row_count = 0
-    shard_idx = 0
-    writer = None
-    sink = None
-    pbar = tqdm(
-        total=len(sampler),
-        desc=f"Rank {rank} embedding & writing",
-        disable=(rank != 0),
-    )
 
     precision = {
         "fp32": torch.float32,
@@ -169,81 +180,88 @@ def main(cfg: DictConfig) -> None:
         "bf16": torch.bfloat16,
     }[model_cfg["precision"]]
 
-    with torch.no_grad(), torch.amp.autocast(
-        enabled=True,
-        dtype=precision,
-        device_type=device.type,
-    ):
-        for batch in loader:
-            bs = batch["gene"].shape[0]
+    use_autocast = (
+        device.type == "cuda" and precision in (torch.float16, torch.bfloat16)
+    ) or (device.type == "cpu" and precision is torch.bfloat16)
 
-            # Rotate to a new ParquetWriter if starting a shard
-            if writer is None:
-                writer, sink = get_parquet_writer(
-                    fs,
-                    output_path,
-                    rank,
-                    shard_idx,
-                    schema,
+    # ---- Run & write ----
+    row_count: int = 0
+    shard_idx: int = 0
+    writer: Optional[pq.ParquetWriter] = None
+    sink: Optional[Any] = None
+
+    try:
+        with torch.no_grad(), torch.amp.autocast(
+            device_type=device.type,
+            dtype=precision,
+            enabled=use_autocast,
+        ):
+            for batch in loader:
+                bs = batch["gene"].shape[0]
+
+                # Rotate to a new ParquetWriter if starting a shard
+                if writer is None:
+                    writer, sink = get_parquet_writer(
+                        fs,
+                        output_path,
+                        rank,
+                        shard_idx,
+                        schema,
+                    )
+
+                # Extract metadata
+                drugs = batch["drug"]
+                samples = batch["sample"]
+                cells = batch["cell_line_id"]
+                barcodes = batch["BARCODE_SUB_LIB_ID"]
+
+                # Compute CLS embeddings
+                ids = batch["gene"].to(device)
+                expr = batch["expr"].to(device)
+                mask = ~ids.eq(coll_cfg.pad_token_id)
+                embs = model.model._encode(ids, expr, src_key_padding_mask=mask)
+                cls_np = embs[:, 0, :].cpu().numpy()
+
+                # Build and write Arrow Table
+                table = pa.Table.from_pydict(
+                    {
+                        "drug": drugs,
+                        "sample": samples,
+                        "cell_line": cells,
+                        "BARCODE_SUB_LIB_ID": barcodes,
+                        cfg.model_name: [list(r) for r in cls_np],
+                    },
+                    schema=schema,
                 )
+                writer.write_table(table)
 
-            # Extract metadata
-            drugs = batch["drug"]
-            samples = batch["sample"]
-            cells = batch["cell_line_id"]
-            barcodes = batch["BARCODE_SUB_LIB_ID"]
+                row_count += bs
+                pbar.update(bs)
 
-            # Compute CLS embeddings
-            ids = batch["gene"].to(device)
-            expr = batch["expr"].to(device)
-            mask = ~ids.eq(coll_cfg.pad_token_id)
-            embs = model.module.model._encode(ids, expr, src_key_padding_mask=mask)
-            cls_np = embs[:, 0, :].cpu().numpy()
-
-            # Build and write Arrow Table
-            table = pa.Table.from_pydict(
-                {
-                    "drug": drugs,
-                    "sample": samples,
-                    "cell_line": cells,
-                    "BARCODE_SUB_LIB_ID": barcodes,
-                    cfg.model_name: [list(r) for r in cls_np],
-                },
-                schema=schema,
+                # If chunk size reached, close and advance shard
+                if row_count >= cfg.parquet.chunk_size:
+                    writer.close()
+                    sink.close()
+                    writer = None
+                    sink = None
+                    row_count = 0
+                    shard_idx += 1
+    finally:
+        if writer:
+            writer.close()
+        if sink:
+            sink.close()
+        pbar.close()
+        if rank == 0:
+            log.info(
+                f"Rank {rank} finished writing shard {shard_idx} to Parquet files.",
             )
-            writer.write_table(table)
-
-            row_count += bs
-            pbar.update(bs)
-
-            # If chunk size reached, close and advance shard
-            if row_count >= cfg.parquet.chunk_size:
-                writer.close()
-                sink.close()
-                writer = None
-                sink = None
-                row_count = 0
-                shard_idx += 1
-
-    # Final close
-    if writer:
-        writer.close()
-    if sink:
-        sink.close()
-    pbar.close()
-
-    # Ensure all ranks finish before cleanup
-    dist.barrier()
-    cleanup()
-
-    if rank == 0:
-        log.info(f"Finished writing embeddings to: {cfg.paths.output_dir}")
 
 
 if __name__ == "__main__":
-    yaml_path = sys.argv[1]
+    yaml_path: str = sys.argv[1]
     log.info(f"Loading configuration from {yaml_path}...")
-    cfg = om.load(yaml_path)
+    cfg: DictConfig = om.load(yaml_path)
     om.resolve(cfg)
     main(cfg)
     log.info("Script execution completed.")

@@ -6,11 +6,11 @@ paths:
   model_config_path: "${paths.model_path_root}/model_config.yml"
   collator_config_path: "${paths.model_path_root}/collator_config.yml"
   model_file: "${paths.model_path_root}/best-model.pt"
-  output_dir: "s3://vevo-ml-datasets/mosaicfm_v2/inference/${model_name}_tahoe_100m_embeddings"
+  output_dir: "s3://vevo-ml-datasets/mosaicfm_v2/inference/${model_name}_tahoe_100m_embeddings_part3"
 
 dataset:
   name: "/tahoe/mosaicfm/datasets/Tahoe-100M-HF"
-  split: "train"
+  split: "train[92000000:]"
   streaming: False
   cache_dir: "/tahoe/mosaicfm/datasets/HF_cache"
 
